@@ -19,11 +19,24 @@ enum HostProductMode: String, CaseIterable, Sendable {
         self == .terminalOnly
     }
 
-    /// Vamp Sync is an app-window host. Unlike Vamp Host it establishes the
-    /// authenticated data channel first and does not capture the full display
-    /// while the client is still choosing an application.
+    /// Sync's compatibility default is app-window capture. New Mac Control
+    /// clients opt into desktop capture via `startsWithAppBrowser(for:)`.
     var isAppStreamingOnly: Bool {
         self == .mini
+    }
+
+    /// A new Mac Control client explicitly opts into desktop capture. Preserve
+    /// the app-first handshake for existing Mac clients and Vamp Stream.
+    func sessionCapabilities(for client: HostCapabilityFlags) -> HostCapabilityFlags {
+        var flags = advertisedCapabilities
+        if self == .mini && client.contains(.supportsDesktopControl) && client.contains(.supportsMacClient) {
+            flags.formUnion([.supportsMultiDisplay, .supportsMacClient])
+        }
+        return flags
+    }
+
+    func startsWithAppBrowser(for client: HostCapabilityFlags) -> Bool {
+        isAppStreamingOnly && !sessionCapabilities(for: client).contains(.supportsMultiDisplay)
     }
 
     var productTitle: String {
@@ -76,6 +89,7 @@ enum HostProductMode: String, CaseIterable, Sendable {
             var flags: HostCapabilityFlags = [
                 .supportsH264,
                 .supportsVideoFragmentation,
+                .supportsDesktopControl,
                 .supportsCursorlessCapture
             ]
             if #available(macOS 14, *) { flags.insert(.supportsAppStreaming) }

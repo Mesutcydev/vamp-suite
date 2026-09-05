@@ -23,6 +23,9 @@ final class AppStreamInputController: ObservableObject {
     private(set) var commandsSent: UInt64 = 0
     @Published private(set) var dragLocked = false
     var sessionID: UUID?
+    var isEnabled = false {
+        willSet { if !newValue && isEnabled { releaseDragLock(); flushPending() } }
+    }
 
     private var interpreter: GestureInterpreter?
     private var window: DisplayDescriptor?
@@ -55,6 +58,7 @@ final class AppStreamInputController: ObservableObject {
 
     /// The streamed window, as a synthetic display (id = window id, point size, Retina scale).
     func setWindow(_ descriptor: DisplayDescriptor) {
+        if window != descriptor { releaseDragLock(); flushPending() }
         window = descriptor
         rebuild()
     }
@@ -126,6 +130,7 @@ final class AppStreamInputController: ObservableObject {
     }
 
     func toggleDragLock(at point: DesktopPoint) {
+        guard isEnabled else { return }
         guard let interpreter else { return }
         lastPointerPoint = point
         if dragLocked {
@@ -186,6 +191,7 @@ final class AppStreamInputController: ObservableObject {
     }
 
     private func route(_ command: InputCommand) {
+        guard isEnabled else { return }
         switch command {
         case .pointerMove(let move):
             coalesceMove(move)

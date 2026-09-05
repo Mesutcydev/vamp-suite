@@ -65,22 +65,18 @@ targets:
           NSAllowsArbitraryLoads: true
         NSBonjourServices:
           - _screenharbor._tcp
+        UIRequiresFullScreen: true
         UILaunchScreen:
           UIImageName: AppBackdrop
           UIImageRespectsSafeAreaInsets: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationPortraitUpsideDown
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
     settings:
       base:
-        MARKETING_VERSION: 0.1.12
-        CURRENT_PROJECT_VERSION: 26
+        MARKETING_VERSION: 0.1.18
+        CURRENT_PROJECT_VERSION: 32
         PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.stream
         PRODUCT_NAME: Vamp Stream
         CODE_SIGN_ENTITLEMENTS: Configuration/VampStream.entitlements

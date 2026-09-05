@@ -164,6 +164,8 @@ struct BeetCodeRemoteApplication: Decodable, Equatable, Hashable, Identifiable, 
         return "name:\(name)"
     }
 
+    var streamListID: String { windowID.map { "window:\($0)" } ?? id }
+
     var detail: String {
         if let windowTitle, !windowTitle.isEmpty, windowTitle != name {
             return "\(windowTitle) · \(Int(width))×\(Int(height))"
@@ -826,20 +828,15 @@ final class BeetCodeVideoRendererViewModel: ObservableObject {
     private var frameRateWindowStart: TimeInterval?
     private var frameRateWindowCount = 0
 
-    init() {
-        decoder.onDecodedFrame = { [weak self] pixelBuffer, _ in
-            Task { @MainActor [weak self] in
-                guard let self, self.acceptingFrames else { return }
-                self.latestPixelBuffer = pixelBuffer
-                self.noteDecodedFrame()
-            }
-        }
-    }
+    private var receiveGeneration: UInt64 = 0
 
     /// A one-second counting window, not a smoothed estimator. Good
     /// enough to tell a healthy stream from a stalled one, which is all the
     /// readout claims.
+    private(set) var lastDecodedAt: TimeInterval?
+
     private func noteDecodedFrame() {
+        lastDecodedAt = ProcessInfo.processInfo.systemUptime
         let now = ProcessInfo.processInfo.systemUptime
         guard let start = frameRateWindowStart else {
             frameRateWindowStart = now
@@ -854,6 +851,18 @@ final class BeetCodeVideoRendererViewModel: ObservableObject {
         frameRateWindowCount = 0
     }
 
+    private func installFrameHandler() {
+        receiveGeneration &+= 1
+        let generation = receiveGeneration
+        decoder.onDecodedFrame = { [weak self] pixelBuffer, _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.acceptingFrames, self.receiveGeneration == generation else { return }
+                self.latestPixelBuffer = pixelBuffer
+                self.noteDecodedFrame()
+            }
+        }
+    }
+
     func start(
         client: BeetCodeRemoteClient,
         resolution: String = "1080p",
@@ -863,6 +872,7 @@ final class BeetCodeVideoRendererViewModel: ObservableObject {
     ) {
         stop()
         lastError = nil
+        installFrameHandler()
         acceptingFrames = true
         streamTask = Task { [weak self] in
             guard let self else { return }
@@ -880,6 +890,14 @@ final class BeetCodeVideoRendererViewModel: ObservableObject {
                         receivedFrame = true
                         retry = 0
                         self.lastError = nil
+                        if let previous = self.geometry,
+                           previous.imageWidth != frame.geometry.imageWidth || previous.imageHeight != frame.geometry.imageHeight
+                            || previous.displayWidth != frame.geometry.displayWidth || previous.displayHeight != frame.geometry.displayHeight {
+                            self.latestPixelBuffer = nil
+                            self.lastDecodedAt = nil
+                            self.decoder.stopDecoding()
+                            self.installFrameHandler()
+                        }
                         self.geometry = frame.geometry
                         self.isReceiving = true
                         switch frame.payload {
@@ -909,6 +927,8 @@ final class BeetCodeVideoRendererViewModel: ObservableObject {
                     return
                 } catch {
                     self.isReceiving = false
+                    self.latestPixelBuffer = nil
+                    self.lastDecodedAt = nil
                     self.framesPerSecond = nil
                     self.frameRateWindowStart = nil
                     self.frameRateWindowCount = 0
@@ -916,6 +936,7 @@ final class BeetCodeVideoRendererViewModel: ObservableObject {
                         ? "Connection interrupted. Reconnecting…"
                         : "Waiting for Vamp Assistant… \(error.localizedDescription)"
                     self.decoder.stopDecoding()
+                    self.installFrameHandler()
                     retry = min(retry + 1, 5)
                     let delay = UInt64(min(pow(2.0, Double(retry - 1)), 8) * 1_000_000_000)
                     try? await Task.sleep(nanoseconds: delay)
@@ -926,6 +947,7 @@ final class BeetCodeVideoRendererViewModel: ObservableObject {
 
     func stop() {
         acceptingFrames = false
+        lastDecodedAt = nil
         streamTask?.cancel()
         streamTask = nil
         decoder.stopDecoding()

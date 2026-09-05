@@ -15,7 +15,7 @@ Do not package, reinstall, or advertise discontinued hosts.
 | --- | --- |
 | Full host | `Vamp Host` — discontinued; historical full host |
 | Light host | `Vamp Terminal Host` — discontinued |
-| Mini host | `Vamp Sync` — active Mac app-window host for Control and Stream |
+| Mini host | `Vamp Sync` — active Mac desktop/app host for Control; app-window host for Stream |
 | Linux host | `Vamp Linux Host` — discontinued |
 | Remote-desktop client | `Vamp Control` — macOS and iOS/iPadOS. Terminal Mode is an overlay |
 | Terminal client | `Vamp Terminal` — eight concurrent tabs and ten agent launchers |

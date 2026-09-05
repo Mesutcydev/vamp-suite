@@ -80,3 +80,30 @@ Final code validation: 39 macOS tests passed with zero failures. The Release app
 After the Mac was unlocked, the final native fixture was checked at 760 points. This exposed two overflow cases: a pinned quick action and the longer View only label could displace Disconnect. The release fixes those cases with compact host/sizing labels and a quick action that appears only in wide windows. Both Control and View only now leave Disconnect visible at 760 points; selecting a quick action does not displace it. At 1050 points the selected quick action appears beside the other controls. Tools continues to offer the action at every width. The latest native regression run still passes all 39 tests.
 
 Trusted remote-host caret verification remains unperformed because the connection requested new trust approval. Local physical-key delivery and focus isolation were verified as described above; no host permission or trust approval was bypassed.
+
+
+## Follow-up: restore desktop control and reduce toolbar chrome
+
+User feedback on build 53 identified a duplicated host title, oversized toolbar
+capsules, and app streaming replacing the expected full-desktop experience.
+
+Control build 54 uses a compact native toolbar with one host label, a Desktop/App
+source menu, display sizing, access mode, Tools, and a neutral Disconnect action.
+The macOS 26 shared toolbar background is hidden to avoid stacked capsule effects.
+A native preview verified the 760-point minimum width and four arrow-key events.
+
+Sync build 65 accepts desktop control from clients advertising the new explicit
+`supportsDesktopControl` capability together with `supportsMacClient`. Control 54
+opens the desktop by default and can switch to apps and back through the source
+menu. Existing Control builds and Vamp Stream keep their app-first handshake.
+Both Control 54 and Sync 65 are needed for desktop control over Sync. Assistant's
+existing desktop transport remains available. No discontinued host is restored.
+
+Window mapping no longer produces a spurious missing-display warning. Reconnect
+clears stale window coordinates before the new desktop attachment. Invalid display
+choices preserve the existing window; capture failure attempts to restore it.
+
+Validation: 595 Swift package tests, 39 native Mac client tests, and 32 Python
+script tests pass. Active Sync, Terminal, and Stream Xcode schemes build. Live
+remote desktop/app switching still requires validation on the updated remote host;
+no new pairing or macOS privacy permission was approved during these checks.

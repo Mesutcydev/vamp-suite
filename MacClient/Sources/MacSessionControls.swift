@@ -63,6 +63,7 @@ struct MacSessionToolsMenu: View {
             Label("Tools", systemImage: "ellipsis.circle").labelStyle(.titleAndIcon)
         }
         .menuStyle(.borderlessButton)
+        .font(.system(size: 12))
         .help("Session tools and remote keyboard shortcuts")
     }
 }
@@ -76,6 +77,8 @@ struct MacSessionAccessButton: View {
         Button { viewOnly.toggle() } label: {
             Label(viewOnly ? "View only" : "Control", systemImage: viewOnly ? "eye" : "cursorarrow.motionlines").labelStyle(.titleAndIcon)
         }
+        .buttonStyle(.plain)
+        .font(.system(size: 12))
         .help(viewOnly ? "Enable remote mouse and keyboard" : "Switch to view only")
         .accessibilityLabel("Access mode")
         .accessibilityValue(readiness.canSendInput
@@ -183,6 +186,19 @@ struct MacSessionWidthReader: ViewModifier {
                     .onAppear { isCompact = proxy.size.width < 900 }
                     .onChange(of: proxy.size.width) { isCompact = $0 < 900 }
             }
+        }
+    }
+}
+
+// The session uses one quiet native toolbar. Avoid layering the system glass
+// capsules over custom button surfaces on macOS 26 and later.
+extension ToolbarContent {
+    @ToolbarContentBuilder
+    func compactSessionChrome() -> some ToolbarContent {
+        if #available(macOS 26, *) {
+            self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
         }
     }
 }

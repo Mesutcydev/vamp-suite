@@ -20,6 +20,9 @@ struct MacRemoteSessionView: View {
     @StateObject private var rendererVM: VideoRendererViewModel
     @StateObject private var multiDisplay: MultiDisplayRenderer
     @State private var multiActive = false
+    @State private var browsingApps = false
+    @State private var desktopDisplays: [DisplayDescriptor] = []
+    @State private var pendingDesktopID: String?
     @StateObject private var inputController: MacRemoteInputController
     @StateObject private var statsVM: SessionStatsViewModel
     @StateObject private var audioRenderer = ClientAudioRenderer()
@@ -105,7 +108,7 @@ struct MacRemoteSessionView: View {
 
     /// The browser replaces the video surface until the host confirms a target.
     private var showsAppBrowser: Bool {
-        guard isAppStreamingOnlyHost else { return false }
+        guard isAppStreamingOnlyHost || browsingApps else { return false }
         if case .streaming = appStream.status { return false }
         return true
     }
@@ -163,7 +166,7 @@ struct MacRemoteSessionView: View {
             VStack(spacing: 8) {
                 MacKeyboardFocusHint(readiness: inputReadiness, keyboardFocused: keyboardFocused)
 
-                if let warning = displayLayoutVM.mappingWarningMessage, !showsAppBrowser {
+                if let warning = displayLayoutVM.mappingWarningMessage, !showsAppBrowser, appStream.streamedWindow == nil {
                     Label(warning, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -193,7 +196,7 @@ struct MacRemoteSessionView: View {
             }
         }
         .modifier(MacSessionWidthReader(isCompact: $isCompactToolbar))
-        .toolbar { sessionWindowToolbar }
+        .toolbar { sessionWindowToolbar.compactSessionChrome() }
         .focusedSceneValue(\.remoteDisplayMode, $preferences.displayModeRaw)
         .focusedSceneValue(\.keepsDisplayShortcutsLocal, preferences.keepsDisplayShortcutsLocal)
         .onAppear(perform: loadPreferences)
@@ -241,11 +244,20 @@ struct MacRemoteSessionView: View {
             appStream.stop()
             stopSession()
         }
+        .onChange(of: coordinator.isReconnectInProgress) { reconnecting in
+            guard reconnecting else { return }
+            // A fresh host attachment starts with its negotiated source. Do not
+            // keep a stale window coordinate map over a newly captured desktop.
+            appStream.stop()
+            browsingApps = false
+            pendingDesktopID = nil
+            desktopDisplays = []
+        }
         .onChange(of: coordinator.appStreamingOnlySession) { _ in
             startAppStreamingIfNeeded()
         }
         .onChange(of: coordinator.hostLockState) { lockState in
-            guard isAppStreamingOnlyHost else { return }
+            guard showsAppBrowser else { return }
             // A locked Mac rejects app inventory and launch commands outright,
             // so pause the bounded retries instead of burning them on refusals.
             if lockState == .lockedOrLoginWindow {
@@ -272,6 +284,10 @@ struct MacRemoteSessionView: View {
         .onChange(of: rendererVM.frameSize) { frameSize in
             guard let frameSize else { return }
             displayLayoutVM.noteFirstFrameAfterSwitch()
+            if appStream.streamedWindow != nil || showsAppBrowser {
+                refreshMapping()
+                return
+            }
             if displayLayoutVM.reconcileStreamFrameSize(frameSize) {
                 coordinator.requestKeyframeRefresh(reason: "display mapping frame size mismatch")
             } else {
@@ -314,7 +330,7 @@ struct MacRemoteSessionView: View {
                     qualityColor: inputReadiness == .reconnecting ? .orange : networkQualityColor,
                     qualityLabel: inputReadiness == .reconnecting ? "Reconnecting" : coordinator.activeQualityPreset.rawValue.capitalized,
                     differentiateWithoutColor: differentiateWithoutColor)
-                    .frame(maxWidth: isCompactToolbar ? 140 : 190)
+                    .frame(maxWidth: isCompactToolbar ? 170 : 220)
             }
             .buttonStyle(.plain)
             .help("Connection details")
@@ -325,17 +341,31 @@ struct MacRemoteSessionView: View {
                     keyboardFocused: keyboardFocused, unavailable: unavailableFeatures)
             }
         }
-        if isAppStreamingOnlyHost {
-            ToolbarItem(placement: .primaryAction) { sessionToolbarAppSwitchButton }
-        } else if displayLayoutVM.displays.count > 1 {
-            ToolbarItem(placement: .primaryAction) {
-                Menu("Display") {
-                    ForEach(displayLayoutVM.displays) { display in
-                        Button(display.name) { requestDisplaySwitch(to: display.id) }
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                if !isAppStreamingOnlyHost {
+                    ForEach(desktopDisplays.isEmpty ? displayLayoutVM.displays : desktopDisplays) { display in
+                        Button { requestDesktop(to: display.id) } label: {
+                            Label(display.name, systemImage: "display")
+                        }
                     }
+                    Divider()
+                } else {
+                    Text("Desktop requires an updated Vamp Sync host.")
+                    Divider()
                 }
-                .disabled(displayLayoutVM.isSwitchingDisplay)
+                if coordinator.negotiatedCapabilities?.supportsAppStreaming == true {
+                    Button("Choose an app…", action: browseApps)
+                        .keyboardShortcut("a", modifiers: [.control, .option])
+                }
+            } label: {
+                Label(isAppStreamingOnlyHost || appStream.streamedWindow != nil || showsAppBrowser ? "App" : "Desktop",
+                      systemImage: isAppStreamingOnlyHost || appStream.streamedWindow != nil || showsAppBrowser ? "macwindow" : "display")
+                    .font(.system(size: 12))
             }
+            .menuStyle(.borderlessButton)
+            .disabled(displayLayoutVM.isSwitchingDisplay)
+            .help("Choose the full desktop or an application window")
         }
         ToolbarItem(placement: .primaryAction) { sessionToolbarDisplaySizingMenu }
         ToolbarItem(placement: .primaryAction) {
@@ -483,25 +513,6 @@ struct MacRemoteSessionView: View {
         case .fillScreen: return "Fill Window — edges may be cropped"
         case .actualSize: return "Actual Size — 1:1 remote pixels"
         }
-    }
-
-    /// Vamp Sync streams one window at a time, so the only way back to another
-    /// app is an explicit switch. Without this the first pick was final for the
-    /// life of the session.
-    private var sessionToolbarAppSwitchButton: some View {
-        Button { appStream.backToApps() } label: {
-            SessionToolbarToggleLabel(
-                title: isCompactToolbar ? "Apps" : (appStreamedAppName ?? "Apps"),
-                systemImage: "macwindow.on.rectangle",
-                isActive: showsAppBrowser
-            )
-        }
-        .frame(maxWidth: 140)
-        .buttonStyle(SessionToolbarToggleButtonStyle(active: showsAppBrowser))
-        .disabled(showsAppBrowser)
-        .keyboardShortcut("a", modifiers: [.control, .option])
-        .help("Choose a different app to stream (⌃⌥A)")
-        .accessibilityLabel("Choose a different app to stream")
     }
 
     private var appStreamedAppName: String? {
@@ -944,6 +955,35 @@ struct MacRemoteSessionView: View {
         )
     }
 
+    private func browseApps() {
+        if appStream.streamedWindow == nil && !showsAppBrowser {
+            desktopDisplays = displayLayoutVM.displays
+        }
+        browsingApps = true
+        appStream.start()
+        appStream.backToApps()
+    }
+
+    private func requestDesktop(to displayID: String) {
+        guard !isAppStreamingOnlyHost, let sessionID = coordinator.activeSessionID,
+              coordinator.phase == .receiving || coordinator.phase == .waitingForMedia else { return }
+        guard coordinator.negotiatedCapabilities?.supportsAppStreaming == true else {
+            requestDisplaySwitch(to: displayID)
+            return
+        }
+        pendingDesktopID = displayID
+        displayLayoutVM.beginDisplaySwitch(to: displayID)
+        do {
+            let request = StreamTargetSwitchRequestMessage(sessionID: sessionID,
+                target: .display(displayID), launchIfNeeded: false,
+                senderDeviceID: environment.clientIdentity.id)
+            try environment.webRTCSessionManager.sendDataMessage(try DataChannelEnvelope.streamTargetSwitch(request))
+        } catch {
+            pendingDesktopID = nil
+            displayLayoutVM.failDisplaySwitch(reason: "Could not return to the desktop.", fallbackID: displayLayoutVM.hostSelectedDisplayID)
+        }
+    }
+
     // MARK: - Display switching
 
     private func requestDisplaySwitch(to displayID: String) {
@@ -970,8 +1010,15 @@ struct MacRemoteSessionView: View {
         case .accepted:
             break
         case .completed:
+            if pendingDesktopID == result.selectedDisplayID {
+                appStream.stop()
+                browsingApps = false
+                pendingDesktopID = nil
+            }
             displayLayoutVM.completeDisplaySwitch(selectedID: result.selectedDisplayID)
+            refreshMapping()
         case .rejected, .failed:
+            pendingDesktopID = nil
             displayLayoutVM.failDisplaySwitch(
                 reason: result.reason ?? "The host could not switch displays.",
                 fallbackID: displayLayoutVM.hostSelectedDisplayID
@@ -1166,40 +1213,20 @@ struct SessionToolbarStatusPill: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(dotColor.opacity(0.22))
-                    .frame(width: 16, height: 16)
-                Circle()
-                    .fill(dotColor)
-                    .frame(width: 8, height: 8)
-                    .overlay {
-                        if differentiateWithoutColor {
-                            Circle().strokeBorder(Color.primary.opacity(0.55), lineWidth: 1)
-                        }
-                    }
-            }
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(hostName)
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .lineLimit(1)
-                Text(qualityLabel)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+        HStack(spacing: 7) {
+            Circle().fill(dotColor).frame(width: 6, height: 6)
+                .accessibilityHidden(true)
+            Text(hostName)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 12)
-        .padding(.vertical, 5)
-        .sessionToolbarClusterChrome()
+        .padding(.horizontal, 4)
+        .frame(height: 24)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Connection status")
         .accessibilityValue("\(hostName), \(qualityLabel)")
-        .help("Connected host and stream quality")
+        .help("\(hostName) · \(qualityLabel) — Connection details")
     }
 }
 
@@ -1299,28 +1326,17 @@ struct SessionToolbarToggleLabel: View {
 
 struct SessionToolbarDisconnectButton: View {
     let action: () -> Void
-    @State private var hovering = false
-
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 12, weight: .semibold))
+                Image(systemName: "power")
                 Text("Disconnect")
-                    .font(.system(size: 11.5, weight: .semibold))
             }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 11)
-            .frame(minHeight: 30)
-            .background(Capsule(style: .continuous).fill(Color.red.opacity(hovering ? 0.94 : 0.84)))
-            .overlay {
-                Capsule(style: .continuous)
-                    .strokeBorder(.white.opacity(0.22), lineWidth: 0.5)
-            }
-            .shadow(color: .red.opacity(hovering ? 0.28 : 0.16), radius: hovering ? 6 : 3, y: 1)
+                .font(.system(size: 12))
+                .padding(.horizontal, 4)
+                .frame(height: 26)
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
         .help("Disconnect from host")
         .accessibilityLabel("Disconnect from host")
         .accessibilityHint("Ends the remote session")

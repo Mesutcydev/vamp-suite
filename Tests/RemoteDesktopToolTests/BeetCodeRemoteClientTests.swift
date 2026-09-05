@@ -90,6 +90,7 @@ final class BeetCodeRemoteClientTests: XCTestCase {
         let data = Data(#"{"windowID":42,"bundleIdentifier":"com.apple.Safari","name":"Safari","windowTitle":"Start Page","width":1280,"height":800}"#.utf8)
         let application = try JSONDecoder().decode(BeetCodeRemoteApplication.self, from: data)
         XCTAssertEqual(application.id, "com.apple.Safari")
+        XCTAssertEqual(application.streamListID, "window:42")
         XCTAssertEqual(application.bundleIdentifier, "com.apple.Safari")
         XCTAssertEqual(application.name, "Safari")
         XCTAssertEqual(application.windowTitle, "Start Page")

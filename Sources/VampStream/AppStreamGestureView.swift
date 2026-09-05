@@ -38,7 +38,7 @@ struct AppStreamGestureView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        context.coordinator.parent = self
+        context.coordinator.update(self, in: uiView)
         context.coordinator.viewportZoom = viewportZoom
         context.coordinator.viewportOffset = viewportOffset
         context.coordinator.viewSize = viewSize
@@ -66,6 +66,23 @@ struct AppStreamGestureView: UIViewRepresentable {
 
         init(_ parent: AppStreamGestureView) {
             self.parent = parent
+        }
+
+        func update(_ parent: AppStreamGestureView, in view: UIView) {
+            let modeChanged = self.parent.allowsViewportAdjustment != parent.allowsViewportAdjustment
+            self.parent = parent
+            guard modeChanged else { return }
+            cancelMomentum()
+            if longPressDragging {
+                parent.onLongPressEnded()
+                longPressDragging = false
+            }
+            // Cancel in-flight gestures so a mode change cannot turn a picture pan
+            // into Mac input (or continue remote scroll momentum behind the picture).
+            for recognizer in view.gestureRecognizers ?? [] {
+                recognizer.isEnabled = false
+                recognizer.isEnabled = true
+            }
         }
 
         func install(on view: UIView) {
@@ -140,7 +157,7 @@ struct AppStreamGestureView: UIViewRepresentable {
             parent.onMiddleClick(adjustedPoint(recognizer.location(in: view)))
         }
 
-        @objc private func onPointerPan(_ recognizer: UIPanGestureRecognizer) {
+        @objc func onPointerPan(_ recognizer: UIPanGestureRecognizer) {
             guard let view = recognizer.view else { return }
             switch recognizer.state {
             case .began:
@@ -153,10 +170,14 @@ struct AppStreamGestureView: UIViewRepresentable {
                 let dy = translation.y - lastPointerTranslation.y
                 lastPointerTranslation = CGPoint(x: translation.x, y: translation.y)
                 guard dx != 0 || dy != 0 else { return }
-                parent.onPointerMove(adjustedPoint(recognizer.location(in: view)))
+                if parent.allowsViewportAdjustment {
+                    parent.onViewportPan(CGSize(width: dx, height: dy))
+                } else {
+                    parent.onPointerMove(adjustedPoint(recognizer.location(in: view)))
+                }
             case .ended, .cancelled, .failed:
                 lastPointerTranslation = .zero
-                parent.onPointerEnded()
+                if !parent.allowsViewportAdjustment { parent.onPointerEnded() }
             default:
                 break
             }
@@ -278,6 +299,7 @@ struct AppStreamGestureView: UIViewRepresentable {
         }
 
         @objc private func momentumTick() {
+            guard !parent.allowsViewportAdjustment else { cancelMomentum(); return }
             parent.onScroll(Double(scrollVelocity.width), Double(scrollVelocity.height))
             scrollVelocity = CGSize(width: scrollVelocity.width * 0.92, height: scrollVelocity.height * 0.92)
             if hypot(scrollVelocity.width, scrollVelocity.height) < 0.4 {
@@ -295,7 +317,7 @@ struct AppStreamGestureView: UIViewRepresentable {
                 return parent.allowsViewportAdjustment
             }
             if parent.allowsViewportAdjustment {
-                return (gestureRecognizer as? UIPanGestureRecognizer)?.minimumNumberOfTouches == 2
+                return gestureRecognizer is UIPanGestureRecognizer
             }
             return true
         }

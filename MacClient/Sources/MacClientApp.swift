@@ -50,6 +50,7 @@ struct MacClientApp: App {
             #endif
         }
         .windowStyle(.titleBar)
+        .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .windowResizability(.contentMinSize)
         .defaultSize(width: 860, height: 600)
         .commands {
@@ -118,7 +119,7 @@ struct MacClientWindowConfigurator: NSViewRepresentable {
         } else {
             window.styleMask.remove(.fullSizeContentView)
         }
-        window.toolbarStyle = .unified
+        window.toolbarStyle = .unifiedCompact
         window.toolbar?.showsBaselineSeparator = !extendsUnderTitleBar
         window.titleVisibility = hidesNativeTitle ? .hidden : .visible
 

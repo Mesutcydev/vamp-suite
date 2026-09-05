@@ -51,37 +51,7 @@ struct MacSessionUXPreview: View {
         }
         .frame(minWidth: 760, minHeight: 480)
         .modifier(MacSessionWidthReader(isCompact: $isCompactToolbar))
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button { showDetails.toggle() } label: {
-                    SessionToolbarStatusPill(hostName: "Design Studio — Long Host Name", qualityColor: .green,
-                        qualityLabel: "Local test", differentiateWithoutColor: false).frame(maxWidth: isCompactToolbar ? 140 : 190)
-                }.buttonStyle(.plain)
-                    .popover(isPresented: $showDetails) {
-                        MacConnectionDetails(hostName: "Local test", transportConnected: true,
-                            receivingVideo: receiving, readiness: readiness, keyboardFocused: focused,
-                            unavailable: ["Clipboard", "File transfer", "Terminal", "Remote audio"])
-                    }
-            }
-            ToolbarItem { Menu("Apps") { Button("Preview") {} } }
-            ToolbarItem {
-                Menu(isCompactToolbar ? "Fit" : "Fit Display") {
-                    Button("Fit Display") { preferences.displayModeRaw = DisplayMappingEngine.DisplayMode.fitDisplay.rawValue }
-                }
-            }
-            ToolbarItem {
-                MacSessionAccessButton(viewOnly: $viewOnly, readiness: readiness, keyboardFocused: focused)
-            }
-            ToolbarItem {
-                MacSessionToolsMenu(actions: actions, canSendInput: readiness.canSendInput,
-                    sendKey: { input.note(keyCode: $0.keyCode) }, showKeyboardHelp: { showsHelp = true },
-                    showsStats: $showsStats, quickActionID: $preferences.quickActionID)
-            }
-            if !isCompactToolbar, let quick = actions.first(where: { $0.id == preferences.quickActionID }) {
-                ToolbarItem { MacSessionQuickAction(action: quick) }
-            }
-            ToolbarItem { SessionToolbarDisconnectButton { receiving = false } }
-        }
+        .toolbar { previewToolbar.compactSessionChrome() }
         .sheet(isPresented: $showsHelp) { MacKeyboardHelp(keepsDisplayShortcutsLocal: $preferences.keepsDisplayShortcutsLocal) }
         .overlay(alignment: .bottomLeading) {
             if showsStats {
@@ -90,8 +60,44 @@ struct MacSessionUXPreview: View {
             }
         }
         .background(MacClientWindowConfigurator(extendsUnderTitleBar: false, hidesNativeTitle: true))
+        .navigationTitle("Design Studio — Vamp Control")
         .preferredColorScheme(.dark)
     }
+
+    @ToolbarContentBuilder
+    private var previewToolbar: some ToolbarContent {
+            ToolbarItem(placement: .navigation) {
+                Button { showDetails.toggle() } label: {
+                    SessionToolbarStatusPill(hostName: "Design Studio — Long Host Name", qualityColor: .green,
+                        qualityLabel: "Local test", differentiateWithoutColor: false).frame(maxWidth: isCompactToolbar ? 170 : 220)
+                }.buttonStyle(.plain)
+                    .popover(isPresented: $showDetails) {
+                        MacConnectionDetails(hostName: "Local test", transportConnected: true,
+                            receivingVideo: receiving, readiness: readiness, keyboardFocused: focused,
+                            unavailable: ["Clipboard", "File transfer", "Terminal", "Remote audio"])
+                    }
+            }
+            ToolbarItem(placement: .primaryAction) { Menu("Desktop") { Button("Built-in Display") {}
+                Button("Choose an app…") {} } }
+            ToolbarItem(placement: .primaryAction) {
+                Menu(isCompactToolbar ? "Fit" : "Fit Display") {
+                    Button("Fit Display") { preferences.displayModeRaw = DisplayMappingEngine.DisplayMode.fitDisplay.rawValue }
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                MacSessionAccessButton(viewOnly: $viewOnly, readiness: readiness, keyboardFocused: focused)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                MacSessionToolsMenu(actions: actions, canSendInput: readiness.canSendInput,
+                    sendKey: { input.note(keyCode: $0.keyCode) }, showKeyboardHelp: { showsHelp = true },
+                    showsStats: $showsStats, quickActionID: $preferences.quickActionID)
+            }
+            if !isCompactToolbar, let quick = actions.first(where: { $0.id == preferences.quickActionID }) {
+                ToolbarItem(placement: .primaryAction) { MacSessionQuickAction(action: quick) }
+            }
+            ToolbarItem(placement: .primaryAction) { SessionToolbarDisconnectButton { receiving = false } }
+        }
+
 }
 
 @MainActor

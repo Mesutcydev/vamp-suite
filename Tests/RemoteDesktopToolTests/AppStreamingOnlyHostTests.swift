@@ -21,6 +21,36 @@ final class AppStreamingOnlyHostTests: XCTestCase {
         XCTAssertTrue(negotiated.isAppStreamingOnly)
     }
 
+    func testNewMacControlStartsOnDesktopWithoutAddingTerminalOrAudio() throws {
+        let client = HostCapabilityFlags.currentClient(isMacClient: true)
+        let host = HostProductMode.mini.sessionCapabilities(for: client)
+        let negotiated = try XCTUnwrap(CapabilityNegotiator.negotiate(host: host, client: client))
+        XCTAssertFalse(HostProductMode.mini.startsWithAppBrowser(for: client))
+        XCTAssertFalse(negotiated.isAppStreamingOnly)
+        XCTAssertTrue(negotiated.supportsMultiDisplay)
+        XCTAssertTrue(negotiated.supportsAppStreaming)
+        XCTAssertFalse(negotiated.supportsTerminal)
+        XCTAssertFalse(negotiated.supportsAudio)
+    }
+
+    func testStreamAndOldMacClientsStillStartWithApps() throws {
+        var oldMac = HostCapabilityFlags.currentClient(isMacClient: true)
+        oldMac.remove(.supportsDesktopControl)
+        for client in [HostCapabilityFlags.currentClient(isMacClient: false), oldMac] {
+            let host = HostProductMode.mini.sessionCapabilities(for: client)
+            let negotiated = try XCTUnwrap(CapabilityNegotiator.negotiate(host: host, client: client))
+            XCTAssertTrue(HostProductMode.mini.startsWithAppBrowser(for: client))
+            XCTAssertTrue(negotiated.isAppStreamingOnly)
+        }
+    }
+
+    func testDesktopFlagAloneDoesNotEnableDesktopAndRoundTripsDiscovery() {
+        let flags: HostCapabilityFlags = [.supportsDesktopControl, .supportsH264]
+        XCTAssertTrue(HostProductMode.mini.startsWithAppBrowser(for: flags))
+        XCTAssertEqual(HostCapabilityFlags(stableNames: flags.stableNames), flags)
+        XCTAssertFalse(HostProductMode.terminalOnly.sessionCapabilities(for: .currentClient(isMacClient: true)).contains(.supportsDesktopControl))
+    }
+
     func testVampHostIsNotAppStreamingOnly() throws {
         let negotiated = try XCTUnwrap(negotiate(.full))
         // The full host also offers App Streaming, but it has a display stream —

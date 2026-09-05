@@ -538,8 +538,9 @@ final class VideoRendererViewModel: ObservableObject {
     @Published private(set) var isReceiving = false
     @Published private(set) var codecName: String = "--"
 
-    /// When set, this renderer decodes only frames for this wire displayID (multi-display
-    /// demux). nil decodes everything — the single-display default. Set before startReceiving.
+    private(set) var lastDecodedAt: TimeInterval?
+
+    /// Optional wire display filter for multi-display demultiplexing.
     var displayIDFilter: UInt8?
 
     /// Set by the owning screen to forward decode-failure keyframe requests to the
@@ -569,19 +570,6 @@ final class VideoRendererViewModel: ObservableObject {
 
     init(webRTCSessionManager: any WebRTCSessionManaging) {
         self.webRTCSessionManager = webRTCSessionManager
-        decoder.onDecodedFrame = { [weak self] pixelBuffer, _ in
-            Task { @MainActor [weak self] in
-                guard let self, self.acceptingFrames else { return }
-                // Direct, un-coalesced fan-out to subscribed display views.
-                self.framePublisher.send(pixelBuffer)
-                self.latestPixelBuffer = pixelBuffer
-                self.framesDecoded = self.decoder.decodedFrames
-                if !self.hasLoggedFirstRender {
-                    self.hasLoggedFirstRender = true
-                    self.logger.info("Renderer: first decoded frame presented to UI")
-                }
-            }
-        }
         decoder.onNeedsKeyframe = { [weak self] in
             Task { @MainActor [weak self] in
                 self?.onNeedsKeyframe?()
@@ -597,6 +585,21 @@ final class VideoRendererViewModel: ObservableObject {
         receiveGeneration &+= 1
         let generation = receiveGeneration
         decoder.stopDecoding()
+        decoder.onDecodedFrame = { [weak self] pixelBuffer, _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.acceptingFrames, self.receiveGeneration == generation else { return }
+                // Direct, un-coalesced fan-out to subscribed display views.
+                self.framePublisher.send(pixelBuffer)
+                self.lastDecodedAt = ProcessInfo.processInfo.systemUptime
+                self.latestPixelBuffer = pixelBuffer
+                self.framesDecoded = self.decoder.decodedFrames
+                if !self.hasLoggedFirstRender {
+                    self.hasLoggedFirstRender = true
+                    self.logger.info("Renderer: first decoded frame presented to UI")
+                }
+            }
+        }
+        lastDecodedAt = nil
         latestPixelBuffer = nil
         frameSize = nil
         framesDecoded = 0
@@ -660,6 +663,7 @@ final class VideoRendererViewModel: ObservableObject {
         acceptingFrames = false
         decoder.stopDecoding()
         isReceiving = false
+        lastDecodedAt = nil
         latestPixelBuffer = nil
         frameSize = nil
         framesDecoded = 0

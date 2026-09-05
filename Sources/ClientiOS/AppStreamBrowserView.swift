@@ -16,19 +16,21 @@ struct AppStreamBrowserView: View {
     var onClose: () -> Void
     @StateObject private var rendererVM: VideoRendererViewModel
     @StateObject private var input: AppStreamInputController
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("vampstream.favoriteApps") private var favoriteStorage = "[]"
     @AppStorage("vampstream.recentApps") private var recentStorage = "[]"
     @AppStorage("vampstream.qualityMode") private var qualityMode = "quality"
     @AppStorage("vampstream.didShowGestureHelp") private var didShowGestureHelp = false
     @State private var searchText = ""
-    @State private var windowChoice: RemoteApplication?
     @State private var closeChoice: RemoteApplication?
     @State private var showsHelp = false
-    @State private var videoStalled = false
+    @State private var videoHealthCheckTime = ProcessInfo.processInfo.systemUptime
+    @State private var videoStartedAt = ProcessInfo.processInfo.systemUptime
     @State private var keyboardActive = false
     @State private var keyboardOverlayBottomPad: CGFloat = 0
     @State private var adjustsViewport = false
+    @State private var viewportWindowID: String?
     @State private var viewportZoom: CGFloat = 1
     @State private var viewportOffset: CGSize = .zero
 
@@ -67,7 +69,10 @@ struct AppStreamBrowserView: View {
                 }
             }
             .onAppear { vm.updateClientViewport(size: proxy.size) }
-            .onChangeCompat(of: proxy.size) { vm.updateClientViewport(size: $0) }
+            .onChangeCompat(of: proxy.size) { size in
+                if case .streaming = vm.status { return }
+                vm.updateClientViewport(size: size)
+            }
         }
         .task {
             rendererVM.onNeedsKeyframe = { [weak sc = environment.sessionCoordinator] in
@@ -84,13 +89,33 @@ struct AppStreamBrowserView: View {
             guard !hostIsLocked else { return }
             switch status {
             case .streaming:
-                resetViewportZoom()
-                rendererVM.startReceiving()
+                if viewportWindowID != vm.streamedWindow?.windowID {
+                    resetViewportZoom()
+                    viewportWindowID = vm.streamedWindow?.windowID
+                }
                 if !didShowGestureHelp { showsHelp = true; didShowGestureHelp = true }
             default:
                 // Leaving the stream surface must release any drag-lock and stop decoding;
                 // the browser can remain mounted while the app target changes.
                 input.stop()
+                rendererVM.stopReceiving()
+            }
+        }
+        .onChangeCompat(of: vm.geometryRevision) { _ in
+            input.isEnabled = false
+            if scenePhase == .active, !hostIsLocked {
+                rendererVM.startReceiving()
+                sessionCoordinator.requestKeyframeRefresh(reason: "App window geometry changed")
+            }
+        }
+        .onChangeCompat(of: canInteract) { enabled in input.isEnabled = enabled }
+        .onChangeCompat(of: scenePhase) { phase in
+            input.isEnabled = false
+            if phase == .active, !hostIsLocked {
+                vm.resumeAfterHostUnlock()
+                if case .streaming = vm.status { rendererVM.startReceiving() }
+            } else {
+                vm.suspendInteraction()
                 rendererVM.stopReceiving()
             }
         }
@@ -105,16 +130,6 @@ struct AppStreamBrowserView: View {
             }
         }
         .sheet(isPresented: $showsHelp) { AppStreamGestureHelpView() }
-        .confirmationDialog("Choose a window", isPresented: Binding(
-            get: { windowChoice != nil }, set: { if !$0 { windowChoice = nil } }
-        ), titleVisibility: .visible) {
-            if let app = windowChoice {
-                ForEach(Array(app.windowIDs.enumerated()), id: \.element) { index, id in
-                    Button(app.windowTitles?[id] ?? "Window \(index + 1)") { open(app, windowID: id) }
-                }
-                Button("Open active window") { open(app) }
-            }
-        }
         .confirmationDialog(
             closePromptTitle,
             isPresented: Binding(
@@ -136,6 +151,15 @@ struct AppStreamBrowserView: View {
             input.stop()
             vm.stop()
         }
+    }
+
+    private var videoStalled: Bool {
+        AppStreamVideoHealth.isStalled(lastDecodedAt: rendererVM.lastDecodedAt, now: videoHealthCheckTime)
+    }
+
+    private var canInteract: Bool {
+        scenePhase == .active && !hostIsLocked && !vm.isResizing && !vm.isGeometryChanging && !videoStalled
+            && rendererVM.latestPixelBuffer != nil && rendererVM.isReceiving
     }
 
     private var closePromptTitle: String {
@@ -165,7 +189,6 @@ struct AppStreamBrowserView: View {
     }
     private func open(_ app: RemoteApplication, windowID: String? = nil) {
         recentStorage = encodeIDs(Array(([app.id] + decodeIDs(recentStorage).filter { $0 != app.id }).prefix(10)))
-        windowChoice = nil
         vm.select(app, windowID: windowID)
     }
     private func applyQuality() {
@@ -252,9 +275,18 @@ struct AppStreamBrowserView: View {
 
     private func appRow(_ app: RemoteApplication) -> some View {
         AppStreamApplicationRow(application: app, isFavorite: favoriteIDs.contains(app.id)) {
-            if app.windowIDs.count > 1 { windowChoice = app } else { open(app) }
+            open(app)
         }
         .contextMenu {
+            if app.windowIDs.count > 1 {
+                Menu("Windows", systemImage: "macwindow.on.rectangle") {
+                    ForEach(Array(app.windowIDs.enumerated()), id: \.element) { index, id in
+                        Button(app.windowTitles?[id] ?? "Window \(index + 1)") {
+                            open(app, windowID: id)
+                        }
+                    }
+                }
+            }
             Button(favoriteIDs.contains(app.id) ? "Remove from Favorites" : "Add to Favorites",
                    systemImage: favoriteIDs.contains(app.id) ? "star.slash" : "star") {
                 favoriteStorage = encodeIDs(favoriteIDs.contains(app.id)
@@ -325,8 +357,7 @@ struct AppStreamBrowserView: View {
 
                 if rendererVM.latestPixelBuffer != nil {
                     // The app window itself. `resizeAspect` preserves the actual window shape;
-                    // StreamOrientation chooses portrait vs landscape from that same shape so a
-                    // portrait app is not forced into a landscape canvas with side bars.
+                    // Preserve that shape inside the portrait viewport; zoom and pan stay local.
                     VideoFrameRendererView(
                         pixelBuffer: rendererVM.latestPixelBuffer,
                         displayMode: .fitDisplay,
@@ -373,14 +404,8 @@ struct AppStreamBrowserView: View {
                         onLongPressEnded: { input.releaseDragLock() },
                         onHoverDelta: { dx, dy in input.relativePointerMove(deltaX: dx, deltaY: dy) }
                     )
-                    .allowsHitTesting(!keyboardActive)
-                    if videoStalled {
-                        VStack(spacing: 8) {
-                            Text("Waiting for video…").font(.headline)
-                            Button("Retry video") { sessionCoordinator.requestKeyframeRefresh(reason: "Stalled app stream") }
-                                .buttonStyle(.borderedProminent)
-                        }.padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    }
+                    .allowsHitTesting(!keyboardActive && canInteract)
+
                 } else {
                     VStack(spacing: 12) {
                         ProgressView().tint(.white)
@@ -392,9 +417,21 @@ struct AppStreamBrowserView: View {
                 }
 
             }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                streamTopBar(name: name)
-                    .background(.black.opacity(0.28))
+            .overlay(alignment: .top) {
+                if AppStreamVideoHealth.needsRecovery(lastDecodedAt: rendererVM.lastDecodedAt,
+                    startedAt: videoStartedAt, now: videoHealthCheckTime) {
+                    AppStreamVideoRecoveryBar {
+                        sessionCoordinator.requestKeyframeRefresh(reason: "Stalled app stream")
+                    }
+                    .padding(12)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if let notice = vm.sizingNotice, !keyboardActive {
+                    Text(notice).font(.caption).padding(8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .padding(.bottom, 12).allowsHitTesting(false)
+                }
             }
             .overlay(alignment: .bottom) {
                 if keyboardActive {
@@ -404,14 +441,16 @@ struct AppStreamBrowserView: View {
                         onKey: { keyCode, modifiers in input.pressKey(keyCode, modifiers: modifiers) },
                         onDismiss: { keyboardActive = false }
                     )
+                    .allowsHitTesting(canInteract)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .padding(.bottom, keyboardOverlayBottomPad)
                 }
             }
-            .task {
+            .task(id: vm.streamedWindow?.windowID) {
+                videoStartedAt = ProcessInfo.processInfo.systemUptime
                 while !Task.isCancelled {
-                    videoStalled = environment.webRTCSessionManager.streamDiagnostics.isStalled()
-                    do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                    videoHealthCheckTime = ProcessInfo.processInfo.systemUptime
+                    do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
                 }
             }
             .onAppear {
@@ -420,17 +459,20 @@ struct AppStreamBrowserView: View {
             }
             .onChangeCompat(of: proxy.size) { newSize in
                 configureInteraction(viewSize: newSize)
-                vm.updateClientViewport(size: newSize)
-                resetViewportZoom()
+                if !keyboardActive { vm.updateClientViewport(size: newSize) }
+                viewportOffset = clampedViewportOffset(viewportOffset, zoom: viewportZoom, in: newSize)
             }
             .onChangeCompat(of: vm.streamedWindow) { _ in
                 configureInteraction(viewSize: proxy.size)
-                resetViewportZoom()
+                viewportOffset = clampedViewportOffset(viewportOffset, zoom: viewportZoom, in: proxy.size)
             }
             .background(AppStreamKeyboardInsetReader { inset in
                 withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { keyboardOverlayBottomPad = inset }
             })
 
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            streamTopBar(name: name).background(.black.opacity(0.28))
         }
         .ignoresSafeArea(edges: [.horizontal, .bottom])
     }
@@ -480,6 +522,23 @@ struct AppStreamBrowserView: View {
             .accessibilityLabel(adjustsViewport ? "Done adjusting" : "Adjust view")
             .accessibilityHint("Switch between controlling the Mac and moving or zooming the picture")
             Menu {
+                Section("View on this device") {
+                    Button("Fit window", systemImage: "arrow.down.right.and.arrow.up.left") {
+                        input.releaseDragLock()
+                        resetViewportZoom()
+                        adjustsViewport = false
+                    }
+                    Button("Larger text (2×)", systemImage: "plus.magnifyingglass") {
+                        input.releaseDragLock()
+                        viewportZoom = 2
+                        viewportOffset = .zero
+                        adjustsViewport = true
+                    }
+                }
+                Section("Mac window") {
+                    Button("Adaptive resize") { vm.setSizingMode(.adaptive) }
+                    Button("Original Size") { vm.setSizingMode(.original) }
+                }
                 Picker("Quality", selection: $qualityMode) {
                     Text("Auto").tag("auto")
                     Text("Sharper text").tag("quality")
@@ -530,6 +589,7 @@ struct AppStreamBrowserView: View {
 
     private func configureInteraction(viewSize: CGSize) {
         input.sessionID = environment.sessionCoordinator.activeSessionID
+        input.isEnabled = canInteract
         if let window = vm.streamedWindow {
             input.setWindow(DisplayDescriptor(
                 id: window.windowID,
@@ -744,6 +804,7 @@ private struct AppStreamApplicationRow: View {
                 if isFavorite { Image(systemName: "star.fill").foregroundStyle(PR.accent) }
                 Image(systemName: "chevron.right").foregroundStyle(PR.dim)
             }.padding(14).frame(maxWidth: .infinity, minHeight: 60)
+                .contentShape(Rectangle())
                 .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous), isInteractive: true)
         }.buttonStyle(PRGlassPressButtonStyle())
         .accessibilityLabel(application.name)
@@ -760,20 +821,143 @@ private struct AppStreamApplicationRow: View {
     }
 }
 
+/// Read frame freshness at render time, rather than caching a stale Boolean between polls.
+enum AppStreamVideoHealth {
+    static func isStalled(lastDecodedAt: TimeInterval?, now: TimeInterval) -> Bool {
+        guard let lastDecodedAt else { return true }
+        return now - lastDecodedAt > 5
+    }
+
+    static func needsRecovery(lastDecodedAt: TimeInterval?, startedAt: TimeInterval, now: TimeInterval) -> Bool {
+        now - startedAt > 5 && isStalled(lastDecodedAt: lastDecodedAt, now: now)
+    }
+}
+
+struct AppStreamVideoRecoveryBar: View {
+    let onRetry: () -> Void
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                Label("Video delayed", systemImage: "wifi.exclamationmark")
+                    .font(.subheadline)
+                Spacer(minLength: 8)
+                Button("Retry video", action: onRetry)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(minHeight: 44)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Video delayed", systemImage: "wifi.exclamationmark")
+                Button("Retry video", action: onRetry).frame(minHeight: 44)
+            }
+            .font(.subheadline)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: 560)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
 struct AppStreamGestureHelpView: View {
     @Environment(\.dismiss) private var dismiss
+
     var body: some View {
         NavigationStack {
-            List {
-                Label("Tap to click; double-tap to double-click.", systemImage: "hand.tap")
-                Label("Tap with two fingers to right-click.", systemImage: "hand.point.up.left")
-                Label("Move two fingers to scroll.", systemImage: "arrow.up.arrow.down")
-                Label("Choose Adjust view to pinch and pan the picture, then Done adjusting to control the Mac. Use 1× to reset.", systemImage: "plus.magnifyingglass")
-                Label("Long-press and move to drag. Lift your finger to release.", systemImage: "lock.open")
-                Label("Use the keyboard button to type into the Mac app.", systemImage: "keyboard")
-            }.navigationTitle("Stream controls")
-                .toolbar { Button("Done") { dismiss() } }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    Text("Your Mac, at your fingertips.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    AppStreamControlHelpSection()
+                    AppStreamPictureHelpSection()
+                }
+                .frame(maxWidth: 560)
+                .padding(20)
+                .frame(maxWidth: .infinity)
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("Stream controls")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Button("Done") { dismiss() }
+                    .font(.headline)
+                    .frame(maxWidth: 560, minHeight: 50)
+                    .frame(maxWidth: .infinity)
+                    .background(.tint, in: RoundedRectangle(cornerRadius: 16))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(.regularMaterial)
+            }
         }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+}
+
+private struct AppStreamControlHelpSection: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Control the Mac")
+                .font(.title3.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            VStack(spacing: 20) {
+                AppStreamHelpRow(symbol: "hand.tap", title: "Click", detail: "Tap once to click. Tap twice to double-click.")
+                AppStreamHelpRow(symbol: "hand.point.up.left", title: "Right-click", detail: "Tap with two fingers.")
+                AppStreamHelpRow(symbol: "arrow.up.arrow.down", title: "Scroll", detail: "Slide two fingers up or down.")
+                AppStreamHelpRow(symbol: "hand.draw", title: "Drag", detail: "Touch and hold, then move. Lift to release.")
+                AppStreamHelpRow(symbol: "keyboard", title: "Type", detail: "Tap the keyboard button to type in the Mac app.")
+            }
+            .padding(18)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+        }
+    }
+}
+
+private struct AppStreamPictureHelpSection: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Adjust the picture")
+                .font(.title3.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            VStack(spacing: 20) {
+                AppStreamHelpRow(symbol: "viewfinder", title: "Zoom and move", detail: "Tap Adjust view, then pinch to zoom or drag to move the picture.")
+                AppStreamHelpRow(symbol: "checkmark", title: "Return to control", detail: "Tap the checkmark when you’re done adjusting.")
+                AppStreamHelpRow(symbol: "ellipsis.circle", title: "Find a comfortable size", detail: "Open the ••• menu. Choose Fit window to see everything or Larger text (2×) to zoom in.")
+            }
+            .padding(18)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+            Text("Adjust view moves the picture on this device. It doesn’t resize the Mac window.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct AppStreamHelpRow: View {
+    let symbol: String
+    let title: LocalizedStringKey
+    let detail: LocalizedStringKey
+    @ScaledMetric(relativeTo: .body) private var iconSize = 24
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: symbol)
+                .font(.system(size: iconSize, weight: .medium))
+                .foregroundStyle(.tint)
+                .frame(width: iconSize + 8, height: iconSize + 8)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline)
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

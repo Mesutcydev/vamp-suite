@@ -65,7 +65,15 @@ struct VampStreamRootView: View {
         self.sessionCoordinator = environment.sessionCoordinator
     }
 
-    private var isConnected: Bool { sessionCoordinator.activeSessionID != nil }
+    static func shouldPresentSession(sessionID: UUID?, phase: ClientSessionCoordinator.SessionPhase) -> Bool {
+        // The coordinator allocates an ID before negotiation. A failed attempt
+        // can still have that ID, so it must not hide the connection error.
+        sessionID != nil && phase != .error && phase != .idle
+    }
+
+    private var isConnected: Bool {
+        Self.shouldPresentSession(sessionID: sessionCoordinator.activeSessionID, phase: sessionCoordinator.phase)
+    }
     private var isConnecting: Bool {
         connectingName != nil && !isConnected && sessionCoordinator.phase != .error
     }
@@ -85,20 +93,6 @@ struct VampStreamRootView: View {
         }
         .onChangeCompat(of: sessionCoordinator.phase) { phase in
             if phase == .error { connectingName = nil }
-        }
-        // Match the phone orientation to the resolved Mac window instead of assuming every app
-        // is landscape. The renderer and input mapper both preserve that same aspect ratio.
-        .onChangeCompat(of: isStreamingApp) { streaming in
-            let aspect = streaming
-                ? appStream.streamedWindow.map { $0.pointWidth / max($0.pointHeight, 1) }
-                : nil
-            StreamOrientation.set(aspect: aspect)
-        }
-        .onChangeCompat(of: appStream.streamedWindow) { window in
-            guard isStreamingApp else { return }
-            StreamOrientation.set(
-                aspect: window.map { $0.pointWidth / max($0.pointHeight, 1) }
-            )
         }
         .sheet(isPresented: $showVampAssistantPairing) {
             BeetCodePairingView(model: vampAssistant)
@@ -147,6 +141,7 @@ struct VampStreamRootView: View {
             if let caps = sessionCoordinator.negotiatedCapabilities {
                 if caps.supportsAppStreaming {
                     AppStreamBrowserView(environment: environment, vm: appStream) {
+                        appStream.forgetSelection()
                         Task { await sessionCoordinator.disconnect() }
                     }
                 } else {

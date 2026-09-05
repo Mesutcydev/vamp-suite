@@ -105,6 +105,16 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "0.1.18",
+          "buildVersion": "32",
+          "marketingVersion": "0.1.18 (32)",
+          "date": "2026-09-05",
+          "localizedDescription": "Removes the startup Waiting for video flash. Immediate frame feedback, compact recovery for sustained video delays, and accessible Retry controls. Portrait-only.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-suite-2.3.0-build-74/VampStream-iOS-0.1.18-build-32-altstore-unsigned.ipa",
+          "size": 13733451,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "0.1.17",
           "buildVersion": "31",
           "marketingVersion": "0.1.17 (31)",

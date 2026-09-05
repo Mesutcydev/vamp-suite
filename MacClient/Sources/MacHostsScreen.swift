@@ -241,7 +241,7 @@ struct MacHostsScreen: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Don’t have Vamp Sync yet?")
                     .font(.headline)
-                Text("Install the free Vamp Sync app on the Mac you want to control.")
+                Text("Control the whole desktop or choose a single app window. Install Vamp Sync on the remote Mac.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -388,7 +388,7 @@ struct MacHostsScreen: View {
                 .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("Vamp Assistant")
+                Text("Desktop via Vamp Assistant")
                     .font(.headline)
                 Text(assistant.savedAddress ?? "Private LAN or Tailscale control · port 9575")
                     .font(.subheadline)
@@ -842,7 +842,7 @@ private struct HostCardView: View {
     private var productName: String {
         let capabilities = row.endpoint.metadata.capabilities
         if capabilities.contains(.supportsAppStreaming), !capabilities.contains(.supportsMultiDisplay) {
-            return "Vamp Sync"
+            return capabilities.contains(.supportsDesktopControl) ? "Desktop + Apps" : "Apps · Update Sync for desktop"
         }
         return "Legacy host"
     }

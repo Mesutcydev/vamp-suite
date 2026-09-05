@@ -120,7 +120,7 @@ struct MacAssistantRemoteView: View {
         }
         .background(Color.black)
         .modifier(MacSessionWidthReader(isCompact: $isCompactToolbar))
-        .toolbar { assistantWindowToolbar(session) }
+        .toolbar { assistantWindowToolbar(session).compactSessionChrome() }
         .focusedSceneValue(\.remoteDisplayMode, $preferences.displayModeRaw)
         .focusedSceneValue(\.keepsDisplayShortcutsLocal, preferences.keepsDisplayShortcutsLocal)
         .onAppear(perform: loadPreferences)
@@ -167,7 +167,7 @@ struct MacAssistantRemoteView: View {
                     qualityColor: renderer.isReceiving ? .green : .orange,
                     qualityLabel: renderer.isReceiving ? "Assistant" : "Waiting for video",
                     differentiateWithoutColor: differentiateWithoutColor)
-                    .frame(maxWidth: isCompactToolbar ? 140 : 190)
+                    .frame(maxWidth: isCompactToolbar ? 170 : 220)
             }
             .buttonStyle(.plain)
             .help("Connection details")

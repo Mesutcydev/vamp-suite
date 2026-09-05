@@ -310,8 +310,7 @@ public final class HostApplicationRegistry {
         }
     }
 
-    /// Assistant-compatible window fitting: match the phone aspect, fill as much of the display
-    /// as that aspect allows, and keep the complete window visible.
+    /// Fit into the host display while preserving the window's useful content width.
     static func targetWindowFrame(
         current: CGRect,
         display: CGRect,
@@ -325,28 +324,11 @@ public final class HostApplicationRegistry {
             width: max(display.width - 48, 1),
             height: max(display.height - 76, 1)
         )
-        let currentSize = CGSize(
-            width: min(max(current.width, 1), available.width),
-            height: min(max(current.height, 1), available.height)
-        )
-        let currentAspect = currentSize.width / currentSize.height
-        var size = aspect < currentAspect
-            ? CGSize(width: currentSize.height * aspect, height: currentSize.height)
-            : CGSize(width: currentSize.width, height: currentSize.width / aspect)
-        // Scale the aspect-matched shape *into* the display instead of only shrinking toward it.
-        // Shrink-only turned a small source window — Terminal's default is about 528x374 — into
-        // roughly 172x374, which the phone then upscaled nearly 3x: giant text and ~31 columns.
-        //
-        // The cap keeps the capture within what a phone can use and decode. A phone screen is at
-        // most ~1290x2796 px, so 1400 points already covers it on a 2x Mac; without it a 5K/6K
-        // display would produce a capture taller than the client's H.264 decoder accepts.
-        let maxEdgePoints: CGFloat = 1400
-        let fitScale = min(
-            min(available.width / size.width, available.height / size.height),
-            maxEdgePoints / max(size.width, size.height)
-        )
-        size.width = max(1, floor(size.width * fitScale))
-        size.height = max(1, floor(size.height * fitScale))
+        let fitted = AdaptiveWindowSizing.size(
+            original: DesktopSize(width: current.width, height: current.height),
+            available: DesktopSize(width: available.width, height: available.height),
+            viewport: DesktopSize(width: aspect, height: 1), bundleIdentifier: "")
+        let size = CGSize(width: fitted.width, height: fitted.height)
         let maxX = max(available.minX, available.maxX - size.width)
         let maxY = max(available.minY, available.maxY - size.height)
         return CGRect(
@@ -355,6 +337,17 @@ public final class HostApplicationRegistry {
             width: size.width,
             height: size.height
         )
+    }
+
+    /// A bounds match must be unique. Never guess the focused window when AX and
+    /// the capture inventory disagree (or two windows have identical bounds).
+    static func matchingWindowIndex(frames: [CGRect?], target: CGRect) -> Int? {
+        let matches = frames.indices.filter { index in
+            guard let frame = frames[index] else { return false }
+            return abs(frame.minX - target.minX) < 2 && abs(frame.minY - target.minY) < 2
+                && abs(frame.width - target.width) < 2 && abs(frame.height - target.height) < 2
+        }
+        return matches.count == 1 ? matches[0] : nil
     }
 
     static func displayBounds(containing window: CGRect) -> CGRect {

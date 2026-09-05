@@ -129,6 +129,11 @@ public struct ApplicationListSnapshotMessage: Codable, Hashable, Sendable {
 /// Client → host: point the live stream at `target`. For an application target that
 /// is not running, the host launches/activates it and resolves its front window
 /// when `launchIfNeeded` is true.
+public enum AppWindowSizingMode: String, Codable, Hashable, Sendable {
+    case adaptive
+    case original
+}
+
 public struct StreamTargetSwitchRequestMessage: Codable, Hashable, Sendable {
     public var requestID: UUID?
     public var sessionID: UUID
@@ -140,6 +145,9 @@ public struct StreamTargetSwitchRequestMessage: Codable, Hashable, Sendable {
     /// resizes the streamed window to this aspect so it fills the phone with no letterbox bars.
     /// Optional → old clients omit it (decodes to nil) and the window is captured as-is.
     public var clientViewportAspect: Double?
+    public var viewportWidth: Double?
+    public var viewportHeight: Double?
+    public var sizingMode: AppWindowSizingMode?
 
     public init(
         sessionID: UUID,
@@ -148,6 +156,9 @@ public struct StreamTargetSwitchRequestMessage: Codable, Hashable, Sendable {
         senderDeviceID: UUID,
         requestedAt: Date = Date(),
         clientViewportAspect: Double? = nil,
+        viewportWidth: Double? = nil,
+        viewportHeight: Double? = nil,
+        sizingMode: AppWindowSizingMode? = nil,
         requestID: UUID? = nil
     ) {
         self.sessionID = sessionID
@@ -156,6 +167,9 @@ public struct StreamTargetSwitchRequestMessage: Codable, Hashable, Sendable {
         self.senderDeviceID = senderDeviceID
         self.requestedAt = requestedAt
         self.clientViewportAspect = clientViewportAspect
+        self.viewportWidth = viewportWidth
+        self.viewportHeight = viewportHeight
+        self.sizingMode = sizingMode
         self.requestID = requestID
     }
 }
@@ -164,6 +178,7 @@ public struct StreamTargetSwitchRequestMessage: Codable, Hashable, Sendable {
 /// `status == .failed` when a live window disappears (window closed / app quit) so
 /// the client can drop back to the app browser instead of freezing on a dead frame.
 public struct StreamTargetSwitchResultMessage: Codable, Hashable, Sendable {
+    public var appliedSizingMode: AppWindowSizingMode?
     public var requestID: UUID?
     public var sessionID: UUID
     public var resolvedTarget: StreamTarget
@@ -189,8 +204,10 @@ public struct StreamTargetSwitchResultMessage: Codable, Hashable, Sendable {
         scaleFactor: Double? = nil,
         startedAt: Date,
         completedAt: Date = Date(),
-        requestID: UUID? = nil
+        requestID: UUID? = nil,
+        appliedSizingMode: AppWindowSizingMode? = nil
     ) {
+        self.appliedSizingMode = appliedSizingMode
         self.sessionID = sessionID
         self.resolvedTarget = resolvedTarget
         self.senderDeviceID = senderDeviceID

@@ -58,3 +58,24 @@ public enum StreamScaling {
         }
     }
 }
+
+
+/// Window layout is independent of capture resolution. Preserve useful content width even
+/// when a portrait phone cannot accommodate a desktop app at its exact aspect ratio.
+public enum AdaptiveWindowSizing {
+    public static func size(original: DesktopSize, available: DesktopSize,
+                            viewport: DesktopSize, bundleIdentifier: String) -> DesktopSize {
+        guard original.width.isFinite, original.height.isFinite,
+              available.width.isFinite, available.height.isFinite,
+              viewport.width.isFinite, viewport.height.isFinite,
+              original.width > 0, original.height > 0, available.width > 0,
+              available.height > 0, viewport.width > 0, viewport.height > 0 else { return original }
+        let aspect = min(max(viewport.width / viewport.height, 0.25), 4)
+        let maxHeight = min(available.height, 1400)
+        let flexible = bundleIdentifier.lowercased() == "com.apple.safari"
+        let minimumWidth = min(available.width, flexible ? min(original.width, 600) : original.width)
+        let height = min(maxHeight, available.width / aspect)
+        let width = min(available.width, max(minimumWidth, height * aspect))
+        return DesktopSize(width: floor(width), height: floor(height))
+    }
+}

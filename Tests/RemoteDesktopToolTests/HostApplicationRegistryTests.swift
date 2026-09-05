@@ -199,7 +199,7 @@ final class HostApplicationRegistryTests: XCTestCase {
             requestedAspect: 390.0 / 844.0
         )
 
-        XCTAssertEqual(frame.width / frame.height, 390.0 / 844.0, accuracy: 0.002)
+        XCTAssertGreaterThanOrEqual(frame.width, 1200)
         XCTAssertGreaterThanOrEqual(frame.minX, 24)
         XCTAssertGreaterThanOrEqual(frame.minY, 52)
         XCTAssertLessThanOrEqual(frame.maxX, 1_896)
@@ -225,9 +225,9 @@ final class HostApplicationRegistryTests: XCTestCase {
             display: CGRect(x: 0, y: 0, width: 1_440, height: 900),
             requestedAspect: 390.0 / 844.0
         )
-        XCTAssertEqual(frame.width / frame.height, 390.0 / 844.0, accuracy: 0.005)
+        XCTAssertGreaterThanOrEqual(frame.width, 528)
         XCTAssertEqual(frame.height, 824, accuracy: 1, "should fill the usable display height")
-        XCTAssertGreaterThan(frame.width, 370, "roughly 55 columns of Terminal, not 31")
+        XCTAssertGreaterThanOrEqual(frame.width, 528, "preserve the original Terminal content width")
         XCTAssertLessThanOrEqual(frame.maxY, 876, "must stay inside the usable display area")
     }
 
@@ -240,6 +240,49 @@ final class HostApplicationRegistryTests: XCTestCase {
         )
         XCTAssertLessThanOrEqual(max(frame.width, frame.height), 1_400)
         XCTAssertEqual(frame.width / frame.height, 390.0 / 844.0, accuracy: 0.005)
+    }
+
+    func testWindowMatchRejectsMissingAndAmbiguousCandidates() {
+        let target = CGRect(x: 100, y: 100, width: 900, height: 700)
+        XCTAssertNil(HostApplicationRegistry.matchingWindowIndex(frames: [nil, CGRect(x: 500, y: 200, width: 900, height: 700)], target: target))
+        XCTAssertNil(HostApplicationRegistry.matchingWindowIndex(frames: [target, target], target: target))
+        XCTAssertEqual(HostApplicationRegistry.matchingWindowIndex(frames: [nil, target], target: target), 1)
+    }
+
+    func testAdaptiveSizingAcrossAppsPhonesRotationsAndDisplays() {
+        let apps = ["com.openai.codex", "com.todesktop.230313mzl4w4u92", "com.apple.Terminal", "com.apple.Safari", "com.anthropic.claudefordesktop", "unknown.app"]
+        let viewports = [(320.0, 568.0), (375, 667), (390, 844), (393, 852), (430, 932), (440, 956), (507, 1024)]
+        let displays = [(1366.0, 768.0), (1440, 900), (1920, 1080), (2560, 1440)]
+        for app in apps {
+            for (vw, vh) in viewports {
+                for (dw, dh) in displays {
+                    for rotated in [false, true] {
+                        let original = DesktopSize(width: app == "com.apple.Terminal" ? 640 : 1100, height: 700)
+                        let available = DesktopSize(width: dw - 48, height: dh - 76)
+                        let viewport = DesktopSize(width: rotated ? vh : vw, height: rotated ? vw : vh)
+                        let size = AdaptiveWindowSizing.size(original: original, available: available, viewport: viewport, bundleIdentifier: app)
+                        XCTAssertGreaterThanOrEqual(size.width, app == "com.apple.Safari" ? 600 : original.width, app)
+                        XCTAssertLessThanOrEqual(size.width, available.width)
+                        XCTAssertLessThanOrEqual(size.height, min(available.height, 1400))
+                        XCTAssertGreaterThan(size.height, 0)
+                        // Returning to a prior orientation uses the original baseline, never the
+                        // previous resized width (which otherwise grows cumulatively).
+                        XCTAssertEqual(size, AdaptiveWindowSizing.size(original: original, available: available, viewport: viewport, bundleIdentifier: app))
+                    }
+                }
+            }
+        }
+    }
+
+    func testAdaptiveSizingRejectsInvalidViewportAndClampsOversizedOriginal() {
+        let original = DesktopSize(width: 2000, height: 900)
+        let available = DesktopSize(width: 1000, height: 700)
+        XCTAssertEqual(AdaptiveWindowSizing.size(original: original, available: available,
+            viewport: .zero, bundleIdentifier: "unknown"), original)
+        let size = AdaptiveWindowSizing.size(original: original, available: available,
+            viewport: DesktopSize(width: 390, height: 844), bundleIdentifier: "unknown")
+        XCTAssertEqual(size.width, 1000)
+        XCTAssertEqual(size.height, 700)
     }
 
     // MARK: - Capability advertisement (Step 13)

@@ -46,6 +46,10 @@ public struct HostCapabilityFlags: OptionSet, Codable, Hashable, Sendable {
     /// client can show its local cursor with immediate, zero-round-trip feedback.
     public static let supportsCursorlessCapture = HostCapabilityFlags(rawValue: 1 << 15)
 
+    /// Explicit opt-in to full-desktop control on a dual-mode Sync host.
+    /// Older Control and focused Stream clients keep the app-window handshake.
+    public static let supportsDesktopControl = HostCapabilityFlags(rawValue: 1 << 16)
+
     public init(rawValue: Int) {
         self.rawValue = rawValue
     }
@@ -80,6 +84,7 @@ public struct HostCapabilityFlags: OptionSet, Codable, Hashable, Sendable {
         #endif
         if isMacClient {
             flags.insert(.supportsMacClient)
+            flags.insert(.supportsDesktopControl)
             flags.insert(.supportsCursorlessCapture)
         }
         return flags
@@ -113,6 +118,7 @@ public extension HostCapabilityFlags {
         if contains(.supportsTaskPlans) { names.append("supportsTaskPlans") }
         if contains(.supportsWorkspaces) { names.append("supportsWorkspaces") }
         if contains(.supportsAppStreaming) { names.append("supportsAppStreaming") }
+        if contains(.supportsDesktopControl) { names.append("supportsDesktopControl") }
         if contains(.supportsCursorlessCapture) { names.append("supportsCursorlessCapture") }
         return names
     }
@@ -149,6 +155,8 @@ public extension HostCapabilityFlags {
                 flags.insert(.supportsTaskPlans)
             case "supportsWorkspaces":
                 flags.insert(.supportsWorkspaces)
+            case "supportsDesktopControl":
+                flags.insert(.supportsDesktopControl)
             case "supportsAppStreaming":
                 flags.insert(.supportsAppStreaming)
             case "supportsCursorlessCapture":
