@@ -45,6 +45,34 @@ enum HostClientAttachmentIdentity {
     }
 }
 
+/// Decides whether the client-liveness watchdog should reclaim a session. Pure and nonisolated so
+/// the phantom-session rule is unit-testable without a transport.
+///
+/// The client pings every 2 s while its transport reports `.connected`, so a session with no
+/// inbound traffic for `timeout` seconds has no working data channel — even when the transport
+/// itself still claims `.connected` (a half-open TCP path after an AP roam, NAT timeout, or host
+/// sleep).
+///
+/// `lastActivity == nil` must NOT mean "alive". It means the data channel never opened, which is
+/// exactly the session that used to hold `activeSessionID` forever: capture and encode kept
+/// running for nobody, and every real client was rejected as "already connected to another
+/// device" until the host process was quit.
+enum HostClientLiveness {
+    /// Seconds of client silence, or nil when the watchdog should not act.
+    static func clientSilence(
+        isStreaming: Bool,
+        isConnected: Bool,
+        lastActivity: Date?,
+        sessionStartedAt: Date,
+        now: Date,
+        timeout: TimeInterval
+    ) -> TimeInterval? {
+        guard isStreaming, isConnected else { return nil }
+        let silentFor = now.timeIntervalSince(lastActivity ?? sessionStartedAt)
+        return silentFor > timeout ? silentFor : nil
+    }
+}
+
 /// Orchestrates the complete host session lifecycle:
 ///
 /// 1. Start Bonjour advertising + signaling listener
@@ -677,6 +705,13 @@ final class HostSessionCoordinator: ObservableObject {
             return
         }
 
+        // This peer is approved. Let the signaling layer stop counting its own reconnect
+        // sockets against its connection budget, so a healthy client that drops and
+        // re-attaches is not locked out by the attempts its failure already consumed.
+        if let bonjourSignaling = signalingService as? BonjourSignalingService {
+            bonjourSignaling.noteTrustedPeer(fingerprint: fingerprint)
+        }
+
         guard let sessionTokenHex = await resolveSessionToken(from: offer, clientName: clientName) else {
             signalingService.dropCurrentConnection()
             phase = .awaitingClient
@@ -1123,16 +1158,26 @@ final class HostSessionCoordinator: ObservableObject {
 
     private func startLivenessWatchdog() {
         livenessWatchdogTask?.cancel()
+        // A session that never receives a single data-channel message used to be
+        // immortal here: `lastClientActivityAt` stayed nil, the `let … else { continue }`
+        // skipped every tick, and a half-open transport reporting `.connected` kept the
+        // capture/encode pipeline running for nobody — while `activeSessionID` made the
+        // host answer every real client with "already connected to another device".
+        // Baseline activity at session start so silence is always measurable.
+        let sessionBaseline = Date()
         livenessWatchdogTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 guard !Task.isCancelled else { break }
-                guard self.phase == .streaming,
-                      self.webRTCSessionManager.connectionState == .connected,
-                      let lastActivity = self.lastClientActivityAt else { continue }
-                let silentFor = Date().timeIntervalSince(lastActivity)
-                guard silentFor > self.clientLivenessTimeoutSeconds else { continue }
+                let silence = HostClientLiveness.clientSilence(
+                    isStreaming: self.phase == .streaming,
+                    isConnected: self.webRTCSessionManager.connectionState == .connected,
+                    lastActivity: self.lastClientActivityAt,
+                    sessionStartedAt: sessionBaseline,
+                    now: Date(),
+                    timeout: self.clientLivenessTimeoutSeconds)
+                guard let silentFor = silence else { continue }
                 self.logger.error("Client liveness timeout — no inbound traffic for \(String(format: "%.0f", silentFor))s")
                 self.connectionDebugger.connectionLost(
                     reason: "Client liveness timeout — no inbound traffic for \(String(format: "%.0f", silentFor))s while transport reported connected"
@@ -2660,19 +2705,35 @@ extension HostSessionCoordinator {
             let viewport = DesktopSize(width: request.viewportWidth ?? aspect, height: request.viewportHeight ?? 1)
             let desired = request.sizingMode == .original ? original.size : AdaptiveWindowSizing.size(
                 original: original.size, available: available, viewport: viewport, bundleIdentifier: bundleID)
-            if !Self.resizeWindow(pid: window.ownerPID, matching: window.bounds, toSize: desired, display: display) {
+            // One consolidated sizing line per resize. Geometry numbers only: never the window
+            // title or any content, which is the user's private material.
+            logger.info("""
+                Window sizing: window=\(window.windowID) pid=\(window.ownerPID) \
+                mode=\(request.sizingMode?.rawValue ?? "none", privacy: .public) \
+                viewport=\(Int(viewport.width))x\(Int(viewport.height)) \
+                display=\(Int(display.width))x\(Int(display.height)) \
+                requested=\(Int(desired.width))x\(Int(desired.height))
+                """)
+            let resizeAccepted = Self.resizeWindow(
+                pid: window.ownerPID, matching: window.bounds, toSize: desired, display: display)
+            if !resizeAccepted {
                 sizingNotice = "The selected window could not be resized safely. Keeping its current size."
             }
             try? await Task.sleep(nanoseconds: 350_000_000)
             if let resized = applicationRegistry.windowInfo(windowID: window.windowID) { window = resized }
+            logger.info("""
+                Window sizing accepted: window=\(window.windowID) resizeApplied=\(resizeAccepted) \
+                bounds=\(Int(window.bounds.size.width))x\(Int(window.bounds.size.height)) \
+                aspect=\(String(format: "%.3f", window.bounds.size.width / max(window.bounds.size.height, 1)), privacy: .public)
+                """)
             if request.sizingMode == .original,
                abs(window.bounds.size.width - desired.width) > 2 || abs(window.bounds.size.height - desired.height) > 2 {
                 sizingNotice = "The Mac constrained the original window size to its available space."
             }
             let actualAspect = window.bounds.size.width / max(window.bounds.size.height, 1)
             if sizingNotice == nil, request.sizingMode != .original,
-               abs(actualAspect - viewport.width / max(viewport.height, 1)) > 0.05 {
-                sizingNotice = "Keeping a usable app width. Zoom or pan for a closer view."
+               abs(actualAspect - desired.width / max(desired.height, 1)) > 0.05 {
+                sizingNotice = "The Mac kept a different window shape. Zoom or pan for a closer view."
             }
         }
         guard !Task.isCancelled, activeSessionID == request.sessionID, !lockStateProvider().blocksRemoteInput else { return }

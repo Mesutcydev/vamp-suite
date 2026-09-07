@@ -60,9 +60,22 @@ public enum StreamScaling {
 }
 
 
-/// Window layout is independent of capture resolution. Preserve useful content width even
-/// when a portrait phone cannot accommodate a desktop app at its exact aspect ratio.
+/// Window layout is independent of capture resolution. The streamed window is reshaped to the
+/// client viewport's exact aspect ratio, then scaled to fill the host display, so the phone shows
+/// edge-to-edge video with no letterbox bars.
+///
+/// This is the one contract that keeps Vamp Stream's picture correct: any width floor above
+/// `height * aspect` makes the window wider than the viewport, and an aspect-fit renderer then
+/// shrinks it into a horizontal strip with black bars above and below.
 public enum AdaptiveWindowSizing {
+    /// Longest edge in points. A phone screen is at most ~1320x2868 px, so 1400 points already
+    /// covers it on a 2x Mac; without the cap a 5K/6K display would produce a capture taller
+    /// than the client's hardware decoder accepts.
+    public static let maxEdgePoints: Double = 1400
+
+    /// - Parameter bundleIdentifier: retained for source compatibility with the host and client
+    ///   call sites. Sizing is deliberately app-agnostic — matching the viewport aspect is what
+    ///   fills the phone, and per-app width exceptions reintroduce the letterbox bars.
     public static func size(original: DesktopSize, available: DesktopSize,
                             viewport: DesktopSize, bundleIdentifier: String) -> DesktopSize {
         guard original.width.isFinite, original.height.isFinite,
@@ -71,11 +84,21 @@ public enum AdaptiveWindowSizing {
               original.width > 0, original.height > 0, available.width > 0,
               available.height > 0, viewport.width > 0, viewport.height > 0 else { return original }
         let aspect = min(max(viewport.width / viewport.height, 0.25), 4)
-        let maxHeight = min(available.height, 1400)
-        let flexible = bundleIdentifier.lowercased() == "com.apple.safari"
-        let minimumWidth = min(available.width, flexible ? min(original.width, 600) : original.width)
-        let height = min(maxHeight, available.width / aspect)
-        let width = min(available.width, max(minimumWidth, height * aspect))
-        return DesktopSize(width: floor(width), height: floor(height))
+        // Clamp first so the aspect match starts from a shape the display can actually hold.
+        let currentWidth = min(max(original.width, 1), available.width)
+        let currentHeight = min(max(original.height, 1), available.height)
+        let currentAspect = currentWidth / currentHeight
+        // Match the viewport aspect exactly: shrink the long axis toward the requested shape.
+        let matchedWidth = aspect < currentAspect ? currentHeight * aspect : currentWidth
+        let matchedHeight = aspect < currentAspect ? currentHeight : currentWidth / aspect
+        // Then scale that shape *into* the display instead of leaving it small. Shrink-only
+        // turned a small source window — Terminal's default is about 528x374 — into roughly
+        // 172x374, which the phone then upscaled nearly 3x: giant text and ~31 columns.
+        let fitScale = min(
+            min(available.width / matchedWidth, available.height / matchedHeight),
+            maxEdgePoints / max(matchedWidth, matchedHeight))
+        return DesktopSize(
+            width: max(1, floor(matchedWidth * fitScale)),
+            height: max(1, floor(matchedHeight * fitScale)))
     }
 }

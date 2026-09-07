@@ -251,32 +251,46 @@ struct VampAssistantAppStreamView: View {
     }
 
     private func requestedAspect(for application: BeetCodeRemoteApplication) -> Double {
-        guard let id = application.windowID else { return viewportAspect }
-        let original = originalApplications[id] ?? application
-        let originalAspect = max(original.width, 1) / max(original.height, 1)
-        guard adaptive else { return originalAspect }
-        // Assistant exposes aspect-only resizing, not exact dimensions or window screen ID.
-        // Use the smallest reported screen to avoid promising width the server cannot retain.
-        let widths = session.status.displays?.map(\.width) ?? []
-        let heights = session.status.displays?.map(\.height) ?? []
-        guard let width = widths.min() ?? session.status.displayWidth,
-              let height = heights.min() ?? session.status.displayHeight else {
-            return max(viewportAspect, originalAspect)
-        }
-        let size = AdaptiveWindowSizing.size(
-            original: DesktopSize(width: original.width, height: original.height),
-            available: DesktopSize(width: max(width - 48, 1), height: max(height - 76, 1)),
-            viewport: DesktopSize(width: viewportAspect, height: 1),
-            bundleIdentifier: original.bundleIdentifier ?? "")
+        let size = adaptiveSize(for: application)
         return size.width / max(size.height, 1)
     }
 
     private func updateSizingNotice(_ application: BeetCodeRemoteApplication, requestedAspect: Double) {
         if !adaptive {
             errorMessage = "Original proportions restored. This Assistant API cannot restore exact window dimensions."
-        } else if abs(application.width / max(application.height, 1) - viewportAspect) > 0.05 {
-            errorMessage = "Keeping a usable app width. Zoom or pan for a closer view."
+        } else {
+            let expected = adaptiveSize(for: application)
+            let actualAspect = application.width / max(application.height, 1)
+            if abs(actualAspect - expected.width / max(expected.height, 1)) > 0.05 {
+                errorMessage = "The Mac kept a different window shape. Zoom or pan for a closer view."
+            }
         }
+    }
+
+    /// The shape this client asked the Mac to produce, using the same shared policy the
+    /// Sync host applies server-side. Notices compare against this, not the raw viewport.
+    private func adaptiveSize(for application: BeetCodeRemoteApplication) -> DesktopSize {
+        let original = application.windowID.flatMap { originalApplications[$0] } ?? application
+        guard adaptive else {
+            return DesktopSize(width: max(original.width, 1), height: max(original.height, 1))
+        }
+        // Assistant exposes aspect-only resizing, not exact dimensions or window screen ID.
+        // Use the smallest reported screen to avoid promising width the server cannot retain.
+        let widths = session.status.displays?.map(\.width) ?? []
+        let heights = session.status.displays?.map(\.height) ?? []
+        guard let width = widths.min() ?? session.status.displayWidth,
+              let height = heights.min() ?? session.status.displayHeight else {
+            // No usable display bounds from the Assistant host: still ask for the phone's
+            // shape. Falling back to `max(viewportAspect, originalAspect)` here kept a
+            // landscape Mac window landscape, which is exactly the letterboxed strip this
+            // resize exists to avoid. Only the aspect matters to the Assistant API.
+            return DesktopSize(width: viewportAspect * 1000, height: 1000)
+        }
+        return AdaptiveWindowSizing.size(
+            original: DesktopSize(width: original.width, height: original.height),
+            available: DesktopSize(width: max(width - 48, 1), height: max(height - 76, 1)),
+            viewport: DesktopSize(width: viewportAspect, height: 1),
+            bundleIdentifier: original.bundleIdentifier ?? "")
     }
 
     private func apply(_ applications: [BeetCodeRemoteApplication]) {

@@ -182,13 +182,31 @@ final class AppStreamViewModel: ObservableObject {
 
     // MARK: - Intents
 
-    func updateClientViewport(size: CGSize) {
-        guard size.width > 0, size.height > 0 else { return }
+    /// Measured viewport validity and change significance.
+    ///
+    /// Pure so the portrait-ordering and coalescing rules are unit-testable. This is the single
+    /// gate between SwiftUI layout and the host resize request: it must reject invalid/zero/
+    /// non-finite sizes (an early layout pass reports `.zero`), keep the width/height ordering the
+    /// container actually has — a portrait measurement must never become a landscape request —
+    /// and coalesce sub-2pt layout noise so control overlays and keyboard animations cannot drive
+    /// a window-resize loop on the Mac.
+    static func measuredViewport(
+        size: CGSize,
+        previous: CGSize
+    ) -> (aspect: Double, size: CGSize)? {
+        guard size.width.isFinite, size.height.isFinite,
+              size.width > 0, size.height > 0 else { return nil }
         let aspect = Double(size.width / size.height)
-        guard aspect.isFinite, (0.25...4).contains(aspect) else { return }
-        guard abs(size.width - viewportSize.width) > 2 || abs(size.height - viewportSize.height) > 2 else { return }
-        clientViewportAspect = aspect
-        viewportSize = size
+        guard aspect.isFinite, (0.25...4).contains(aspect) else { return nil }
+        guard abs(size.width - previous.width) > 2
+                || abs(size.height - previous.height) > 2 else { return nil }
+        return (aspect, size)
+    }
+
+    func updateClientViewport(size: CGSize) {
+        guard let measured = Self.measuredViewport(size: size, previous: viewportSize) else { return }
+        clientViewportAspect = measured.aspect
+        viewportSize = measured.size
         scheduleResize()
     }
 
@@ -348,6 +366,26 @@ final class AppStreamViewModel: ObservableObject {
         return max(0, 2.1 - (now - last))
     }
 
+    /// The sizing fields that go on the wire, derived from the measured viewport.
+    ///
+    /// Pure so the portrait/landscape ordering and the "don't resize a legacy host" rule are
+    /// unit-testable. Width and height are emitted in the order the container actually measured
+    /// them — they are never sorted or min/max'd, so a portrait viewport cannot arrive at the
+    /// host as a landscape aspect. The legacy `clientViewportAspect` hint is sent only once the
+    /// host has acknowledged sizing support, so an older Sync that lacks the metadata keeps the
+    /// window at its original size instead of performing the old narrow-window resize.
+    static func sizingRequestFields(
+        viewport: CGSize,
+        aspect: Double?,
+        mode: AppWindowSizingMode,
+        hostAcknowledgedSizing: Bool
+    ) -> (aspect: Double?, width: Double?, height: Double?) {
+        let width = viewport.width > 0 && viewport.width.isFinite ? Double(viewport.width) : nil
+        let height = viewport.height > 0 && viewport.height.isFinite ? Double(viewport.height) : nil
+        let sendAspect = hostAcknowledgedSizing && mode == .adaptive ? aspect : nil
+        return (sendAspect, width, height)
+    }
+
     private func performTargetRequest(_ application: RemoteApplication, windowID: String?) {
         guard let sessionID = environment.sessionCoordinator.activeSessionID else {
             status = .failed(reason: "Not connected to a Mac.")
@@ -360,13 +398,18 @@ final class AppStreamViewModel: ObservableObject {
         lastRequestedViewport = viewportSize
         if let token = sizingIntent.generation { sizingIntent.markSent(token) }
         armLaunchTimeout(name: application.name)
+        let sizing = Self.sizingRequestFields(
+            viewport: viewportSize,
+            aspect: clientViewportAspect,
+            mode: sizingMode,
+            hostAcknowledgedSizing: supportsAdaptiveSizing)
         let request = StreamTargetSwitchRequestMessage(
             sessionID: sessionID,
             target: windowID.map(StreamTarget.window) ?? .application(application.bundleIdentifier),
             senderDeviceID: environment.clientIdentity.id,
-            clientViewportAspect: supportsAdaptiveSizing && sizingMode == .adaptive ? clientViewportAspect : nil,
-            viewportWidth: viewportSize.width > 0 ? Double(viewportSize.width) : nil,
-            viewportHeight: viewportSize.height > 0 ? Double(viewportSize.height) : nil,
+            clientViewportAspect: sizing.aspect,
+            viewportWidth: sizing.width,
+            viewportHeight: sizing.height,
             sizingMode: sizingMode,
             requestID: pendingRequestID
         )

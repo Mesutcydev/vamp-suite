@@ -152,3 +152,99 @@ controls must collapse into one predictable surface.
 Validation: 607 Swift tests passed, the iOS 27 simulator suite passed with 34 tests, and
 VampMiniHost/VampTerminalApp/VampStream Release builds passed. Live physical-device
 acceptance on real apps is still outstanding.
+
+## Host audit: 0.1.21 Stream / Sync build 67
+
+Audit scope: the shared window-sizing policy (`AdaptiveWindowSizing`), the Sync host resize
+path in `HostSessionCoordinator.beginWindowStream`, the Assistant resize contract Stream
+drives (`api/control/apps/resize`, aspect-only), and the host session liveness/acceptance
+path that decides whether Stream can attach at all. The Assistant host server itself is a
+separate product outside this repository, so its behavior rides on the shared policy through
+the aspect Stream sends.
+
+### Correction to the 0.1.20 finding
+
+The previous entry recorded that narrowing portrait viewports to a 600-point readable floor
+made the phone screen fill. **That was wrong, and it did not fix the reported regression.**
+Any width floor above `height * aspect` leaves the window wider than the viewport, and Stream
+renders with an aspect-fit policy, so the picture is still letterboxed — only less severely.
+Measured on the real hardware this device pair runs (a 2560x1440 Mac M4 and an iPhone 17 Pro
+Max with a ~440x900 stream video area):
+
+| policy | host window | on-phone | black bars | screen fill |
+| --- | --- | --- | --- | --- |
+| width floor (0.1.20) | 600x824 | 390x536 | ~364 pt | ~60% |
+| aspect-exact (restored) | 439x900 | 439x900 | 0 pt | 100% |
+
+### Root cause
+
+`4d240a9` ("Release Vamp Stream 0.1.13 with adaptive app-window handling") replaced the
+proven aspect-exact fit in `HostApplicationRegistry.targetWindowFrame` with the new
+`AdaptiveWindowSizing`, whose `minimumWidth` floored the window at `original.width` (and, for
+Safari only, at 600 points). The width floor — not any client rendering, orientation, or
+quality-preset change — is what turned a correctly reshaped portrait column back into a wide
+strip. The subsequent 600-point tweak moved the floor instead of removing it.
+
+Findings and fixes:
+
+- **Portrait fit restored.** `AdaptiveWindowSizing` again matches the viewport aspect exactly
+  and scales that shape into the usable display, bounded by the 1400-point decoder cap. This
+  is the pre-regression algorithm, so the historical complaint it was written to solve — a
+  small source window staying a postage stamp the phone upscales ~3x — remains fixed, and the
+  sizing matrix asserts both properties together.
+- **Sizing is app-agnostic.** The Safari-only 600-point exception was the last per-app width
+  special case. A regression test now asserts Safari fits exactly like every other app, and
+  that aspect-fitting the result into a phone viewport leaves zero bars.
+- **Measured-viewport gate hardened (client).** Extracted as a pure, unit-tested
+  `AppStreamViewModel.measuredViewport`. It rejects invalid, zero, and non-finite sizes (the
+  first layout pass reports `.zero`), keeps the container's width/height ordering untouched so
+  a portrait measurement cannot become a landscape request, and coalesces sub-2-point layout
+  noise so keyboard animations and control overlays cannot drive a resize loop.
+- **Wire fields made explicit (client).** `AppStreamViewModel.sizingRequestFields` emits width
+  and height in measured order — never sorted or min/max'd — and keeps withholding the legacy
+  `clientViewportAspect` hint until the host acknowledges sizing support, so an older Sync
+  leaves the window at its original size.
+- **Assistant fallback corrected.** When the Assistant host reports no usable display bounds,
+  Stream previously requested `max(viewportAspect, originalAspect)`, which preserved a
+  landscape window's landscape shape — the exact strip this resize exists to avoid. It now
+  requests the phone's aspect.
+- **Resize feedback compares against the request, not the raw viewport.** With an aspect-exact
+  fit the two normally agree, so the "different window shape" notice now only appears when the
+  Mac genuinely could not honor the request.
+- **Dead sessions no longer hold the host (Sync connectivity).** The client-liveness watchdog
+  required a non-nil last-activity stamp, so a session whose data channel never opened was
+  never reclaimed: a half-open transport still reported `.connected`, capture/encode kept
+  running for nobody, and the retained `activeSessionID` made the host reject every real client
+  as "already connected to another device" until the process was quit. This was observed live —
+  the installed Sync had been encoding 2560x1440 for over two hours with **zero** established
+  sockets. Silence is now measured from session start; extracted as a pure, unit-tested
+  `HostClientLiveness` rule.
+- **Connection budget sized to the real reconnect sweep.** Sync allowed 5 signaling connections
+  per IP per minute. A client sweep can legitimately spend far more (up to three
+  `reconnectLast` attempts across several LAN/Tailscale candidates, each possibly opening a TLS
+  and a plaintext socket). Reproduced live: the 6th connection was refused at TCP accept, which
+  is unrecoverable because nothing sent afterwards can be read on an unaccepted socket. The
+  budget is now 30 per minute.
+- **Budget clearing gated on trust, not on signature.** Clearing a peer's budget previously fired
+  for any message that merely passed signature verification. A signature only proves the sender
+  owns the key it signed with, and anyone can generate a keypair — so an unauthenticated peer
+  could erase its own flood budget indefinitely and defeat the limiter. Only fingerprints the
+  trust gate has actually approved now clear their budget (`noteTrustedPeer`), wired in at the
+  point `evaluateAndPrompt` returns trusted.
+
+Verified unchanged: original-bounds restore, invalid-viewport passthrough, unique AX bounds
+matching (never the focused window or the app's first window), the 350 ms post-resize re-read,
+the two-consecutive-miss window-loss rule, capture/encoder restart on accepted geometry, and
+touch mapping through the accepted window descriptor.
+
+Validation: 626 Swift tests passed (up from 609; new coverage for aspect-exactness, display
+fill, app-agnostic sizing, viewport rejection/coalescing, wire-field ordering, the legacy-hint
+gate, the liveness rule, the reconnect budget, and trust-gated budget clearing). The 34-test
+iOS 27 simulator suite passed. The 24 Linux host tests passed. Release builds passed for
+VampMiniHost, VampTerminalApp, VampStream, and the legacy MacHost/VampTerminalHost shared-source
+verification targets. The full chain was also recomputed against the real 2560x1440 / 440x900
+geometry for six representative apps: every one now yields 0 pt of bars and 100% screen fill.
+
+Live physical-device acceptance on real apps remains outstanding and is not claimed from these
+builds and tests alone.
+

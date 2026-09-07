@@ -479,6 +479,14 @@ struct MacAssistantRemoteView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
 
+            if isUnlockSubmitting {
+                Text("Unlock request sent. Waiting for the Mac…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+            }
+
             if let unlockError {
                 Text(unlockError)
                     .font(.callout)

@@ -199,4 +199,167 @@ final class AppStreamClientTests: XCTestCase {
     func testCurrentClientAdvertisesAppStreaming() {
         XCTAssertTrue(HostCapabilityFlags.currentClient(isMacClient: false).contains(.supportsAppStreaming))
     }
+
+    // MARK: - Measured viewport (client → host geometry source of truth)
+
+    /// The portrait ordering must survive measurement untouched. A portrait container measured as
+    /// 390x794 has to reach the host as a portrait aspect; sorting or min/max'ing the pair would
+    /// silently turn the request landscape and letterbox the picture.
+    func testPortraitViewportKeepsItsOrderingAndAspect() throws {
+        let measured = try XCTUnwrap(AppStreamViewModel.measuredViewport(
+            size: CGSize(width: 390, height: 794), previous: .zero))
+        XCTAssertEqual(measured.size, CGSize(width: 390, height: 794))
+        XCTAssertEqual(measured.aspect, 390.0 / 794.0, accuracy: 0.0001)
+        XCTAssertLessThan(measured.aspect, 1, "portrait viewport must stay a portrait aspect")
+
+        let landscape = try XCTUnwrap(AppStreamViewModel.measuredViewport(
+            size: CGSize(width: 794, height: 390), previous: .zero))
+        XCTAssertEqual(landscape.aspect, 794.0 / 390.0, accuracy: 0.0001)
+        XCTAssertGreaterThan(landscape.aspect, 1, "landscape viewport must stay a landscape aspect")
+    }
+
+    /// Invalid measurements must never reach the host: the first layout pass reports `.zero`, and a
+    /// non-finite or degenerate size would produce a meaningless resize request.
+    func testInvalidViewportMeasurementsAreRejected() {
+        let invalid: [CGSize] = [
+            .zero,
+            CGSize(width: 0, height: 794),
+            CGSize(width: 390, height: 0),
+            CGSize(width: -390, height: 794),
+            CGSize(width: CGFloat.nan, height: 794),
+            CGSize(width: 390, height: CGFloat.infinity),
+        ]
+        for size in invalid {
+            XCTAssertNil(AppStreamViewModel.measuredViewport(size: size, previous: .zero),
+                "\(size) must be rejected")
+        }
+        // Aspect outside the supported 0.25...4 window is rejected too.
+        XCTAssertNil(AppStreamViewModel.measuredViewport(
+            size: CGSize(width: 10, height: 794), previous: .zero), "aspect 0.013 is too extreme")
+        XCTAssertNil(AppStreamViewModel.measuredViewport(
+            size: CGSize(width: 7_940, height: 10), previous: .zero), "aspect 794 is too extreme")
+    }
+
+    /// Layout noise must coalesce. Control overlays appearing/disappearing and keyboard animation
+    /// move the video container by a point or two; letting that through would drive a window-resize
+    /// loop on the Mac for every animation frame.
+    func testLayoutNoiseCoalescesButRealChangesPass() {
+        let baseline = CGSize(width: 390, height: 794)
+        // Sub-2pt jitter on either axis is noise.
+        XCTAssertNil(AppStreamViewModel.measuredViewport(
+            size: CGSize(width: 390.5, height: 795), previous: baseline))
+        XCTAssertNil(AppStreamViewModel.measuredViewport(
+            size: CGSize(width: 389, height: 793.5), previous: baseline))
+        XCTAssertNil(AppStreamViewModel.measuredViewport(
+            size: baseline, previous: baseline), "an unchanged size is not a change")
+
+        // A genuine viewport change (rotation, split view, keyboard taking real space) passes.
+        XCTAssertNotNil(AppStreamViewModel.measuredViewport(
+            size: CGSize(width: 390, height: 500), previous: baseline),
+            "keyboard/split-view height change must be honored")
+        XCTAssertNotNil(AppStreamViewModel.measuredViewport(
+            size: CGSize(width: 794, height: 390), previous: baseline), "rotation must be honored")
+    }
+
+    /// An accepted measurement becomes the new baseline, so a second identical reading coalesces
+    /// while continued drift still accumulates into a real change.
+    func testAcceptedMeasurementBecomesTheNextBaseline() throws {
+        let first = try XCTUnwrap(AppStreamViewModel.measuredViewport(
+            size: CGSize(width: 390, height: 794), previous: .zero))
+        XCTAssertNil(AppStreamViewModel.measuredViewport(
+            size: first.size, previous: first.size), "the same reading must not re-request")
+        let second = try XCTUnwrap(AppStreamViewModel.measuredViewport(
+            size: CGSize(width: 390, height: 400), previous: first.size))
+        XCTAssertEqual(second.size.height, 400)
+    }
+
+    // MARK: - Wire fields (what the host actually receives)
+
+    /// Width/height go out in measured order, and a portrait viewport yields a portrait
+    /// `clientViewportAspect`. This is the field the host feeds to `AdaptiveWindowSizing`, so an
+    /// inversion here is exactly the letterbox regression.
+    func testSizingRequestFieldsPreservePortraitOrdering() throws {
+        let portrait = CGSize(width: 390, height: 794)
+        let fields = AppStreamViewModel.sizingRequestFields(
+            viewport: portrait, aspect: 390.0 / 794.0, mode: .adaptive, hostAcknowledgedSizing: true)
+        let width = try XCTUnwrap(fields.width)
+        let height = try XCTUnwrap(fields.height)
+        XCTAssertEqual(width, 390)
+        XCTAssertEqual(height, 794)
+        XCTAssertLessThan(width, height, "portrait request must not be reordered into landscape")
+        XCTAssertEqual(try XCTUnwrap(fields.aspect), 390.0 / 794.0, accuracy: 0.0001)
+    }
+
+    /// The legacy aspect hint must be withheld until the host acknowledges sizing support, and in
+    /// Original mode. Otherwise an older Sync performs the historical narrow-window resize, or a
+    /// user's explicit Original Size choice is silently overridden.
+    func testSizingRequestFieldsGateTheLegacyAspectHint() {
+        let viewport = CGSize(width: 390, height: 794)
+        let aspect = 390.0 / 794.0
+
+        XCTAssertNil(AppStreamViewModel.sizingRequestFields(
+            viewport: viewport, aspect: aspect, mode: .adaptive, hostAcknowledgedSizing: false).aspect,
+            "a host that has not acknowledged sizing must not get the legacy aspect hint")
+        XCTAssertNil(AppStreamViewModel.sizingRequestFields(
+            viewport: viewport, aspect: aspect, mode: .original, hostAcknowledgedSizing: true).aspect,
+            "Original mode must not carry a resize aspect")
+        XCTAssertNotNil(AppStreamViewModel.sizingRequestFields(
+            viewport: viewport, aspect: aspect, mode: .adaptive, hostAcknowledgedSizing: true).aspect)
+
+        // Dimensions still travel in every case: they are metadata, not a resize command.
+        for acknowledged in [true, false] {
+            for mode: AppWindowSizingMode in [.adaptive, .original] {
+                let fields = AppStreamViewModel.sizingRequestFields(
+                    viewport: viewport, aspect: aspect, mode: mode, hostAcknowledgedSizing: acknowledged)
+                XCTAssertEqual(fields.width, 390)
+                XCTAssertEqual(fields.height, 794)
+            }
+        }
+    }
+
+    /// A not-yet-measured viewport must send no dimensions rather than zeros, so the host keeps its
+    /// window instead of resizing it to a degenerate size.
+    func testSizingRequestFieldsOmitUnmeasuredDimensions() {
+        let fields = AppStreamViewModel.sizingRequestFields(
+            viewport: .zero, aspect: nil, mode: .adaptive, hostAcknowledgedSizing: true)
+        XCTAssertNil(fields.width)
+        XCTAssertNil(fields.height)
+        XCTAssertNil(fields.aspect)
+    }
+
+    // MARK: - Host resize request wiring
+
+    /// A portrait viewport must produce a portrait desired size for every real Stream viewport and
+    /// every host display Stream supports. This is the end-to-end geometry the client asks for and
+    /// the Sync host applies server-side with the same shared policy.
+    func testPortraitViewportYieldsPortraitWindowOnEveryDisplay() throws {
+        let viewports: [(Double, Double)] = [
+            (320, 568), (375, 667), (390, 794), (390, 844), (393, 852), (430, 932), (440, 956),
+        ]
+        let displays: [(Double, Double)] = [(1366, 768), (1440, 900), (1920, 1080), (2560, 1440)]
+        for (vw, vh) in viewports {
+            let measured = try XCTUnwrap(AppStreamViewModel.measuredViewport(
+                size: CGSize(width: vw, height: vh), previous: .zero))
+            let fields = AppStreamViewModel.sizingRequestFields(
+                viewport: CGSize(width: vw, height: vh),
+                aspect: measured.aspect,
+                mode: .adaptive,
+                hostAcknowledgedSizing: true)
+            let requestedAspect = try XCTUnwrap(fields.aspect)
+            XCTAssertLessThan(requestedAspect, 1, "\(Int(vw))x\(Int(vh)) must request a portrait aspect")
+            for (dw, dh) in displays {
+                let available = DesktopSize(width: dw - 48, height: dh - 76)
+                let size = AdaptiveWindowSizing.size(
+                    original: DesktopSize(width: 1100, height: 700),
+                    available: available,
+                    viewport: DesktopSize(width: vw, height: vh),
+                    bundleIdentifier: "com.openai.codex")
+                let context = "\(Int(vw))x\(Int(vh)) on \(Int(dw))x\(Int(dh))"
+                XCTAssertLessThan(size.width, size.height, context)
+                XCTAssertEqual(size.width / size.height, requestedAspect, accuracy: 0.02,
+                    "\(context): host result must match the requested aspect")
+            }
+        }
+    }
 }
+

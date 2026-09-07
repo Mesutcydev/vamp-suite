@@ -199,7 +199,11 @@ final class HostApplicationRegistryTests: XCTestCase {
             requestedAspect: 390.0 / 844.0
         )
 
-        XCTAssertGreaterThanOrEqual(frame.width, 1200)
+        // A portrait request reshapes the window to the phone aspect and fills the usable
+        // display height (1080 - 76), so the phone renders it edge-to-edge without bars.
+        XCTAssertEqual(frame.width / frame.height, 390.0 / 844.0, accuracy: 0.005)
+        XCTAssertEqual(frame.height, 1_004, accuracy: 1)
+        XCTAssertLessThan(frame.width, frame.height, "portrait request must stay portrait")
         XCTAssertGreaterThanOrEqual(frame.minX, 24)
         XCTAssertGreaterThanOrEqual(frame.minY, 52)
         XCTAssertLessThanOrEqual(frame.maxX, 1_896)
@@ -217,17 +221,20 @@ final class HostApplicationRegistryTests: XCTestCase {
         XCTAssertEqual(frame.height, 1_004, accuracy: 1)
     }
 
-    /// A small source window used to be narrowed to the phone aspect and left small: Terminal's
-    /// ~528x374 default became ~172x374, about 31 columns, which the phone upscaled ~3x.
+    /// A small source window must grow toward the display instead of staying a postage stamp:
+    /// Terminal's ~528x374 default once became ~172x374 (about 31 columns), which the phone
+    /// then upscaled ~3x into giant text. The window now scales up to the usable height while
+    /// holding the phone aspect, so the capture is large enough to render crisply.
     func testSmallSourceWindowGrowsInsteadOfBecomingAPostageStamp() {
         let frame = HostApplicationRegistry.targetWindowFrame(
             current: CGRect(x: 200, y: 200, width: 528, height: 374),
             display: CGRect(x: 0, y: 0, width: 1_440, height: 900),
             requestedAspect: 390.0 / 844.0
         )
-        XCTAssertGreaterThanOrEqual(frame.width, 528)
         XCTAssertEqual(frame.height, 824, accuracy: 1, "should fill the usable display height")
-        XCTAssertGreaterThanOrEqual(frame.width, 528, "preserve the original Terminal content width")
+        XCTAssertEqual(frame.width / frame.height, 390.0 / 844.0, accuracy: 0.005)
+        XCTAssertGreaterThan(frame.width, 370, "grows well past the old ~172pt postage stamp")
+        XCTAssertGreaterThan(frame.width * frame.height, 528.0 * 374.0, "capture area must grow")
         XCTAssertLessThanOrEqual(frame.maxY, 876, "must stay inside the usable display area")
     }
 
@@ -261,13 +268,29 @@ final class HostApplicationRegistryTests: XCTestCase {
                         let available = DesktopSize(width: dw - 48, height: dh - 76)
                         let viewport = DesktopSize(width: rotated ? vh : vw, height: rotated ? vw : vh)
                         let size = AdaptiveWindowSizing.size(original: original, available: available, viewport: viewport, bundleIdentifier: app)
-                        XCTAssertGreaterThanOrEqual(size.width, app == "com.apple.Safari" ? 600 : original.width, app)
-                        XCTAssertLessThanOrEqual(size.width, available.width)
-                        XCTAssertLessThanOrEqual(size.height, min(available.height, 1400))
-                        XCTAssertGreaterThan(size.height, 0)
+                        let context = "\(app) \(Int(vw))x\(Int(vh)) rotated=\(rotated) on \(Int(dw))x\(Int(dh))"
+                        // THE regression guard: the window must match the viewport's aspect so an
+                        // aspect-fit renderer fills the phone edge-to-edge. Any width floor above
+                        // `height * aspect` widens the window and letterboxes it into a strip.
+                        let requestedAspect = viewport.width / viewport.height
+                        XCTAssertEqual(size.width / size.height, requestedAspect, accuracy: 0.02, context)
+                        // Portrait must stay portrait, never get reordered into landscape.
+                        XCTAssertEqual(size.width < size.height, viewport.width < viewport.height, context)
+                        XCTAssertLessThanOrEqual(size.width, available.width, context)
+                        XCTAssertLessThanOrEqual(size.height, min(available.height, AdaptiveWindowSizing.maxEdgePoints), context)
+                        XCTAssertGreaterThan(size.height, 0, context)
+                        // The window must actually fill the display: growing until it touches a
+                        // usable-display edge (or the 1400-point decoder cap), never left small.
+                        // For a narrow portrait shape the binding axis is the height, so test the
+                        // axis that is actually constrained rather than the longest edge.
+                        let cappedHeight = min(available.height, AdaptiveWindowSizing.maxEdgePoints)
+                        let cappedWidth = min(available.width, AdaptiveWindowSizing.maxEdgePoints)
+                        let fillRatio = max(size.width / cappedWidth, size.height / cappedHeight)
+                        XCTAssertGreaterThan(fillRatio, 0.98,
+                            "\(context): window should scale into the display, not stay small")
                         // Returning to a prior orientation uses the original baseline, never the
                         // previous resized width (which otherwise grows cumulatively).
-                        XCTAssertEqual(size, AdaptiveWindowSizing.size(original: original, available: available, viewport: viewport, bundleIdentifier: app))
+                        XCTAssertEqual(size, AdaptiveWindowSizing.size(original: original, available: available, viewport: viewport, bundleIdentifier: app), context)
                     }
                 }
             }
@@ -279,10 +302,80 @@ final class HostApplicationRegistryTests: XCTestCase {
         let available = DesktopSize(width: 1000, height: 700)
         XCTAssertEqual(AdaptiveWindowSizing.size(original: original, available: available,
             viewport: .zero, bundleIdentifier: "unknown"), original)
+        // A portrait phone viewport reshapes the oversized landscape window into a portrait
+        // column bounded by the display height, matching the phone aspect exactly.
         let size = AdaptiveWindowSizing.size(original: original, available: available,
             viewport: DesktopSize(width: 390, height: 844), bundleIdentifier: "unknown")
-        XCTAssertEqual(size.width, 1000)
         XCTAssertEqual(size.height, 700)
+        XCTAssertEqual(size.width / size.height, 390.0 / 844.0, accuracy: 0.01)
+        XCTAssertLessThan(size.width, size.height, "portrait request must produce a portrait window")
+    }
+
+    /// The regression this suite guards: a wide desktop app streamed to a portrait phone used to
+    /// keep its width floor, so the aspect-fit renderer shrank it into a strip with large black
+    /// bars above and below. The window must instead become tall and narrow at the phone's exact
+    /// aspect, filling the usable display height.
+    func testPortraitViewportReshapesWideAppsIntoFillingColumns() {
+        // Real hardware: a 1100x700 editor on a 1440x900 laptop, 390x844 phone viewport.
+        let size = AdaptiveWindowSizing.size(
+            original: DesktopSize(width: 1100, height: 700),
+            available: DesktopSize(width: 1392, height: 824),
+            viewport: DesktopSize(width: 390, height: 844),
+            bundleIdentifier: "com.openai.codex")
+        XCTAssertEqual(size.height, 823, accuracy: 1, "fills the usable display height")
+        XCTAssertEqual(size.width, 380, accuracy: 3, "narrows to the phone aspect")
+        XCTAssertEqual(size.width / size.height, 390.0 / 844.0, accuracy: 0.01)
+
+        // A landscape viewport must not be narrowed by the portrait rule.
+        let landscape = AdaptiveWindowSizing.size(
+            original: DesktopSize(width: 1100, height: 700),
+            available: DesktopSize(width: 1392, height: 824),
+            viewport: DesktopSize(width: 844, height: 390),
+            bundleIdentifier: "com.openai.codex")
+        XCTAssertEqual(landscape.width / landscape.height, 844.0 / 390.0, accuracy: 0.01)
+        XCTAssertGreaterThan(landscape.width, landscape.height)
+    }
+
+    /// Sizing is app-agnostic: a per-app width exception is what reintroduced the bars, so Safari
+    /// (the historical exception) must now fit exactly like every other app.
+    func testSizingIsAppAgnosticAndNeverLetterboxes() {
+        let available = DesktopSize(width: 2512, height: 1364)   // 2560x1440 Mac minus chrome
+        let viewport = DesktopSize(width: 390, height: 794)      // iPhone 17 Pro Max stream area
+        let originals = [
+            DesktopSize(width: 1100, height: 700),
+            DesktopSize(width: 528, height: 374),                // Terminal default
+            DesktopSize(width: 1400, height: 900),               // Safari
+            DesktopSize(width: 900, height: 600),
+        ]
+        for original in originals {
+            for app in ["com.apple.Safari", "com.openai.codex", "unknown.app"] {
+                let size = AdaptiveWindowSizing.size(
+                    original: original, available: available,
+                    viewport: viewport, bundleIdentifier: app)
+                let aspect = size.width / size.height
+                XCTAssertEqual(aspect, viewport.width / viewport.height, accuracy: 0.01,
+                    "\(Int(original.width))x\(Int(original.height)) via \(app)")
+                // Aspect-fitting this window into the phone viewport must leave no bars.
+                let videoArea = CGSize(width: 390, height: 794)
+                let fittedHeight = aspect > videoArea.width / videoArea.height
+                    ? videoArea.width / aspect : videoArea.height
+                XCTAssertEqual(fittedHeight, videoArea.height, accuracy: 8,
+                    "letterboxed: \(Int(size.width))x\(Int(size.height)) via \(app)")
+            }
+        }
+    }
+
+    /// A small source window must grow toward the display instead of staying a postage stamp the
+    /// phone upscales ~3x (the original pre-regression complaint behind `fitScale`).
+    func testSmallWindowGrowsWhileKeepingThePhoneAspect() {
+        let size = AdaptiveWindowSizing.size(
+            original: DesktopSize(width: 528, height: 374),
+            available: DesktopSize(width: 1392, height: 824),
+            viewport: DesktopSize(width: 390, height: 844),
+            bundleIdentifier: "com.apple.Terminal")
+        XCTAssertEqual(size.height, 824, "grows to fill the usable height")
+        XCTAssertGreaterThan(size.width, 528 * 0.7, "keeps readable content width")
+        XCTAssertEqual(size.width / size.height, 390.0 / 844.0, accuracy: 0.01)
     }
 
     // MARK: - Capability advertisement (Step 13)

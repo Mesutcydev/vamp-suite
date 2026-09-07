@@ -7,6 +7,57 @@ their original product names. The format follows
 
 ## [Unreleased]
 
+### Fixed: portrait app-window fit restored on both host paths
+
+- **Vamp Stream letterboxed Mac apps again.** The shared adaptive window policy had replaced the
+  aspect-exact fit with a width floor (first the window's original width, then a 600-point
+  "readable" floor), so a 1100×700 editor on a 1440×900 Mac became a 600×824 window. That is
+  wider than an iPhone's portrait aspect, and an aspect-fit renderer shrank it into a strip with
+  black bars above and below — about 61% of the screen. `AdaptiveWindowSizing` now matches the
+  viewport aspect exactly and scales that shape into the host display, bounded by the 1400-point
+  decoder cap, so the same editor becomes a tall, narrow 380×824 column and the phone renders it
+  edge-to-edge with no bars.
+- Sizing is app-agnostic again. The Safari-only 600-point exception was the last per-app width
+  special case, and any width floor above `height × aspect` reintroduces the letterbox bars.
+- Landscape viewports still keep their own aspect; a portrait measurement can never be reordered
+  into a landscape request. Stream's measured-viewport gate now rejects invalid, zero, and
+  non-finite sizes and coalesces sub-2-point layout noise, so keyboard animations and control
+  overlays cannot drive a Mac window-resize loop.
+- The legacy `clientViewportAspect` hint is still withheld until the host acknowledges sizing
+  support, so an older Vamp Sync keeps the window at its original size rather than performing the
+  historical narrow-window resize.
+- Vamp Sync resize feedback compares the accepted window shape against the requested shape, and
+  Assistant compares against the expected size from the same shared policy, so the "different
+  window shape" notice only appears when the Mac genuinely could not honor the request instead of
+  on every portrait fit.
+- Vamp Assistant streams whose host reports no usable display bounds now still ask for the phone's
+  aspect. The previous fallback took `max(viewportAspect, originalAspect)`, which kept a landscape
+  Mac window landscape — the exact strip this resize exists to avoid.
+- The host now logs one consolidated sizing line per resize: measured viewport, resolved target,
+  requested and accepted bounds, and whether the resize applied. Geometry numbers only — never
+  window titles or content.
+
+### Fixed: Vamp Stream could not reconnect to Vamp Sync
+
+- **A dead session held the host forever.** The client-liveness watchdog required a non-nil
+  last-activity stamp, so a session whose data channel never opened was never reclaimed. A
+  half-open transport still reported `.connected`, capture and encode kept running for nobody, and
+  the retained `activeSessionID` made the host answer every real client with "already connected to
+  another device" until the host process was quit. Silence is now measured from session start, so
+  a session that receives no traffic within the timeout is torn down. Extracted as a pure,
+  unit-tested `HostClientLiveness` rule.
+- **The connection budget was too tight for a legitimate reconnect.** Vamp Sync allowed 5 signaling
+  connections per IP per minute, but a client reconnect sweep can spend far more: up to three
+  `reconnectLast` attempts across several candidate endpoints (LAN and Tailscale), each possibly
+  opening a TLS socket and a plaintext one. Once exhausted, every later attempt was refused at TCP
+  accept — before the client could send anything identifying it as trusted — which is an
+  unrecoverable lockout rather than rate limiting. The budget is now 30 per minute.
+- Clearing a peer's connection budget is gated on actual trust approval. It previously fired on any
+  message that merely passed signature verification, but a signature only proves the sender owns
+  the key it signed with — anyone can generate a keypair. Only fingerprints the trust gate has
+  approved now clear their budget.
+- Vamp Sync host updated to build 67; Vamp Stream updated to 0.1.21/build 35.
+
 ### Stream portrait fit and controls
 
 - Selected Mac apps resize to a portrait shape that fits iPhone screens again. Vamp Sync keeps the adaptive sizing mode across selections and Assistant app streams request the portrait-fit resize as soon as the app opens.

@@ -62,11 +62,51 @@ public final class BonjourSignalingService: @unchecked Sendable {
     /// The connection PIN used to derive the TLS pre-shared key.
     public var connectionPIN: String?
     /// Rate limiter for incoming connections.
-    public let rateLimiter = ConnectionSecurity.ConnectionRateLimiter(maxAttempts: 5, windowSeconds: 60)
+    ///
+    /// The budget must accommodate a legitimate client reconnect sweep: `reconnectLast` retries up
+    /// to three times, each sweep can try several candidate endpoints (LAN + Tailscale), and a
+    /// TLS-capable host may see a TLS socket and a plaintext one per attempt. A tighter limit let a
+    /// client's own failed attempts exhaust the window, after which every reconnect is refused at
+    /// TCP accept — before the client can send anything that would identify it as trusted. That is
+    /// an unrecoverable lockout, not rate limiting.
+    public let rateLimiter = ConnectionSecurity.ConnectionRateLimiter(maxAttempts: 30, windowSeconds: 60)
     /// Local identity key used to sign outgoing signaling messages.
     public var identityService: CryptoIdentityService?
     /// Reject unsigned signaling messages by default.
     public var enforceSignedMessages: Bool = true
+
+    /// Fingerprints of peers this host has *approved* through the trust gate.
+    ///
+    /// A verified signature only proves the sender owns the key it signed with — anyone can
+    /// generate a keypair. Clearing a peer's connection budget on signature verification alone
+    /// would let an unauthenticated peer erase its own flood budget indefinitely and defeat the
+    /// rate limiter. The budget is therefore only cleared for a fingerprint the user has actually
+    /// trusted, which is what a reconnecting client is.
+    private var trustedPeerFingerprints: Set<String> = []
+    private let maxTrustedFingerprints = 256
+
+    /// Record a peer the trust gate has approved, so its later reconnects are not blocked by the
+    /// sockets its own failed attempts consumed.
+    public func noteTrustedPeer(fingerprint: String) {
+        let normalized = fingerprint.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        guard !trustedPeerFingerprints.contains(normalized) else { return }
+        if trustedPeerFingerprints.count >= maxTrustedFingerprints {
+            trustedPeerFingerprints.removeAll()
+        }
+        trustedPeerFingerprints.insert(normalized)
+    }
+
+    /// Internal (not private) so the trust-gated budget clearing is unit-testable, matching
+    /// `shouldAcceptMessage` above.
+    func isTrustedPeer(_ fingerprint: String?) -> Bool {
+        guard let fingerprint else { return false }
+        let normalized = fingerprint.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return lock.withLock { trustedPeerFingerprints.contains(normalized) }
+    }
 
     /// The TLS listener is deliberately exposed as state rather than inferred from
     /// the host fingerprint. A fingerprint can exist while the TLS socket failed to
@@ -250,7 +290,7 @@ public final class BonjourSignalingService: @unchecked Sendable {
             switch state {
             case .ready:
                 self.logger.info("Signaling client connected")
-                self.startReceiving(on: conn)
+                self.startReceiving(on: conn, remoteIP: remoteIP)
             case .failed(let error):
                 self.logger.error("Signaling connection failed: \(error.localizedDescription)")
                 // Don't finish the message continuation here — the listener
@@ -343,8 +383,8 @@ public final class BonjourSignalingService: @unchecked Sendable {
 
     // MARK: - Receive
 
-    private func startReceiving(on conn: NWConnection) {
-        readLengthPrefixedMessage(on: conn)
+    private func startReceiving(on conn: NWConnection, remoteIP: String? = nil) {
+        readLengthPrefixedMessage(on: conn, remoteIP: remoteIP)
     }
 
     private func storeClientConnection(_ connection: NWConnection) {
@@ -359,7 +399,7 @@ public final class BonjourSignalingService: @unchecked Sendable {
         lock.unlock()
     }
 
-    private func readLengthPrefixedMessage(on conn: NWConnection) {
+    private func readLengthPrefixedMessage(on conn: NWConnection, remoteIP: String? = nil) {
         // Read 4-byte length header
         conn.receive(minimumIncompleteLength: 4, maximumLength: 4) { [weak self] data, _, _, error in
             guard let self else { return }
@@ -387,7 +427,7 @@ public final class BonjourSignalingService: @unchecked Sendable {
 
             guard payloadLen > 0, payloadLen <= self.maxSignalingMessageBytes else {
                 self.logger.error("Invalid signaling message length: \(payloadLen)")
-                self.readLengthPrefixedMessage(on: conn)
+                self.readLengthPrefixedMessage(on: conn, remoteIP: remoteIP)
                 return
             }
 
@@ -415,6 +455,14 @@ public final class BonjourSignalingService: @unchecked Sendable {
                         } else if !self.shouldAcceptMessage(normalizedMessage) {
                             self.logger.warning("Rejected signaling message due to replay/timestamp validation")
                         } else {
+                            // Clear this peer's connection budget only once the host has
+                            // actually trusted it. A healthy client's reconnect attempts must
+                            // not be permanently blocked by the sockets its own earlier
+                            // failed attempts consumed — but a merely *self-signed* peer must
+                            // not be able to erase its flood budget (see noteTrustedPeer).
+                            if let remoteIP, self.isTrustedPeer(normalizedMessage.envelope.sender.publicKeyFingerprint) {
+                                self.rateLimiter.reset(ip: remoteIP)
+                            }
                             self.lock.lock()
                             if let continuation = self.messageContinuation {
                                 self.lock.unlock()
@@ -438,11 +486,11 @@ public final class BonjourSignalingService: @unchecked Sendable {
                     // the connection is viable; if it's actually down, stop and let the state handler
                     // drive reconnection (avoids a tight error loop on a cancelled/failed connection).
                     if conn.state == .ready {
-                        self.readLengthPrefixedMessage(on: conn)
+                        self.readLengthPrefixedMessage(on: conn, remoteIP: remoteIP)
                     }
                     return
                 }
-                self.readLengthPrefixedMessage(on: conn)
+                self.readLengthPrefixedMessage(on: conn, remoteIP: remoteIP)
             }
         }
     }
