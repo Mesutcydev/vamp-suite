@@ -139,5 +139,24 @@ final class HostLivenessWatchdogTests: XCTestCase {
         XCTAssertNotNil(silence(lastActivity: previousSession, now: 10),
             "activity from an hour ago is silence, not liveness")
     }
+
+    /// Critical safety case for Vamp Sync: an app-streaming-only session rests in `.streaming`
+    /// with **no video at all** until the user picks a window. The client still pings every 2 s,
+    /// and `receiveDataMessages()` broadcasts every envelope to the activity observer, so those
+    /// pings keep the session alive. The watchdog must never reclaim a healthy browser session
+    /// just because no video frame has arrived — that is the normal resting state, not a failure.
+    func testHealthyAppBrowserSessionWithoutVideoSurvivesOnPeriodicPings() {
+        // Simulate 10 minutes of a browser session: a ping every 2 s, no video ever.
+        var lastPing = start
+        for tick in stride(from: 2.0, through: 600.0, by: 2.0) {
+            lastPing = start.addingTimeInterval(tick)
+            // The watchdog runs every 3 s, so evaluate it slightly after each ping.
+            XCTAssertNil(silence(lastActivity: lastPing, now: tick + 1),
+                "a ping \(tick)s into the session must keep it alive")
+        }
+        // And the moment pings genuinely stop, it is reclaimed.
+        XCTAssertNotNil(silence(lastActivity: lastPing, now: 600 + 31),
+            "once pings stop, the session must be reclaimed")
+    }
 }
 
