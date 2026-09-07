@@ -221,37 +221,43 @@ struct AppStreamBrowserView: View {
 
     private var browser: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .top, spacing: AppSpacing.sm) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Apps")
-                        .font(.title2.weight(.semibold))
+                        .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(PR.fg)
+                    // The selected Mac's actual name is the primary context, not the provider.
                     Text(macName)
-                        .font(.title3.weight(.regular))
+                        .font(.subheadline)
                         .foregroundStyle(PR.fg2)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                         .font(.footnote.weight(.bold))
                         .foregroundStyle(PR.fg2)
-                        .frame(width: 36, height: 36)
-                        .prGlassSurface(in: Circle(), isInteractive: true)
+                        .frame(
+                            width: AppHostMetrics.iconControlTarget,
+                            height: AppHostMetrics.iconControlTarget)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(PRGlassPressButtonStyle())
-                .accessibilityLabel("Close host")
+                .accessibilityLabel("Close")
                 .accessibilityHint("Return to the Mac picker")
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 18)
-            .padding(.bottom, 12)
+            .padding(.horizontal, AppHostMetrics.screenInset)
+            .padding(.top, AppSpacing.lg)
+            .padding(.bottom, AppSpacing.sm)
 
             VampAppSearchField(text: $searchText)
-                .padding(.horizontal, 18)
-                .padding(.bottom, 14)
+                .padding(.horizontal, AppHostMetrics.screenInset)
+                .padding(.bottom, AppSpacing.sm)
             ScrollView {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: AppHostMetrics.cardGap) {
                     if let reason = bannerReason { banner(reason) }
 
                     if vm.applications.isEmpty {
@@ -279,16 +285,29 @@ struct AppStreamBrowserView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    /// One quiet grouped surface per section with inset separators, matching the Assistant picker
+    /// so the two providers do not look like separate mini-apps. Sentence-case headings instead of
+    /// wide all-caps utility labels.
     private func section(_ title: String, _ apps: [RemoteApplication]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title.uppercased())
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(PR.dim)
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(PR.fg2)
                 .padding(.horizontal, 4)
                 .padding(.top, 6)
-            LazyVStack(spacing: 10) {
-                ForEach(apps) { appRow($0) }
+                .accessibilityAddTraits(.isHeader)
+            // Stays lazy: "All Apps" can hold hundreds of installed applications, and an eager
+            // VStack would build every row up front.
+            LazyVStack(spacing: 0) {
+                ForEach(Array(apps.enumerated()), id: \.element.id) { index, app in
+                    if index > 0 {
+                        Divider()
+                            .padding(.leading, AppHostMetrics.cardPadding + AppHostMetrics.appIcon + AppSpacing.sm)
+                    }
+                    appRow(app)
+                }
             }
+            .appQuietSurface(isInteractive: true)
         }
     }
 
@@ -807,33 +826,98 @@ private struct AppStreamLockedStateView: View {
         }
     }
 }
+/// One app row. Compact, on a quiet grouped surface, with a consistent icon/name/context/affordance
+/// column layout. The supplied icon is drawn at its own aspect inside a fixed box — never stretched
+/// — and gets no ornamental frame of its own.
 private struct AppStreamApplicationRow: View {
     let application: RemoteApplication
     let isFavorite: Bool
     let onOpen: () -> Void
     @State private var icon: UIImage?
     private static let icons = NSCache<NSString, UIImage>()
+
+    /// A disclosure chevron belongs only where another selection level actually follows: an app
+    /// with several windows offers the Windows menu. An installed app that simply launches, or a
+    /// running app with one window, opens directly and must not imply a submenu.
+    private var hasWindowChoices: Bool { application.windowIDs.count > 1 }
+
+    /// Meaningful context for a running app is how many windows it has, which is also what decides
+    /// whether the Windows picker is reachable. Raw pixel dimensions stay out of the list.
+    private var contextLine: String? {
+        if application.isActive { return "Active now" }
+        if application.isRunning {
+            switch application.windowIDs.count {
+            case 0: return "Running · no open window"
+            case 1: return "Running · 1 window"
+            default: return "Running · \(application.windowIDs.count) windows"
+            }
+        }
+        // An installed app needs no "Installed · tap to open" narration on every row; the row is
+        // already a button and the section is already "All Apps".
+        return nil
+    }
+
     var body: some View {
         Button(action: onOpen) {
-            HStack(spacing: 13) {
+            HStack(spacing: AppSpacing.sm) {
                 Group {
-                    if let icon { Image(uiImage: icon).resizable() }
-                    else { Image(systemName: "app.dashed").resizable() }
-                }.frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 9))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(application.name).font(.body.weight(.semibold)).foregroundStyle(PR.fg)
-                    Text(application.isActive ? "Active now" : application.isRunning ? "Running" : "Installed")
-                        .font(.caption).foregroundStyle(PR.fg2)
+                    if let icon {
+                        Image(uiImage: icon)
+                            .resizable()
+                            // Fit, not fill: a non-square icon stays undistorted.
+                            .aspectRatio(contentMode: .fit)
+                    } else {
+                        Image(systemName: "app.dashed")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .padding(9)
+                            .foregroundStyle(PR.fg2)
+                            .background(PR.fg.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    }
                 }
-                Spacer()
-                if isFavorite { Image(systemName: "star.fill").foregroundStyle(PR.accent) }
-                Image(systemName: "chevron.right").foregroundStyle(PR.dim)
-            }.padding(14).frame(maxWidth: .infinity, minHeight: 60)
-                .contentShape(Rectangle())
-                .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous), isInteractive: true)
-        }.buttonStyle(PRGlassPressButtonStyle())
+                .frame(width: AppHostMetrics.appIcon, height: AppHostMetrics.appIcon)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(application.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(PR.fg)
+                        .lineLimit(1)
+                    if let contextLine {
+                        Text(contextLine)
+                            .font(.caption)
+                            .foregroundStyle(PR.fg2)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if isFavorite {
+                    Image(systemName: "star.fill")
+                        .font(.caption)
+                        .foregroundStyle(PR.accent)
+                        .accessibilityLabel("Favorite")
+                }
+                if hasWindowChoices {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(PR.dim)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, AppHostMetrics.cardPadding)
+            .padding(.vertical, AppSpacing.sm)
+            .frame(maxWidth: .infinity, minHeight: AppHostMetrics.rowMinHeight, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PRGlassPressButtonStyle())
         .accessibilityLabel(application.name)
-        .accessibilityHint("Open app. More actions include Favorites.")
+        .accessibilityValue(contextLine ?? "Installed")
+        .accessibilityHint(
+            hasWindowChoices
+                ? "Opens the app. Long-press for more actions, including choosing a window."
+                : "Opens the app. Long-press for more actions.")
         .task(id: application.iconPNGBase64) {
             guard let encoded = application.iconPNGBase64 else { icon = nil; return }
             let key = (application.id + String(encoded.hashValue)) as NSString

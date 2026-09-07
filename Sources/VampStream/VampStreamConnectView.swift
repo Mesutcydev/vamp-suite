@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 private var anonymizeStreamPreview: Bool {
     #if DEBUG
@@ -40,6 +43,12 @@ struct VampStreamConnectView: View {
     let pairedVampAssistants: [BeetCodeRemoteSessionViewModel.SavedAssistant]
     let vampAssistantAvailability: [String: BeetCodeRemoteSessionViewModel.Availability]
     let vampAssistantError: String?
+    /// A Vamp Sync connection failure. Kept separate from the Assistant error so a Sync problem
+    /// is scoped to the Sync hosts instead of being labelled as an Assistant one.
+    let vampSyncError: String?
+    /// The one Mac that refused because another device holds its session, or nil. Scoping "In use"
+    /// to a named host keeps every other Mac usable instead of implying a page-wide outage.
+    let busyHostName: String?
     let onRemoteControl: (BeetCodeRemoteSessionViewModel.SavedAssistant) -> Void
     let onAppStream: (BeetCodeRemoteSessionViewModel.SavedAssistant) -> Void
     let onForgetVampAssistant: (BeetCodeRemoteSessionViewModel.SavedAssistant) -> Void
@@ -69,6 +78,8 @@ struct VampStreamConnectView: View {
         pairedVampAssistants: [BeetCodeRemoteSessionViewModel.SavedAssistant],
         vampAssistantAvailability: [String: BeetCodeRemoteSessionViewModel.Availability],
         vampAssistantError: String?,
+        vampSyncError: String? = nil,
+        busyHostName: String? = nil,
         onRemoteControl: @escaping (BeetCodeRemoteSessionViewModel.SavedAssistant) -> Void,
         onAppStream: @escaping (BeetCodeRemoteSessionViewModel.SavedAssistant) -> Void,
         onForgetVampAssistant: @escaping (BeetCodeRemoteSessionViewModel.SavedAssistant) -> Void
@@ -80,6 +91,8 @@ struct VampStreamConnectView: View {
         self.pairedVampAssistants = pairedVampAssistants
         self.vampAssistantAvailability = vampAssistantAvailability
         self.vampAssistantError = vampAssistantError
+        self.vampSyncError = vampSyncError
+        self.busyHostName = busyHostName
         self.onRemoteControl = onRemoteControl
         self.onAppStream = onAppStream
         self.onForgetVampAssistant = onForgetVampAssistant
@@ -101,6 +114,8 @@ struct VampStreamConnectView: View {
                         pairedAssistants: pairedVampAssistants,
                         availability: vampAssistantAvailability,
                         errorMessage: vampAssistantError,
+                        syncErrorMessage: vampSyncError,
+                        busyHostName: busyHostName,
                         legacyHosts: legacyHostsForAppStream,
                         hostsVM: hostsVM,
                         onPair: onPairVampAssistant,
@@ -143,8 +158,8 @@ private struct VampStreamConnectHeader: View {
     let onChangeHost: () -> Void
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: VampSpacing.sm) {
-            VStack(alignment: .leading, spacing: VampSpacing.xxs) {
+        HStack(alignment: .firstTextBaseline, spacing: AppSpacing.sm) {
+            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                 Text(VampStreamHomeCopy.headerTitle)
                     .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(PR.fg)
@@ -161,16 +176,16 @@ private struct VampStreamConnectHeader: View {
                     .font(.footnote.weight(.semibold))
                     .labelStyle(.titleAndIcon)
                     .foregroundStyle(PR.fg2)
-                    .padding(.horizontal, VampSpacing.sm)
-                    .frame(minHeight: VampPairingMetrics.iconControlTarget)
+                    .padding(.horizontal, AppSpacing.sm)
+                    .frame(minHeight: AppHostMetrics.iconControlTarget)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text(VampStreamHomeCopy.changeHost))
             .accessibilityHint("Choose Vamp Sync, Vamp Assistant, or both")
         }
-        .padding(.horizontal, VampSpacing.screenInset)
-        .padding(.top, VampSpacing.lg)
-        .padding(.bottom, VampSpacing.md)
+        .padding(.horizontal, AppHostMetrics.screenInset)
+        .padding(.top, AppSpacing.lg)
+        .padding(.bottom, AppSpacing.md)
     }
 }
 
@@ -261,6 +276,11 @@ private struct VampAppStreamSection: View {
     let pairedAssistants: [BeetCodeRemoteSessionViewModel.SavedAssistant]
     let availability: [String: BeetCodeRemoteSessionViewModel.Availability]
     let errorMessage: String?
+    /// The Sync failure, scoped to the Sync hosts. A host-busy rejection is compacted to
+    /// "Mac is in use" so one busy Mac does not read as a page-wide outage.
+    let syncErrorMessage: String?
+    /// The one Mac that refused because another device holds its session, or nil.
+    let busyHostName: String?
     let legacyHosts: [DiscoveredHostRow]
     @ObservedObject var hostsVM: HostsListViewModel
     let onPair: () -> Void
@@ -295,21 +315,22 @@ private struct VampAppStreamSection: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: VampSpacing.cardGap) {
+            LazyVStack(alignment: .leading, spacing: AppHostMetrics.cardGap) {
                 ForEach(
                     VampStreamHomeLayout.sections(
                         source: source,
                         hasSyncHosts: !legacyHosts.isEmpty,
                         hasAssistants: !pairedAssistants.isEmpty,
                         hasAssistantError: errorMessage != nil,
+                        hasSyncError: syncErrorMessage != nil,
                         showsSyncPromo: !syncInstalled && !promoDismissedThisSession
                     )
                 ) { section in
                     homeSection(section)
                 }
             }
-            .padding(.horizontal, VampSpacing.screenInset)
-            .padding(.bottom, VampSpacing.xxl)
+            .padding(.horizontal, AppHostMetrics.screenInset)
+            .padding(.bottom, AppSpacing.xxl)
             // Scoped to the toggle's value: an availability update elsewhere on the page must not
             // animate the whole screen.
             .animation(.easeOut(duration: 0.2), value: cardStyle)
@@ -358,12 +379,12 @@ private struct VampAppStreamSection: View {
         switch section {
         case .pairHeading:
             VampStreamSectionLabel(title: VampStreamHomeCopy.pairHeading)
-                .padding(.top, VampSpacing.sm)
+                .padding(.top, AppSpacing.sm)
         case .versionFooter:
             // Subdued and centered, out of the way of the hosts it used to compete with.
             VampStreamVersionBadge()
                 .frame(maxWidth: .infinity)
-                .padding(.top, VampSpacing.sm)
+                .padding(.top, AppSpacing.sm)
         case .syncHostCard:
             VampSyncConnectCard(
                 isExpanded: syncExpanded,
@@ -373,21 +394,27 @@ private struct VampAppStreamSection: View {
                 onScan: onScan,
                 onConnectByAddress: connectByAddress)
         case .syncMacs:
-            VStack(alignment: .leading, spacing: VampSpacing.cardGap) {
+            VStack(alignment: .leading, spacing: AppHostMetrics.cardGap) {
                 // The list/grid control belongs beside the heading it controls, not up by the
                 // page title where it competes with the product name.
                 VampStreamSectionLabel(
                     title: VampStreamHomeCopy.syncMacsHeading,
                     trailing: { AnyView(cardStyleToggle) })
                 if cardStyle == .grid {
-                    LazyVGrid(columns: homeGridColumns, spacing: VampSpacing.cardGap) {
+                    LazyVGrid(columns: homeGridColumns, spacing: AppHostMetrics.cardGap) {
                         ForEach(visibleSyncHosts) { host in
-                            VampHostMacTile(host: host, onConnect: { onConnect(host) })
+                            VampHostMacTile(
+                                host: host,
+                                isBusy: isBusyHost(host),
+                                onConnect: { onConnect(host) })
                         }
                     }
                 } else {
                     ForEach(visibleSyncHosts) { host in
-                        VampHostMacCard(host: host, onConnect: { onConnect(host) })
+                        VampHostMacCard(
+                            host: host,
+                            isBusy: isBusyHost(host),
+                            onConnect: { onConnect(host) })
                     }
                 }
             }
@@ -402,6 +429,12 @@ private struct VampAppStreamSection: View {
             if let errorMessage {
                 VampStreamConnectionError(message: errorMessage)
             }
+        case .syncError:
+            if let syncErrorMessage {
+                VampStreamConnectionError(message: syncErrorMessage) {
+                    Task { await hostsVM.refresh() }
+                }
+            }
         case .assistantHostCard:
             VampAssistantFollowOnCard(
                 isExpanded: assistantExpanded,
@@ -409,12 +442,12 @@ private struct VampAppStreamSection: View {
                 onPair: onPair,
                 hasSavedAssistants: !pairedAssistants.isEmpty)
         case .assistantMacs:
-            VStack(alignment: .leading, spacing: VampSpacing.cardGap) {
+            VStack(alignment: .leading, spacing: AppHostMetrics.cardGap) {
                 VampStreamSectionLabel(
                     title: VampStreamHomeCopy.assistantMacsHeading,
                     trailing: { AnyView(cardStyleToggle) })
                 if cardStyle == .grid {
-                    LazyVGrid(columns: homeGridColumns, spacing: VampSpacing.cardGap) {
+                    LazyVGrid(columns: homeGridColumns, spacing: AppHostMetrics.cardGap) {
                         ForEach(pairedAssistants) { assistant in
                             VampAssistantMacTile(
                                 assistant: assistant,
@@ -447,8 +480,8 @@ private struct VampAppStreamSection: View {
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(PR.fg2)
                 .frame(
-                    width: VampPairingMetrics.iconControlTarget,
-                    height: VampPairingMetrics.iconControlTarget)
+                    width: AppHostMetrics.iconControlTarget,
+                    height: AppHostMetrics.iconControlTarget)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -460,11 +493,20 @@ private struct VampAppStreamSection: View {
         anonymizeStreamPreview ? Array(legacyHosts.prefix(1)) : legacyHosts
     }
 
+    /// True only for the specific Mac that refused because another device holds its session.
+    /// The coordinator reports the advertised display name; comparing case-insensitively tolerates
+    /// casing differences between Bonjour discovery and the session offer. Every other host stays
+    /// fully usable — one busy Mac must not read as a page-wide outage.
+    private func isBusyHost(_ host: DiscoveredHostRow) -> Bool {
+        guard let busyHostName, !busyHostName.isEmpty else { return false }
+        return host.title.localizedCaseInsensitiveCompare(busyHostName) == .orderedSame
+    }
+
     /// Columns are computed from the available width with a ~160-point minimum tile and a
     /// 12-point gap, falling back to one column on narrow layouts and at large text sizes so a
     /// single host spans the full width instead of sitting in a half-empty grid row.
     private var homeGridColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 160), spacing: VampSpacing.cardGap)]
+        [GridItem(.adaptive(minimum: 160), spacing: AppHostMetrics.cardGap)]
     }
 
     private func connectByAddress() {
@@ -484,7 +526,7 @@ private struct VampStreamSectionLabel: View {
     var trailing: (() -> AnyView)?
 
     var body: some View {
-        HStack(alignment: .center, spacing: VampSpacing.xs) {
+        HStack(alignment: .center, spacing: AppSpacing.xs) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(PR.fg2)
@@ -492,7 +534,7 @@ private struct VampStreamSectionLabel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let trailing { trailing() }
         }
-        .padding(.top, VampSpacing.xxs)
+        .padding(.top, AppSpacing.xxs)
         .accessibilityElement(children: .contain)
     }
 }
@@ -520,12 +562,12 @@ private struct VampSyncConnectCard: View {
             accessibilityCollapseLabel: VampStreamHomeCopy.syncConnectCollapse,
             accessibilityExpandLabel: VampStreamHomeCopy.syncConnectExpand
         ) {
-            VStack(alignment: .leading, spacing: VampSpacing.sm) {
+            VStack(alignment: .leading, spacing: AppSpacing.sm) {
                 Button(action: onScan) {
                     Label(VampStreamHomeCopy.scanSync, systemImage: "qrcode.viewfinder")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .frame(minHeight: VampPairingMetrics.controlHeight)
+                        .frame(minHeight: AppHostMetrics.controlHeight)
                 }
                 .buttonStyle(PRGlassPressButtonStyle())
                 .foregroundStyle(PR.fg)
@@ -538,7 +580,7 @@ private struct VampSyncConnectCard: View {
                 Text(VampStreamHomeCopy.orConnectByAddress)
                     .font(.footnote)
                     .foregroundStyle(PR.fg2)
-                    .padding(.top, VampSpacing.xxs)
+                    .padding(.top, AppSpacing.xxs)
 
                 TextField(
                     "",
@@ -553,8 +595,8 @@ private struct VampSyncConnectCard: View {
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
                     .textContentType(.URL)
-                    .padding(.horizontal, VampSpacing.sm)
-                    .frame(minHeight: VampPairingMetrics.controlHeight)
+                    .padding(.horizontal, AppSpacing.sm)
+                    .frame(minHeight: AppHostMetrics.controlHeight)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(PR.bg.opacity(0.55)))
@@ -594,8 +636,8 @@ private struct VampSyncConnectCard: View {
             .fill(PR.fg, style: FillStyle(eoFill: true))
             .frame(width: 20, height: 22)
             .frame(
-                width: VampPairingMetrics.providerIcon,
-                height: VampPairingMetrics.providerIcon)
+                width: AppHostMetrics.providerIcon,
+                height: AppHostMetrics.providerIcon)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(PR.fg.opacity(0.10)))
@@ -695,7 +737,7 @@ private struct VampAssistantFollowOnCard: View {
                     systemImage: "plus")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
-                    .frame(minHeight: VampPairingMetrics.controlHeight)
+                    .frame(minHeight: AppHostMetrics.controlHeight)
             }
             .buttonStyle(PRGlassPressButtonStyle())
             .foregroundStyle(PR.fg)
@@ -713,8 +755,8 @@ private struct VampAssistantFollowOnCard: View {
             .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(PR.fg)
             .frame(
-                width: VampPairingMetrics.providerIcon,
-                height: VampPairingMetrics.providerIcon)
+                width: AppHostMetrics.providerIcon,
+                height: AppHostMetrics.providerIcon)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(PR.fg.opacity(0.10)))
@@ -770,78 +812,106 @@ private struct VampAssistantMacCard: View {
     let showsAppStream: Bool
     let onForget: () -> Void
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            HStack(spacing: 12) {
-                Image(systemName: "macbook")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(PR.fg)
-                    .frame(width: 38, height: 38)
-                    .prGlassSurface(in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    private var mappedAvailability: VampHostAvailability {
+        switch availability {
+        case .reachable: return .online
+        case .unavailable: return .offline
+        case .checking: return .checking
+        }
+    }
 
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 7) {
-                        if assistant.hasGenericDisplayName {
-                            switch assistant.connectionKind {
-                            case .localNetwork:
-                                Text("Local Mac")
-                            case .tailscale:
-                                Text("Tailscale Mac")
-                            case .privateNetwork:
-                                Text("Private Mac")
-                            }
-                        } else {
-                            Text(assistant.displayName)
-                        }
-                        Text("Vamp Assistant")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(PR.dim)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(PR.fg.opacity(0.08), in: Capsule())
-                    }
-                    .font(.headline)
+    /// The provider name is already carried by the section heading and the grouping, so it is not
+    /// repeated as a badge on every row. The connection kind is the useful secondary line.
+    private var connectionDetail: String {
+        switch assistant.connectionKind {
+        case .localNetwork: return "Local network"
+        case .tailscale: return "Tailscale"
+        case .privateNetwork: return "Private network"
+        }
+    }
+
+    private var name: String {
+        guard assistant.hasGenericDisplayName else { return assistant.displayName }
+        switch assistant.connectionKind {
+        case .localNetwork: return "Local Mac"
+        case .tailscale: return "Tailscale Mac"
+        case .privateNetwork: return "Private Mac"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            HStack(spacing: AppSpacing.sm) {
+                Image(systemName: VampHostDeviceSymbol.symbol(isTerminalOnly: false))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(PR.fg)
-                    .lineLimit(1)
-                    Text(assistant.address)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(PR.dim)
+                    .frame(
+                        width: AppHostMetrics.deviceIcon,
+                        height: AppHostMetrics.deviceIcon)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(PR.fg.opacity(0.08)))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(PR.fg)
+                        .lineLimit(1)
+                    // The full endpoint stays available through the overflow copy action; the
+                    // long address is no longer the most prominent content in the row.
+                    Text(connectionDetail)
+                        .font(.caption)
+                        .foregroundStyle(PR.fg2)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 8)
-                VampAssistantAvailabilityBadge(availability: availability)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VampHostStatusLabel(availability: mappedAvailability)
+
+                // Overflow sits outside the primary action, so its taps are never swallowed by a
+                // row-wide gesture and it is not nested inside a Button.
                 Menu {
+                    Button(assistant.address) {
+                        #if canImport(UIKit)
+                        UIPasteboard.general.string = assistant.address
+                        #endif
+                    }
                     Button("Forget this Mac", role: .destructive, action: onForget)
                 } label: {
                     Image(systemName: "ellipsis.circle")
-                        .font(.title3)
-                        .foregroundStyle(PR.dim)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(PR.fg2)
+                        .frame(
+                            width: AppHostMetrics.iconControlTarget,
+                            height: AppHostMetrics.iconControlTarget)
+                        .contentShape(Rectangle())
                 }
-                .accessibilityLabel("More actions for \(assistant.displayName)")
+                .accessibilityLabel("More actions for \(name)")
             }
 
-            HStack(spacing: 10) {
-                if showsRemoteControl {
-                    VampAssistantActionButton(
-                        title: "Control Mac",
-                        systemImage: "display",
-                        action: onRemoteControl)
-                }
-                if showsAppStream {
-                    VampAssistantActionButton(
-                        title: "Stream an app",
-                        systemImage: "macwindow.badge.plus",
-                        action: onAppStream)
+            if showsRemoteControl || showsAppStream {
+                HStack(spacing: AppSpacing.sm) {
+                    if showsRemoteControl {
+                        VampAssistantActionButton(
+                            title: "Control Mac",
+                            systemImage: "display",
+                            action: onRemoteControl)
+                    }
+                    if showsAppStream {
+                        VampAssistantActionButton(
+                            title: "Browse apps",
+                            systemImage: "macwindow.badge.plus",
+                            action: onAppStream)
+                    }
                 }
             }
         }
-        .padding(14)
-        .vampHomeLiveGlass(
-            in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous),
-            phaseOffset: 2.1
-        )
+        .padding(AppHostMetrics.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appQuietSurface(isInteractive: true)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(assistant.displayName), \(assistant.address)")
+        .accessibilityLabel("\(name), \(assistant.address)")
     }
 }
 
@@ -864,43 +934,6 @@ struct VampAssistantActionButton: View {
     }
 }
 
-private struct VampAssistantAvailabilityBadge: View {
-    let availability: BeetCodeRemoteSessionViewModel.Availability
-
-    private var color: Color {
-        switch availability {
-        case .reachable: return .green
-        case .unavailable: return .red
-        case .checking: return .gray
-        }
-    }
-
-    private var text: String {
-        switch availability {
-        case .reachable: return "Online"
-        case .unavailable: return "Offline"
-        case .checking: return "Checking"
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(color)
-                .frame(width: 7, height: 7)
-                .shadow(color: color.opacity(0.65), radius: 3)
-                .vampHomeLivePulse(
-                    isActive: availability != .unavailable,
-                    period: availability == .checking ? 0.9 : 2.1,
-                    trough: 0.42
-                )
-            Text(text)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(PR.fg2)
-        }
-        .accessibilityLabel("\(text) Mac")
-    }
-}
 
 private struct VampHostConnectionSection: View {
     @ObservedObject var hostsVM: HostsListViewModel
@@ -951,46 +984,55 @@ private struct VampHostConnectionSection: View {
 
 private struct VampHostMacTile: View {
     let host: DiscoveredHostRow
+    /// True when this specific Mac refused because another device holds its session.
+    var isBusy: Bool = false
     let onConnect: () -> Void
 
     var body: some View {
         Button(action: onConnect) {
-            VStack(spacing: 12) {
-                Image(systemName: host.isTerminalOnlyHost ? "terminal" : "laptopcomputer")
-                    .font(.system(size: 44, weight: .regular))
-                    .foregroundStyle(host.isAvailable ? PR.fg : PR.dim)
+            VStack(spacing: AppSpacing.sm) {
+                Image(systemName: VampHostDeviceSymbol.symbol(isTerminalOnly: host.isTerminalOnlyHost))
+                    .font(.system(size: 24, weight: .regular))
+                    .foregroundStyle(availability == .online ? PR.fg : PR.fg2)
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 4)
-                VStack(spacing: 3) {
+                    .accessibilityHidden(true)
+                VStack(spacing: 2) {
                     Text(anonymizeStreamPreview ? "Your Mac" : host.title)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(PR.fg)
-                        .lineLimit(1)
+                        // Wraps rather than clips, so a long Mac name stays readable.
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(anonymizeStreamPreview ? "Private network" : host.endpoint.hostname)
                         .font(.caption2.monospaced())
                         .foregroundStyle(PR.dim)
                         .lineLimit(1)
                 }
-                Text(host.isTerminalOnlyHost ? "unavailable" : (host.isAvailable ? "browse apps" : "offline"))
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(host.isTerminalOnlyHost || !host.isAvailable ? PR.dim : PR.fg)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background((host.isTerminalOnlyHost || !host.isAvailable ? PR.dim : PR.fg).opacity(0.12), in: Capsule())
+                VampHostStatusLabel(availability: availability)
             }
-            .frame(maxWidth: .infinity, minHeight: 148)
-            .padding(.vertical, 18)
-            .padding(.horizontal, 10)
-            .vampHomeLiveGlass(
-                in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous),
-                phaseOffset: 1.3
-            )
+            // Compact: no oversized laptop illustration and no forced square. Height follows
+            // content so large text grows the tile instead of clipping.
+            .frame(maxWidth: .infinity)
+            .padding(AppHostMetrics.cardPadding)
+            .appQuietSurface(isInteractive: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(PRGlassPressButtonStyle())
         .disabled(host.isTerminalOnlyHost)
+        .opacity(host.isTerminalOnlyHost ? 0.62 : 1)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(anonymizeStreamPreview ? "Your Mac" : host.title)
-        .accessibilityValue(host.isTerminalOnlyHost ? "Terminal-only host" : "Ready to browse apps")
+        .accessibilityValue(
+            host.isTerminalOnlyHost
+                ? "Terminal-only host, unavailable"
+                : "\(availability.label). \(host.endpoint.hostname)")
+    }
+
+    private var availability: VampHostAvailability {
+        if host.isTerminalOnlyHost { return .offline }
+        if isBusy { return .busy }
+        return host.isAvailable ? .online : .offline
     }
 }
 
@@ -1002,43 +1044,46 @@ private struct VampAssistantMacTile: View {
 
     var body: some View {
         Button(action: onAppStream) {
-            VStack(spacing: 12) {
-                Image(systemName: "laptopcomputer")
-                    .font(.system(size: 44, weight: .regular))
-                    .foregroundStyle(availability == .reachable ? PR.fg : PR.dim)
+            VStack(spacing: AppSpacing.sm) {
+                Image(systemName: VampHostDeviceSymbol.symbol(isTerminalOnly: false))
+                    .font(.system(size: 24, weight: .regular))
+                    .foregroundStyle(availability == .reachable ? PR.fg : PR.fg2)
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 4)
-                VStack(spacing: 3) {
+                    .accessibilityHidden(true)
+                VStack(spacing: 2) {
                     Text(tileTitle)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(PR.fg)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(assistant.address)
                         .font(.caption2.monospaced())
                         .foregroundStyle(PR.dim)
                         .lineLimit(1)
                 }
-                Text(availabilityLabel)
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(PR.fg2)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(PR.fg.opacity(0.12), in: Capsule())
+                VampHostStatusLabel(availability: mappedAvailability)
             }
-            .frame(maxWidth: .infinity, minHeight: 148)
-            .padding(.vertical, 18)
-            .padding(.horizontal, 10)
-            .vampHomeLiveGlass(
-                in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous),
-                phaseOffset: 2.1
-            )
+            .frame(maxWidth: .infinity)
+            .padding(AppHostMetrics.cardPadding)
+            .appQuietSurface(isInteractive: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(PRGlassPressButtonStyle())
         .contextMenu {
             Button("Forget this Mac", role: .destructive, action: onForget)
         }
-        .accessibilityLabel("\(assistant.displayName), \(assistant.address)")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(tileTitle), \(assistant.address)")
+        .accessibilityValue("\(mappedAvailability.label). Browse apps")
+    }
+
+    private var mappedAvailability: VampHostAvailability {
+        switch availability {
+        case .reachable: return .online
+        case .unavailable: return .offline
+        case .checking: return .checking
+        }
     }
 
     private var tileTitle: String {
@@ -1050,60 +1095,83 @@ private struct VampAssistantMacTile: View {
         }
     }
 
-    private var availabilityLabel: String {
-        switch availability {
-        case .reachable: return "stream"
-        case .unavailable: return "offline"
-        case .checking: return "checking"
-        }
-    }
 }
 
+/// A compact host row: device icon, name, one concise connection line, real status, and one
+/// primary action. Quiet content surface rather than per-row glass, so the list does not read as
+/// a wall of equally important floating controls.
 private struct VampHostMacCard: View {
     let host: DiscoveredHostRow
+    /// True when this specific Mac refused because another device holds its session.
+    var isBusy: Bool = false
     let onConnect: () -> Void
+
+    private var availability: VampHostAvailability {
+        if host.isTerminalOnlyHost { return .offline }
+        if isBusy { return .busy }
+        return host.isAvailable ? .online : .offline
+    }
+
+    private var detail: String {
+        if host.isTerminalOnlyHost { return "Terminal-only host" }
+        if anonymizeStreamPreview { return "App windows · Private network" }
+        return "App windows · \(host.subtitle)"
+    }
 
     var body: some View {
         Button(action: onConnect) {
-            HStack(spacing: 13) {
-                Image(systemName: host.isTerminalOnlyHost ? "terminal" : "macbook")
-                    .font(.title3.weight(.semibold))
+            HStack(spacing: AppSpacing.sm) {
+                Image(systemName: VampHostDeviceSymbol.symbol(isTerminalOnly: host.isTerminalOnlyHost))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(PR.fg)
-                    .frame(width: 40, height: 40)
-                    .prGlassSurface(in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .frame(
+                        width: AppHostMetrics.deviceIcon,
+                        height: AppHostMetrics.deviceIcon)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(PR.fg.opacity(0.08)))
+                    .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(anonymizeStreamPreview ? "Your Mac" : host.title)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(PR.fg)
                         .lineLimit(1)
-                    Text(host.isTerminalOnlyHost ? "Terminal-only host" : (anonymizeStreamPreview ? "App windows · Private network" : "App windows · \(host.subtitle)"))
+                    Text(detail)
                         .font(.caption)
-                        .foregroundStyle(PR.dim)
+                        .foregroundStyle(PR.fg2)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 8)
-                if host.isTerminalOnlyHost {
-                    Text("Unavailable")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(PR.dim)
-                } else {
-                    Label("Browse apps", systemImage: "macwindow")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(PR.fg)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .trailing, spacing: AppSpacing.xxs) {
+                    VampHostStatusLabel(availability: availability)
+                    // "Browse apps" opens the picker; it is not labelled "Stream" because it does
+                    // not start streaming by itself.
+                    if !host.isTerminalOnlyHost {
+                        Text("Browse apps")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(PR.dim)
+                    }
                 }
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .vampHomeLiveGlass(
-                in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous),
-                phaseOffset: 1.3
-            )
+            .padding(AppHostMetrics.cardPadding)
+            .frame(maxWidth: .infinity, minHeight: AppHostMetrics.rowMinHeight, alignment: .leading)
+            .appQuietSurface(isInteractive: true)
         }
         .buttonStyle(PRGlassPressButtonStyle())
         .disabled(host.isTerminalOnlyHost)
+        .opacity(host.isTerminalOnlyHost ? 0.62 : 1)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(anonymizeStreamPreview ? "Your Mac" : host.title)
-        .accessibilityValue(host.isTerminalOnlyHost ? "Terminal-only host" : "Ready to browse apps")
+        .accessibilityValue(
+            host.isTerminalOnlyHost
+                ? "Terminal-only host, unavailable"
+                : "\(availability.label). \(detail)")
+        .accessibilityHint(
+            Text(host.isTerminalOnlyHost
+                ? "Vamp Terminal Host serves terminal tabs only and cannot stream applications."
+                : "Opens this Mac's applications"))
     }
 }
 
@@ -1136,21 +1204,57 @@ private struct VampHostEmptyState: View {
     }
 }
 
+/// A connection failure, scoped to the provider that produced it.
+///
+/// The host-busy rejection is compacted to "Mac is in use" with an actionable second line. It is
+/// a per-host condition, so the copy must not read as a page-wide outage that would make the user
+/// think the other Macs are unusable too.
 private struct VampStreamConnectionError: View {
     let message: String
+    var onRetry: (() -> Void)?
+
+    private var isHostBusy: Bool { VampStreamHostBusy.isHostBusy(message) }
 
     var body: some View {
-        Label {
-            Text(message)
-                .font(.footnote)
-                .foregroundStyle(PR.fg)
-        } icon: {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(PR.warn)
+        HStack(alignment: .top, spacing: AppSpacing.sm) {
+            Image(systemName: isHostBusy ? "person.2.fill" : "exclamationmark.triangle.fill")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(PR.fg2)
+                .frame(
+                    width: AppHostMetrics.iconControlTarget,
+                    height: AppHostMetrics.iconControlTarget,
+                    alignment: .topLeading)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                Text(isHostBusy ? VampStreamHostBusy.title : "Could not connect")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PR.fg)
+                Text(isHostBusy ? VampStreamHostBusy.detail : message)
+                    .font(.footnote)
+                    .foregroundStyle(PR.fg2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let onRetry {
+                    Button("Try again", action: onRetry)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(PR.fg)
+                        .padding(.top, AppSpacing.xxs)
+                        .accessibilityLabel("Retry connecting")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .padding(AppHostMetrics.cardPadding)
+        // A quiet, opaque content surface. Errors are content, not floating controls, so they do
+        // not carry the conspicuous glass treatment.
+        .background {
+            RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous)
+                .fill(PR.card.opacity(0.72))
+                .overlay {
+                    RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous)
+                        .strokeBorder(PR.border, lineWidth: 1)
+                }
+        }
         .accessibilityElement(children: .combine)
     }
 }

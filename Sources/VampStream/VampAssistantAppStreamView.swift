@@ -404,31 +404,37 @@ private struct VampAssistantApplicationHeader: View {
     let onClose: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            VStack(alignment: .leading, spacing: 1) {
+        HStack(alignment: .top, spacing: AppSpacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Apps")
-                    .font(.title2.weight(.semibold))
+                    .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(PR.fg)
+                // The selected Mac's actual name is the primary context; the provider is secondary.
                 Text(macName)
-                    .font(.title3.weight(.regular))
+                    .font(.subheadline)
                     .foregroundStyle(PR.fg2)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+
             Button(action: onClose) {
                 Image(systemName: "xmark")
                     .font(.footnote.weight(.bold))
                     .foregroundStyle(PR.fg2)
-                    .frame(width: 36, height: 36)
-                    .prGlassSurface(in: Circle(), isInteractive: true)
+                    .frame(
+                        width: AppHostMetrics.iconControlTarget,
+                        height: AppHostMetrics.iconControlTarget)
+                    .contentShape(Circle())
             }
             .buttonStyle(PRGlassPressButtonStyle())
-            .accessibilityLabel("Close host")
+            .accessibilityLabel("Close")
             .accessibilityHint("Return to the Vamp Assistant picker")
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 18)
-        .padding(.bottom, 12)
+        .padding(.horizontal, AppHostMetrics.screenInset)
+        .padding(.top, AppSpacing.lg)
+        .padding(.bottom, AppSpacing.sm)
     }
 }
 
@@ -440,19 +446,27 @@ private struct VampAssistantApplicationSection: View {
     let onQuit: (BeetCodeRemoteApplication) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
             Text(title)
-                .font(.caption.weight(.semibold))
-                .textCase(.uppercase)
-                .foregroundStyle(PR.dim)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(PR.fg2)
                 .padding(.horizontal, 4)
                 .padding(.top, 6)
-            VStack(spacing: 10) {
-                ForEach(applications, id: \.streamListID) { application in
+                .accessibilityAddTraits(.isHeader)
+            // One quiet grouped surface per section with inset separators, instead of a glass
+            // border around every row. Repeated per-row glass made each app look like an equally
+            // important floating control.
+            // Lazy, matching the Sync picker: "All Apps" can list hundreds of installed apps.
+            LazyVStack(spacing: 0) {
+                ForEach(Array(applications.enumerated()), id: \.element.streamListID) { index, application in
+                    if index > 0 {
+                        Divider()
+                            .padding(.leading, AppHostMetrics.cardPadding + AppHostMetrics.appIcon + AppSpacing.sm)
+                    }
                     Button { onSelect(application) } label: {
                         VampAssistantApplicationRow(
                             name: application.name,
-                            detail: application.detail,
+                            detail: application.listDetail,
                             isRunning: application.isRunning,
                             isActive: application.isActive,
                             iconPNGBase64: application.iconPNGBase64)
@@ -470,44 +484,56 @@ private struct VampAssistantApplicationSection: View {
                     }
                 }
             }
+            .appQuietSurface(isInteractive: true)
         }
     }
 }
 
 private struct VampAssistantApplicationRow: View {
     let name: String
-    let detail: String
+    /// Optional: an installed app with no window has no useful second line, and repeating
+    /// "Installed · tap to open" on every such row is noise.
+    let detail: String?
     let isRunning: Bool
     let isActive: Bool
     let iconPNGBase64: String?
 
     var body: some View {
-        HStack(spacing: 13) {
+        HStack(spacing: AppSpacing.sm) {
             applicationIcon
-                .frame(width: 42, height: 42)
+                .frame(width: AppHostMetrics.appIcon, height: AppHostMetrics.appIcon)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(.body.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(PR.fg)
                     .lineLimit(1)
-                Text(isActive ? "Active now" : (isRunning ? detail : "Installed · tap to open"))
-                    .font(.caption)
-                    .foregroundStyle(isActive ? PR.fg : PR.fg2)
-                    .lineLimit(1)
+                if let detail {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(isActive ? PR.fg : PR.fg2)
+                        .lineLimit(1)
+                }
             }
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // A chevron implies another selection level follows. A running window opens directly,
+            // so it gets a disclosure only in the sense of "go"; an installed app is launched,
+            // which reads differently, so it keeps the launch affordance.
             Image(systemName: isRunning ? "chevron.right" : "arrow.up.forward.app")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(PR.dim)
+                .accessibilityHidden(true)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, AppHostMetrics.cardPadding)
+        .padding(.vertical, AppSpacing.sm)
+        .frame(maxWidth: .infinity, minHeight: AppHostMetrics.rowMinHeight, alignment: .leading)
         .contentShape(Rectangle())
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous), isInteractive: true)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(name)
-        .accessibilityValue(isActive ? "Active now" : (isRunning ? "Running" : "Installed"))
+        .accessibilityValue(detail ?? (isRunning ? "Running" : "Installed"))
         .accessibilityHint(isRunning ? "Stream this Mac application" : "Open and stream this Mac application")
     }
 
@@ -515,14 +541,15 @@ private struct VampAssistantApplicationRow: View {
         if let iconPNGBase64,
            let data = Data(base64Encoded: iconPNGBase64),
            let image = UIImage(data: data) {
-            Image(uiImage: image).resizable().interpolation(.high)
+            // Fit, not fill: a non-square icon stays undistorted and gets no extra frame.
+            Image(uiImage: image).resizable().interpolation(.high).scaledToFit()
         } else {
             Image(systemName: "app.dashed")
                 .resizable()
                 .scaledToFit()
                 .padding(9)
                 .foregroundStyle(PR.fg2)
-                .background(PR.fg.opacity(0.08))
+                .background(PR.fg.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
     }
 }

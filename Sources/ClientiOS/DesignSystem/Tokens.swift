@@ -131,15 +131,19 @@ struct PRAppBackground: View {
                     // Brand wallpaper backdrop (shared by both iOS apps). Its explicit
                     // geometry prevents the source image's intrinsic width from widening
                     // a root ZStack and clipping the leading edge on compact iPhones.
+                    // Held below the scrim so the artwork stays recognizable but
+                    // subordinate to the interface instead of competing with labels.
                     Image("AppBackdrop")
                         .resizable()
                         .scaledToFill()
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .clipped()
-                        .opacity(colorScheme == .dark ? 0.85 : 0.55)
+                        .opacity(colorScheme == .dark ? 0.72 : 0.44)
 
-                // Legibility scrim keeps glass cards readable over the art.
-                Color.black.opacity(colorScheme == .dark ? 0.22 : 0.04)
+                // Legibility scrim keeps glass cards readable over the art. The light-scheme
+                // value used to be so faint (0.04) that bright artwork washed out row labels,
+                // metadata, and helper text; it is now a real scrim in both schemes.
+                Color.black.opacity(colorScheme == .dark ? 0.26 : 0.12)
 
                 LinearGradient(
                     colors: [
@@ -250,15 +254,18 @@ private struct PRBackdropGrid: View {
                 majorPath: &majorLines
             )
 
+            // Barely perceptible: enough structure for the native glass to refract as it moves,
+            // not enough to read as a visible grid competing with content. It is background
+            // artwork only, never a simulated glass overlay.
             context.stroke(
                 minorLines,
-                with: .color(Color.primary.opacity(colorScheme == .dark ? 0.055 : 0.045)),
+                with: .color(Color.primary.opacity(colorScheme == .dark ? 0.020 : 0.016)),
                 lineWidth: 0.5
             )
             context.stroke(
                 majorLines,
-                with: .color(Color.primary.opacity(colorScheme == .dark ? 0.105 : 0.078)),
-                lineWidth: 0.75
+                with: .color(Color.primary.opacity(colorScheme == .dark ? 0.036 : 0.028)),
+                lineWidth: 0.6
             )
         }
         .allowsHitTesting(false)

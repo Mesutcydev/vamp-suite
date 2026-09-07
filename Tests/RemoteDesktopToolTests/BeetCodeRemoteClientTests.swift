@@ -106,6 +106,49 @@ final class BeetCodeRemoteClientTests: XCTestCase {
         XCTAssertFalse(application.isRunning)
     }
 
+    // MARK: - App list context line
+
+    private func decode(_ json: String) throws -> BeetCodeRemoteApplication {
+        try JSONDecoder().decode(BeetCodeRemoteApplication.self, from: Data(json.utf8))
+    }
+
+    /// A running app's useful context is its window title, which distinguishes two windows of the
+    /// same app. Raw pixel dimensions are diagnostics, not list content.
+    func testListDetailShowsWindowTitleWithoutPixelDimensions() throws {
+        let app = try decode(#"{"windowID":42,"bundleIdentifier":"com.apple.Safari","name":"Safari","windowTitle":"Start Page","width":1280,"height":800}"#)
+        XCTAssertEqual(app.listDetail, "Start Page")
+        XCTAssertFalse(try XCTUnwrap(app.listDetail).contains("1280"))
+        XCTAssertFalse(try XCTUnwrap(app.listDetail).contains("800"))
+        // The diagnostics string keeps the dimensions for details surfaces.
+        XCTAssertTrue(app.detail.contains("1280×800"))
+    }
+
+    /// A window title identical to the app name carries no information, so it is not repeated.
+    func testListDetailDropsRedundantWindowTitle() throws {
+        let app = try decode(#"{"windowID":7,"bundleIdentifier":"com.apple.Notes","name":"Notes","windowTitle":"Notes","width":900,"height":600}"#)
+        XCTAssertEqual(app.listDetail, "Running")
+    }
+
+    func testListDetailMarksTheActiveApp() throws {
+        let app = try decode(#"{"windowID":9,"bundleIdentifier":"com.apple.Safari","name":"Safari","windowTitle":"Vamp","width":900,"height":600,"isRunning":true,"isActive":true}"#)
+        XCTAssertEqual(app.listDetail, "Active now")
+    }
+
+    /// An installed app with no window needs no second line at all. Repeating
+    /// "Installed · tap to open" on every such row is noise: the row is already a button inside an
+    /// "All Apps" section.
+    func testInstalledAppHasNoRedundantListDetail() throws {
+        let app = try decode(#"{"windowID":null,"bundleIdentifier":"com.apple.TextEdit","name":"TextEdit","width":0,"height":0,"isRunning":false,"isActive":false}"#)
+        XCTAssertNil(app.listDetail)
+    }
+
+    /// A running app that reports no window still says so, rather than falling back to a bare
+    /// pixel size or to nothing.
+    func testRunningAppWithoutTitleFallsBackToRunning() throws {
+        let app = try decode(#"{"windowID":3,"bundleIdentifier":"com.apple.Terminal","name":"Terminal","windowTitle":"","width":528,"height":374,"isRunning":true,"isActive":false}"#)
+        XCTAssertEqual(app.listDetail, "Running")
+    }
+
     func testMultipartParserHandlesSplitH264PartAndGeometry() throws {
         let boundary = "beet-test"
         let parameterSets = Data([0, 0, 0, 1, 0x67, 0x64])

@@ -188,7 +188,15 @@ struct VampStreamRootView: View {
                 onScanVampHost: { showVampHostScanner = true },
                 pairedVampAssistants: vampAssistant.savedAssistants,
                 vampAssistantAvailability: vampAssistant.availabilityByAddress,
-                vampAssistantError: vampAssistant.lastError ?? sessionCoordinator.errorMessage,
+                // Keep the two providers' failures separate. Merging the coordinator's message
+                // into the Assistant slot is what labelled a Vamp Sync failure as an Assistant one.
+                vampAssistantError: vampAssistant.lastError,
+                vampSyncError: sessionCoordinator.errorMessage,
+                // The host-busy rejection is per-host: `connectedHostName` survives that path, so
+                // it names exactly which Mac refused and only that row shows "In use".
+                busyHostName: VampStreamHostBusy.isHostBusy(sessionCoordinator.errorMessage)
+                    ? sessionCoordinator.connectedHostName
+                    : nil,
                 onRemoteControl: { saved in
                     assistantExperience = .remoteControl
                     Task { await vampAssistant.reconnect(saved) }

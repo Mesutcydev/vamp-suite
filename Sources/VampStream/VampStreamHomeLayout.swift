@@ -172,6 +172,9 @@ enum VampStreamHomeLayout {
         case syncEmptyHint
         case syncPromo
         case assistantError
+        /// A Sync connection failure, scoped to the Sync hosts rather than shown as an
+        /// Assistant error or as an unrelated page-wide card.
+        case syncError
         case assistantMacs
         /// "Pair a host" divider above the collapsible pairing cards.
         case pairHeading
@@ -192,6 +195,7 @@ enum VampStreamHomeLayout {
         hasSyncHosts: Bool,
         hasAssistants: Bool,
         hasAssistantError: Bool,
+        hasSyncError: Bool = false,
         showsSyncPromo: Bool = true
     ) -> [Section] {
         var hosts: [Section] = []
@@ -199,6 +203,11 @@ enum VampStreamHomeLayout {
 
         if source.showsSync {
             hosts.append(hasSyncHosts ? .syncMacs : .syncEmptyHint)
+            // Scoped next to the Sync hosts it refers to. A Sync failure used to fall through
+            // into the Assistant error slot, labelling a Vamp Sync problem as an Assistant one.
+            if hasSyncError {
+                hosts.append(.syncError)
+            }
             // The download promo only earns its place while Sync is not set up yet.
             if !hasSyncHosts, showsSyncPromo {
                 pairing.append(.syncPromo)
@@ -217,8 +226,31 @@ enum VampStreamHomeLayout {
             pairing.append(.assistantHostCard)
         }
 
-        let sections = pairing.isEmpty ? hosts : hosts + [.pairHeading] + pairing
-        return sections + [.versionFooter]
+        guard !pairing.isEmpty else { return hosts + [.versionFooter] }
+        return hosts + [.pairHeading] + pairing + [.versionFooter]
+    }
+}
+
+/// Copy and detection for the host-busy rejection.
+///
+/// The two providers fail through different objects — Assistant through its own session view
+/// model, Sync through the shared session coordinator — so the coordinator's message is routed to
+/// the Sync slot rather than merged into the Assistant one. That merge is what used to label a
+/// Vamp Sync problem as a Vamp Assistant problem.
+enum VampStreamHostBusy {
+    /// "Mac is in use" is a per-host condition: one busy Mac must not disable the others, so the
+    /// message is scoped to the host that refused and phrased as something the user can act on.
+    static let title = "Mac is in use"
+    static let detail = "Disconnect the other device, then try again."
+
+    /// Recognises the host-busy rejection. The coordinator emits a single well-known sentence for
+    /// it; matching on that keeps the compact host-scoped copy instead of repeating the long one.
+    static func isHostBusy(_ message: String?) -> Bool {
+        guard let message else { return false }
+        let lower = message.lowercased()
+        return lower.contains("already connected to another device")
+            || lower.contains("in use")
+            || lower.contains("another client")
     }
 }
 

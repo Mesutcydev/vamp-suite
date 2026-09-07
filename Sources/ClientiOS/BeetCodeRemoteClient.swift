@@ -174,6 +174,21 @@ struct BeetCodeRemoteApplication: Decodable, Equatable, Hashable, Identifiable, 
         return isRunning ? "Running" : "Installed"
     }
 
+    /// What an app *list* should say about this entry, as opposed to `detail`, which is a
+    /// diagnostics string that includes the window's raw pixel dimensions.
+    ///
+    /// The window title is the useful context for a running app — it distinguishes two windows of
+    /// the same app — so it stays. Pixel dimensions are noise in a list and belong in details. An
+    /// installed app needs no "Installed · tap to open" narration on every row: the row is already
+    /// a button inside an "All Apps" section, so the line is dropped entirely rather than repeated
+    /// hundreds of times.
+    var listDetail: String? {
+        if isActive { return "Active now" }
+        if let windowTitle, !windowTitle.isEmpty, windowTitle != name { return windowTitle }
+        if isRunning { return "Running" }
+        return nil
+    }
+
     private enum CodingKeys: String, CodingKey {
         case windowID, bundleIdentifier, name, windowTitle, width, height
         case isRunning, isActive, iconPNGBase64

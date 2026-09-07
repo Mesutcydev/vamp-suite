@@ -36,23 +36,23 @@ struct VampPairingCard<Body: View>: View {
 
             if isExpanded {
                 content()
-                    .padding(.horizontal, VampPairingMetrics.cardPadding)
-                    .padding(.top, VampSpacing.sm)
-                    .padding(.bottom, VampPairingMetrics.cardPadding)
+                    .padding(.horizontal, AppHostMetrics.cardPadding)
+                    .padding(.top, AppSpacing.sm)
+                    .padding(.bottom, AppHostMetrics.cardPadding)
                     .transition(.opacity)
             }
         }
         .background {
             // A quiet, more opaque content surface. Rows and forms are content, not floating
             // controls, so they do not carry the conspicuous glass treatment.
-            RoundedRectangle(cornerRadius: VampPairingMetrics.cornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous)
                 .fill(PR.card.opacity(0.72))
                 .overlay {
-                    RoundedRectangle(cornerRadius: VampPairingMetrics.cornerRadius, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous)
                         .strokeBorder(PR.border, lineWidth: 1)
                 }
         }
-        .clipShape(RoundedRectangle(cornerRadius: VampPairingMetrics.cornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(title))
         .animation(animation, value: isExpanded)
@@ -60,9 +60,9 @@ struct VampPairingCard<Body: View>: View {
 
     private var header: some View {
         Button(action: onToggle) {
-            HStack(alignment: .center, spacing: VampSpacing.md) {
+            HStack(alignment: .center, spacing: AppSpacing.md) {
                 icon
-                    .frame(width: VampPairingMetrics.providerIcon, height: VampPairingMetrics.providerIcon)
+                    .frame(width: AppHostMetrics.providerIcon, height: AppHostMetrics.providerIcon)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -99,16 +99,16 @@ struct VampPairingCard<Body: View>: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(PR.fg2)
                     .frame(
-                        width: VampPairingMetrics.chevronVisual,
-                        height: VampPairingMetrics.chevronVisual)
+                        width: AppHostMetrics.chevronVisual,
+                        height: AppHostMetrics.chevronVisual)
                     .background {
                         Circle().fill(PR.fg.opacity(0.08))
                     }
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, VampPairingMetrics.cardPadding)
-            .frame(minHeight: VampPairingMetrics.collapsedHeaderHeight)
-            .padding(.vertical, VampSpacing.sm)
+            .padding(.horizontal, AppHostMetrics.cardPadding)
+            .frame(minHeight: AppHostMetrics.collapsedHeaderHeight)
+            .padding(.vertical, AppSpacing.sm)
             .contentShape(Rectangle())
         }
         .buttonStyle(PRGlassPressButtonStyle())
@@ -117,35 +117,4 @@ struct VampPairingCard<Body: View>: View {
         .accessibilityHint(Text(isExpanded ? accessibilityCollapseLabel : accessibilityExpandLabel))
         .accessibilityAddTraits(.isButton)
     }
-}
-
-/// Design targets at the default text size, in points. Cards grow past these at larger Dynamic
-/// Type sizes rather than shrinking text to fit.
-enum VampPairingMetrics {
-    static let cornerRadius: CGFloat = 22
-    static let cardPadding: CGFloat = 16
-    static let collapsedHeaderHeight: CGFloat = 68
-    static let chevronVisual: CGFloat = 30
-    static let chevronTouchTarget: CGFloat = 44
-    static let providerIcon: CGFloat = 34
-    static let deviceIcon: CGFloat = 32
-    static let appIcon: CGFloat = 42
-    static let controlHeight: CGFloat = 48
-    static let iconControlTarget: CGFloat = 44
-    static let rowMinHeight: CGFloat = 72
-}
-
-/// One spacing scale for the whole home, so cards, headings, and rows align to a shared grid.
-enum VampSpacing {
-    static let xxs: CGFloat = 4
-    static let xs: CGFloat = 8
-    static let sm: CGFloat = 12
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-    static let xl: CGFloat = 24
-    static let xxl: CGFloat = 32
-    /// Horizontal screen inset shared by the header, sections, rows, and the search field.
-    static let screenInset: CGFloat = 20
-    static let cardGap: CGFloat = 12
-    static let sectionGap: CGFloat = 24
 }

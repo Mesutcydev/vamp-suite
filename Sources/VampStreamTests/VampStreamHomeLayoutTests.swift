@@ -161,6 +161,76 @@ final class VampStreamHomeLayoutTests: XCTestCase {
         XCTAssertEqual(one, two)
     }
 
+    /// A Vamp Sync failure must not be labelled as an Assistant problem. The old wiring merged the
+    /// coordinator's message into the Assistant slot (`assistant ?? coordinator`), so a Sync
+    /// host-busy rejection rendered inside the Assistant group.
+    func testSyncErrorIsScopedToTheSyncSection() {
+        let sections = VampStreamHomeLayout.sections(
+            source: .both,
+            hasSyncHosts: true,
+            hasAssistants: true,
+            hasAssistantError: false,
+            hasSyncError: true
+        )
+        XCTAssertTrue(sections.contains(.syncError))
+        XCTAssertFalse(sections.contains(.assistantError))
+
+        let syncIndex = try? XCTUnwrap(sections.firstIndex(of: .syncError))
+        let assistantIndex = try? XCTUnwrap(sections.firstIndex(of: .assistantMacs))
+        XCTAssertNotNil(syncIndex)
+        XCTAssertNotNil(assistantIndex)
+        if let syncIndex, let assistantIndex {
+            XCTAssertLessThan(syncIndex, assistantIndex,
+                "a Sync error must not appear after the Assistant hosts")
+        }
+    }
+
+    /// Each provider's error appears only in its own slot; neither leaks into the other.
+    func testProviderErrorsDoNotCrossContaminate() {
+        let syncOnly = VampStreamHomeLayout.sections(
+            source: .both, hasSyncHosts: true, hasAssistants: true,
+            hasAssistantError: false, hasSyncError: true)
+        XCTAssertTrue(syncOnly.contains(.syncError))
+        XCTAssertFalse(syncOnly.contains(.assistantError))
+
+        let assistantOnly = VampStreamHomeLayout.sections(
+            source: .both, hasSyncHosts: true, hasAssistants: true,
+            hasAssistantError: true, hasSyncError: false)
+        XCTAssertTrue(assistantOnly.contains(.assistantError))
+        XCTAssertFalse(assistantOnly.contains(.syncError))
+
+        let neither = VampStreamHomeLayout.sections(
+            source: .both, hasSyncHosts: true, hasAssistants: true,
+            hasAssistantError: false, hasSyncError: false)
+        XCTAssertFalse(neither.contains(.syncError))
+        XCTAssertFalse(neither.contains(.assistantError))
+    }
+
+    /// No error slot is created merely to fill space, and an error never suppresses the hosts.
+    func testErrorsDoNotCreateEmptySectionsOrHideHosts() {
+        let sections = VampStreamHomeLayout.sections(
+            source: .both, hasSyncHosts: true, hasAssistants: true,
+            hasAssistantError: true, hasSyncError: true)
+        XCTAssertTrue(sections.contains(.syncMacs), "hosts stay usable while an error shows")
+        XCTAssertTrue(sections.contains(.assistantMacs))
+        XCTAssertEqual(sections.filter { $0 == .syncError }.count, 1)
+        XCTAssertEqual(sections.filter { $0 == .assistantError }.count, 1)
+    }
+
+    /// "Mac is in use" is recognised so the UI can show the compact host-scoped copy instead of
+    /// repeating the coordinator's long sentence, and unrelated failures are left alone.
+    func testHostBusyIsRecognised() {
+        XCTAssertTrue(VampStreamHostBusy.isHostBusy(
+            "This Mac is already connected to another device. Disconnect that session, then try again."))
+        XCTAssertTrue(VampStreamHostBusy.isHostBusy("The Mac is in use."))
+        XCTAssertTrue(VampStreamHostBusy.isHostBusy("Another client is already connected."))
+        XCTAssertFalse(VampStreamHostBusy.isHostBusy("Secure connection to the Mac failed."))
+        XCTAssertFalse(VampStreamHostBusy.isHostBusy(nil))
+        XCTAssertFalse(VampStreamHostBusy.isHostBusy(""))
+        XCTAssertEqual(VampStreamHostBusy.title, "Mac is in use")
+        XCTAssertEqual(VampStreamHostBusy.detail, "Disconnect the other device, then try again.")
+    }
+
     func testHostSourceVisibility() {
         XCTAssertTrue(VampStreamHostSource.sync.showsSync)
         XCTAssertFalse(VampStreamHostSource.sync.showsAssistant)
