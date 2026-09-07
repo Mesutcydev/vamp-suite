@@ -91,11 +91,7 @@ struct VampStreamConnectView: View {
             if let hostSource {
                 VStack(alignment: .leading, spacing: 0) {
                     VampStreamConnectHeader(
-                        source: hostSource,
-                        cardStyle: homeCardStyle,
-                        onToggleCardStyle: {
-                            homeCardStyleRaw = homeCardStyle.toggled.rawValue
-                        }
+                        source: hostSource
                     ) {
                         showHostSourcePicker = true
                     }
@@ -111,7 +107,10 @@ struct VampStreamConnectView: View {
                         onAppStream: onAppStream,
                         onForget: onForgetVampAssistant,
                         onScan: onScanVampHost,
-                        onConnect: onConnect)
+                        onConnect: onConnect,
+                        onToggleCardStyle: {
+                            homeCardStyleRaw = homeCardStyle.toggled.rawValue
+                        })
                 }
             } else {
                 VampStreamHostSourceOnboarding { source in
@@ -136,62 +135,42 @@ struct VampStreamConnectView: View {
     }
 }
 
+/// The page title is the product action, not a sentence about the product. Provider choice is a
+/// quiet toolbar action, and the list/grid toggle belongs beside the Macs heading it controls
+/// rather than crowding the title.
 private struct VampStreamConnectHeader: View {
     let source: VampStreamHostSource
-    let cardStyle: VampStreamHomeCardStyle
-    let onToggleCardStyle: () -> Void
     let onChangeHost: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(VampStreamHomeCopy.headerTitleLead)
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(PR.fg)
-                    Text(VampStreamHomeCopy.headerTitleTrail)
-                        .font(.title3.weight(.regular))
-                        .foregroundStyle(PR.fg2)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(VampStreamHomeCopy.headerTitle)
-
-                Text(VampStreamHomeCopy.headerDetail(for: source))
-                    .font(.footnote)
+        HStack(alignment: .firstTextBaseline, spacing: VampSpacing.sm) {
+            VStack(alignment: .leading, spacing: VampSpacing.xxs) {
+                Text(VampStreamHomeCopy.headerTitle)
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(PR.fg)
+                Text(VampStreamHomeCopy.headerSubtitle)
+                    .font(.subheadline)
                     .foregroundStyle(PR.fg2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 8) {
-                HStack(spacing: 8) {
-                    Button(action: onToggleCardStyle) {
-                        Image(systemName: cardStyle.toggleSystemImage)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(PR.fg)
-                            .frame(width: 28, height: 28)
-                            .prGlassSurface(in: Circle(), isInteractive: true)
-                    }
-                    .buttonStyle(PRGlassPressButtonStyle())
-                    .accessibilityLabel(
-                        Text(cardStyle == .grid ? VampStreamHomeCopy.showList : VampStreamHomeCopy.showGrid)
-                    )
-                    Button(action: onChangeHost) {
-                        Text(VampStreamHomeCopy.changeHost)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(PR.fg)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .prGlassSurface(in: Capsule(style: .continuous), isInteractive: true)
-                    }
-                    .buttonStyle(PRGlassPressButtonStyle())
-                    .accessibilityHint("Choose Vamp Sync, Vamp Assistant, or both")
-                }
-                VampStreamVersionBadge()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+
+            Button(action: onChangeHost) {
+                Label(VampStreamHomeCopy.changeHost, systemImage: "arrow.triangle.2.circlepath")
+                    .font(.footnote.weight(.semibold))
+                    .labelStyle(.titleAndIcon)
+                    .foregroundStyle(PR.fg2)
+                    .padding(.horizontal, VampSpacing.sm)
+                    .frame(minHeight: VampPairingMetrics.iconControlTarget)
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(VampStreamHomeCopy.changeHost))
+            .accessibilityHint("Choose Vamp Sync, Vamp Assistant, or both")
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 18)
-        .padding(.bottom, 14)
+        .padding(.horizontal, VampSpacing.screenInset)
+        .padding(.top, VampSpacing.lg)
+        .padding(.bottom, VampSpacing.md)
     }
 }
 
@@ -289,16 +268,34 @@ private struct VampAppStreamSection: View {
     let onForget: (BeetCodeRemoteSessionViewModel.SavedAssistant) -> Void
     let onScan: () -> Void
     let onConnect: (DiscoveredHostRow) -> Void
+    /// Flips list/grid. Owned by the parent, which persists it, and surfaced next to the Macs
+    /// heading rather than in the page title.
+    let onToggleCardStyle: () -> Void
 
 
+    // Text drafts and validation live here, on the always-mounted parent — never inside the
+    // conditionally rendered card body. Collapsing must not clear an address, cancel pairing, or
+    // destroy a scanner coordinator.
     @State private var manualAddress = ""
     @State private var manualError: String?
     @AppStorage(VampStreamSyncPromoStore.installedKey) private var syncInstalled = false
     @State private var promoDismissedThisSession = false
 
+    // Independent, provider-specific expansion state. Two separate keys, never one shared
+    // Boolean and never derived from discovery results.
+    @AppStorage(VampStreamPairingCardStore.Provider.key(for: .sync)) private var syncExpanded = false
+    @AppStorage(VampStreamPairingCardStore.Provider.key(for: .assistant)) private var assistantExpanded = false
+    /// Whether the first-run default has already been resolved, so it is computed exactly once
+    /// and never recomputed from a discovery list that flickers.
+    @State private var didResolveDefaults = false
+
+    private var hasConfiguredHost: Bool {
+        !legacyHosts.isEmpty || !pairedAssistants.isEmpty
+    }
+
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: VampSpacing.cardGap) {
                 ForEach(
                     VampStreamHomeLayout.sections(
                         source: source,
@@ -311,8 +308,10 @@ private struct VampAppStreamSection: View {
                     homeSection(section)
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.bottom, 28)
+            .padding(.horizontal, VampSpacing.screenInset)
+            .padding(.bottom, VampSpacing.xxl)
+            // Scoped to the toggle's value: an availability update elsewhere on the page must not
+            // animate the whole screen.
             .animation(.easeOut(duration: 0.2), value: cardStyle)
         }
         .refreshable {
@@ -320,23 +319,68 @@ private struct VampAppStreamSection: View {
                 await hostsVM.refresh()
             }
         }
+        .task(id: hasConfiguredHost) { resolveDefaultsOnce() }
+    }
+
+    /// Resolve the first-run default once stored host configuration is known: a returning user
+    /// with configured hosts sees both cards collapsed; a first-time user sees the provider they
+    /// are setting up expanded and the other collapsed.
+    private func resolveDefaultsOnce() {
+        guard !didResolveDefaults else { return }
+        didResolveDefaults = true
+        let configured = hasConfiguredHost
+        VampStreamPairingCardStore.latchDefaultIfNeeded(
+            provider: .sync,
+            hasConfiguredHost: configured,
+            isSetupProvider: source == .sync)
+        VampStreamPairingCardStore.latchDefaultIfNeeded(
+            provider: .assistant,
+            hasConfiguredHost: configured,
+            isSetupProvider: source == .assistant)
+    }
+
+    private func toggle(_ provider: VampStreamPairingCardStore.Provider) {
+        let isExpanded = provider == .sync ? syncExpanded : assistantExpanded
+        // Dismiss the keyboard cleanly when collapsing a focused form; the draft survives
+        // because it is owned by this view, not the card body.
+        if isExpanded {
+            #if canImport(UIKit)
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            #endif
+        }
+        let next = !isExpanded
+        if provider == .sync { syncExpanded = next } else { assistantExpanded = next }
     }
 
     @ViewBuilder
     private func homeSection(_ section: VampStreamHomeLayout.Section) -> some View {
         switch section {
+        case .pairHeading:
+            VampStreamSectionLabel(title: VampStreamHomeCopy.pairHeading)
+                .padding(.top, VampSpacing.sm)
+        case .versionFooter:
+            // Subdued and centered, out of the way of the hosts it used to compete with.
+            VampStreamVersionBadge()
+                .frame(maxWidth: .infinity)
+                .padding(.top, VampSpacing.sm)
         case .syncHostCard:
             VampSyncConnectCard(
-                isPaired: legacyHosts.contains(where: \.isSaved),
+                isExpanded: syncExpanded,
+                onToggle: { toggle(.sync) },
                 manualAddress: $manualAddress,
                 manualError: $manualError,
                 onScan: onScan,
                 onConnectByAddress: connectByAddress)
         case .syncMacs:
-            VStack(alignment: .leading, spacing: 12) {
-                VampStreamSectionLabel(title: VampStreamHomeCopy.syncMacsHeading)
+            VStack(alignment: .leading, spacing: VampSpacing.cardGap) {
+                // The list/grid control belongs beside the heading it controls, not up by the
+                // page title where it competes with the product name.
+                VampStreamSectionLabel(
+                    title: VampStreamHomeCopy.syncMacsHeading,
+                    trailing: { AnyView(cardStyleToggle) })
                 if cardStyle == .grid {
-                    LazyVGrid(columns: homeGridColumns, spacing: 12) {
+                    LazyVGrid(columns: homeGridColumns, spacing: VampSpacing.cardGap) {
                         ForEach(visibleSyncHosts) { host in
                             VampHostMacTile(host: host, onConnect: { onConnect(host) })
                         }
@@ -360,13 +404,17 @@ private struct VampAppStreamSection: View {
             }
         case .assistantHostCard:
             VampAssistantFollowOnCard(
+                isExpanded: assistantExpanded,
+                onToggle: { toggle(.assistant) },
                 onPair: onPair,
                 hasSavedAssistants: !pairedAssistants.isEmpty)
         case .assistantMacs:
-            VStack(alignment: .leading, spacing: 12) {
-                VampStreamSectionLabel(title: VampStreamHomeCopy.assistantMacsHeading)
+            VStack(alignment: .leading, spacing: VampSpacing.cardGap) {
+                VampStreamSectionLabel(
+                    title: VampStreamHomeCopy.assistantMacsHeading,
+                    trailing: { AnyView(cardStyleToggle) })
                 if cardStyle == .grid {
-                    LazyVGrid(columns: homeGridColumns, spacing: 12) {
+                    LazyVGrid(columns: homeGridColumns, spacing: VampSpacing.cardGap) {
                         ForEach(pairedAssistants) { assistant in
                             VampAssistantMacTile(
                                 assistant: assistant,
@@ -391,12 +439,32 @@ private struct VampAppStreamSection: View {
         }
     }
 
+    private var cardStyleToggle: some View {
+        Button {
+            onToggleCardStyle()
+        } label: {
+            Image(systemName: cardStyle.toggleSystemImage)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(PR.fg2)
+                .frame(
+                    width: VampPairingMetrics.iconControlTarget,
+                    height: VampPairingMetrics.iconControlTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            Text(cardStyle == .grid ? VampStreamHomeCopy.showList : VampStreamHomeCopy.showGrid))
+    }
+
     private var visibleSyncHosts: [DiscoveredHostRow] {
         anonymizeStreamPreview ? Array(legacyHosts.prefix(1)) : legacyHosts
     }
 
+    /// Columns are computed from the available width with a ~160-point minimum tile and a
+    /// 12-point gap, falling back to one column on narrow layouts and at large text sizes so a
+    /// single host spans the full width instead of sitting in a half-empty grid row.
     private var homeGridColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 146, maximum: 220), spacing: 12)]
+        [GridItem(.adaptive(minimum: 160), spacing: VampSpacing.cardGap)]
     }
 
     private func connectByAddress() {
@@ -409,144 +477,128 @@ private struct VampAppStreamSection: View {
     }
 }
 
+/// A quiet sentence-case section heading on the shared outer grid, with an optional trailing
+/// control (the list/grid toggle) aligned to the same baseline.
 private struct VampStreamSectionLabel: View {
     let title: String
+    var trailing: (() -> AnyView)?
 
     var body: some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(PR.dim)
-            .padding(.top, 4)
+        HStack(alignment: .center, spacing: VampSpacing.xs) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(PR.fg2)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let trailing { trailing() }
+        }
+        .padding(.top, VampSpacing.xxs)
+        .accessibilityElement(children: .contain)
     }
 }
 
+/// Vamp Sync pairing, on the shared collapsible shell. Collapsed is header only: the Scan QR
+/// button, the address field, and Connect all live in the expanded body so their gestures cannot
+/// accidentally collapse the card.
 private struct VampSyncConnectCard: View {
-    let isPaired: Bool
+    let isExpanded: Bool
+    let onToggle: () -> Void
     @Binding var manualAddress: String
     @Binding var manualError: String?
     let onScan: () -> Void
     let onConnectByAddress: () -> Void
 
-    @AppStorage(VampStreamSyncConnectCardStore.collapsedKey) private var collapsePreference = false
-
-    private var isCollapsed: Bool {
-        VampStreamSyncConnectCardStore.showsCollapsed(isPaired: isPaired, preference: collapsePreference)
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: isCollapsed ? 0 : 14) {
-            HStack(alignment: .top, spacing: 12) {
-                syncMark
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(VampStreamHomeCopy.syncTitle)
-                        .font(.headline)
-                        .foregroundStyle(PR.fg)
-                    Text(isCollapsed ? VampStreamHomeCopy.syncConnectCollapsedDetail : VampStreamHomeCopy.syncDetail)
-                        .font(.footnote)
-                        .foregroundStyle(PR.fg2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .lineLimit(isCollapsed ? 1 : nil)
+        VampPairingCard(
+            icon: AnyView(syncMark),
+            title: VampStreamHomeCopy.syncTitle,
+            detail: VampStreamHomeCopy.syncDetail,
+            collapsedDetail: VampStreamHomeCopy.syncConnectCollapsedDetail,
+            isExpanded: isExpanded,
+            onToggle: onToggle,
+            headerStatus: manualError == nil ? nil : "Needs attention",
+            accessibilityCollapseLabel: VampStreamHomeCopy.syncConnectCollapse,
+            accessibilityExpandLabel: VampStreamHomeCopy.syncConnectExpand
+        ) {
+            VStack(alignment: .leading, spacing: VampSpacing.sm) {
+                Button(action: onScan) {
+                    Label(VampStreamHomeCopy.scanSync, systemImage: "qrcode.viewfinder")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: VampPairingMetrics.controlHeight)
                 }
-                Spacer(minLength: 8)
-                scanChip
-                if isPaired {
-                    collapseButton
-                }
-            }
+                .buttonStyle(PRGlassPressButtonStyle())
+                .foregroundStyle(PR.fg)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(PR.fg.opacity(0.10)))
+                .accessibilityLabel(Text(VampStreamHomeCopy.scanSync))
+                .accessibilityHint(Text(VampStreamHomeCopy.scanSyncHint))
 
-            if !isCollapsed {
-                addressFields
+                Text(VampStreamHomeCopy.orConnectByAddress)
+                    .font(.footnote)
+                    .foregroundStyle(PR.fg2)
+                    .padding(.top, VampSpacing.xxs)
+
+                TextField(
+                    "",
+                    text: $manualAddress,
+                    prompt: Text(VampStreamHomeCopy.addressPlaceholder)
+                        .foregroundStyle(PR.fg2)
+                )
+                    .font(.subheadline)
+                    .foregroundStyle(PR.fg)
+                    .tint(PR.fg)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .textContentType(.URL)
+                    .padding(.horizontal, VampSpacing.sm)
+                    .frame(minHeight: VampPairingMetrics.controlHeight)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(PR.bg.opacity(0.55)))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(PR.border, lineWidth: 1)
+                    }
+                    .accessibilityLabel(Text(VampStreamHomeCopy.addressPlaceholder))
+
+                // Validation sits beside the field it refers to, not detached at the bottom.
+                if let manualError {
+                    Label {
+                        Text(manualError)
+                            .font(.footnote)
+                            .foregroundStyle(PR.fg2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(PR.fg2)
+                    }
+                    .accessibilityLabel("Address problem: \(manualError)")
+                }
+
+                VampGlassActionButton(
+                    title: LocalizedStringKey(VampStreamHomeCopy.connectByAddress),
+                    systemImage: "link",
+                    isDisabled: manualAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    action: onConnectByAddress
+                )
             }
         }
-        .padding(isCollapsed ? 12 : 16)
-        .vampHomeLiveGlass(
-            in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous),
-            phaseOffset: 0.2
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text(VampStreamHomeCopy.syncTitle))
-        .animation(.easeOut(duration: 0.2), value: isCollapsed)
     }
 
     private var syncMark: some View {
         VampStreamWindowFangsMark()
             .fill(PR.fg, style: FillStyle(eoFill: true))
-            .frame(width: 22, height: 24)
-            .frame(width: 38, height: 38)
-            .prGlassSurface(in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .accessibilityHidden(true)
-    }
-
-    private var scanChip: some View {
-        Button(action: onScan) {
-            Label("Scan QR", systemImage: "qrcode.viewfinder")
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-        }
-        .buttonStyle(PRGlassPressButtonStyle())
-        .foregroundStyle(PR.fg)
-        .vampHomeLiveGlass(in: Capsule(style: .continuous), phaseOffset: 0.6)
-        .vampHomeLivePulse(isActive: !isCollapsed, period: 2.6)
-        .accessibilityLabel(Text(VampStreamHomeCopy.scanSync))
-        .accessibilityHint(Text(VampStreamHomeCopy.scanSyncHint))
-    }
-
-    private var collapseButton: some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.2)) {
-                collapsePreference.toggle()
-            }
-        } label: {
-            Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(PR.dim)
-                .frame(width: 28, height: 28)
-                .prGlassSurface(in: Circle(), isInteractive: true)
-        }
-        .buttonStyle(PRGlassPressButtonStyle())
-        .accessibilityLabel(
-            Text(isCollapsed ? VampStreamHomeCopy.syncConnectExpand : VampStreamHomeCopy.syncConnectCollapse)
-        )
-    }
-
-    private var addressFields: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(VampStreamHomeCopy.orConnectByAddress)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(PR.fg2)
-            TextField(
-                "",
-                text: $manualAddress,
-                prompt: Text(VampStreamHomeCopy.addressPlaceholder)
-                    .foregroundStyle(PR.fg.opacity(0.82))
-            )
-                .font(.subheadline)
-                .foregroundStyle(PR.fg)
-                .tint(PR.fg)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.URL)
-                .textContentType(.URL)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 11)
-                .vampHomeLiveGlass(
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous),
-                    phaseOffset: 1.1
-                )
-                .accessibilityLabel(Text(VampStreamHomeCopy.addressPlaceholder))
-            VampGlassActionButton(
-                title: LocalizedStringKey(VampStreamHomeCopy.connectByAddress),
-                systemImage: "link",
-                isDisabled: manualAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                action: onConnectByAddress
-            )
-            if let manualError {
-                Text(manualError)
-                    .font(.footnote)
-                    .foregroundStyle(PR.fg)
-            }
-        }
+            .frame(width: 20, height: 22)
+            .frame(
+                width: VampPairingMetrics.providerIcon,
+                height: VampPairingMetrics.providerIcon)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(PR.fg.opacity(0.10)))
     }
 }
 
@@ -617,45 +669,55 @@ private struct VampSyncEmptyHint: View {
     }
 }
 
+/// Vamp Assistant pairing, on the same shell so both cards share padding, typography, and corner
+/// radius instead of looking like separate mini-apps. Assistant pairs through its own workspace
+/// sheet — it has no QR code or private-address form, so none is invented here.
 private struct VampAssistantFollowOnCard: View {
+    let isExpanded: Bool
+    let onToggle: () -> Void
     let onPair: () -> Void
     let hasSavedAssistants: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "sparkles.tv")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(PR.fg)
-                    .frame(width: 38, height: 38)
-                    .prGlassSurface(in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(VampStreamHomeCopy.assistantTitle)
-                        .font(.headline)
-                        .foregroundStyle(PR.fg)
-                    Text(VampStreamHomeCopy.assistantDetail)
-                        .font(.footnote)
-                        .foregroundStyle(PR.fg2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        VampPairingCard(
+            icon: AnyView(assistantMark),
+            title: VampStreamHomeCopy.assistantTitle,
+            detail: VampStreamHomeCopy.assistantDetail,
+            collapsedDetail: VampStreamHomeCopy.assistantConnectCollapsedDetail,
+            isExpanded: isExpanded,
+            onToggle: onToggle,
+            accessibilityCollapseLabel: VampStreamHomeCopy.assistantConnectCollapse,
+            accessibilityExpandLabel: VampStreamHomeCopy.assistantConnectExpand
+        ) {
+            Button(action: onPair) {
+                Label(
+                    VampStreamHomeCopy.pairAssistantTitle(hasSavedAssistants: hasSavedAssistants),
+                    systemImage: "plus")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: VampPairingMetrics.controlHeight)
             }
-
-            VampAssistantActionButton(
-                title: LocalizedStringKey(
-                    VampStreamHomeCopy.pairAssistantTitle(hasSavedAssistants: hasSavedAssistants)
-                ),
-                systemImage: "plus",
-                action: onPair
-            )
+            .buttonStyle(PRGlassPressButtonStyle())
+            .foregroundStyle(PR.fg)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(PR.fg.opacity(0.10)))
+            .accessibilityLabel(
+                Text(VampStreamHomeCopy.pairAssistantTitle(hasSavedAssistants: hasSavedAssistants)))
             .accessibilityHint(Text(VampStreamHomeCopy.pairAssistantHint))
         }
-        .padding(16)
-        .vampHomeLiveGlass(
-            in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous),
-            phaseOffset: 1.7
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text(VampStreamHomeCopy.assistantTitle))
+    }
+
+    private var assistantMark: some View {
+        Image(systemName: "sparkles.tv")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(PR.fg)
+            .frame(
+                width: VampPairingMetrics.providerIcon,
+                height: VampPairingMetrics.providerIcon)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(PR.fg.opacity(0.10)))
     }
 }
 

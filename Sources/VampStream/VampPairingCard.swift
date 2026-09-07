@@ -1,0 +1,151 @@
+import SwiftUI
+
+/// The collapsible shell shared by both pairing cards on Stream's connect home.
+///
+/// One reusable surface, provider content supplied by the caller, expansion owned by the caller so
+/// each provider persists independently. Collapsed means header only: the body leaves layout and
+/// the accessibility tree entirely rather than being hidden behind opacity or a fixed height.
+///
+/// The whole header is a single disclosure button and the chevron is part of its label — not a
+/// second nested button — so tapping the corner, the title, or the icon all toggle the same state.
+/// Actions live in the expanded body, where their gestures cannot accidentally collapse the card.
+struct VampPairingCard<Body: View>: View {
+    let icon: AnyView
+    let title: String
+    let detail: String
+    let collapsedDetail: String
+    let isExpanded: Bool
+    let onToggle: () -> Void
+    /// Trailing status shown in the header, e.g. a discreet "Needs attention" while collapsed.
+    var headerStatus: String?
+    var showsProgress: Bool = false
+    let accessibilityCollapseLabel: String
+    let accessibilityExpandLabel: String
+    /// The expanded form body. Named `content` rather than `body`, which `View` already owns.
+    @ViewBuilder let content: () -> Body
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var animation: Animation? {
+        reduceMotion ? nil : .easeOut(duration: 0.22)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+
+            if isExpanded {
+                content()
+                    .padding(.horizontal, VampPairingMetrics.cardPadding)
+                    .padding(.top, VampSpacing.sm)
+                    .padding(.bottom, VampPairingMetrics.cardPadding)
+                    .transition(.opacity)
+            }
+        }
+        .background {
+            // A quiet, more opaque content surface. Rows and forms are content, not floating
+            // controls, so they do not carry the conspicuous glass treatment.
+            RoundedRectangle(cornerRadius: VampPairingMetrics.cornerRadius, style: .continuous)
+                .fill(PR.card.opacity(0.72))
+                .overlay {
+                    RoundedRectangle(cornerRadius: VampPairingMetrics.cornerRadius, style: .continuous)
+                        .strokeBorder(PR.border, lineWidth: 1)
+                }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: VampPairingMetrics.cornerRadius, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(title))
+        .animation(animation, value: isExpanded)
+    }
+
+    private var header: some View {
+        Button(action: onToggle) {
+            HStack(alignment: .center, spacing: VampSpacing.md) {
+                icon
+                    .frame(width: VampPairingMetrics.providerIcon, height: VampPairingMetrics.providerIcon)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(PR.fg)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    Text(isExpanded ? detail : collapsedDetail)
+                        .font(.footnote)
+                        .foregroundStyle(PR.fg2)
+                        .lineLimit(isExpanded ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Trailing status and chevron are reserved space, so a long title or
+                // accessibility-sized text can never run underneath them.
+                if showsProgress {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(PR.fg2)
+                        .accessibilityLabel("Working")
+                } else if let headerStatus {
+                    Text(headerStatus)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(PR.fg2)
+                        .lineLimit(1)
+                        .accessibilityLabel(headerStatus)
+                }
+
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(PR.fg2)
+                    .frame(
+                        width: VampPairingMetrics.chevronVisual,
+                        height: VampPairingMetrics.chevronVisual)
+                    .background {
+                        Circle().fill(PR.fg.opacity(0.08))
+                    }
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, VampPairingMetrics.cardPadding)
+            .frame(minHeight: VampPairingMetrics.collapsedHeaderHeight)
+            .padding(.vertical, VampSpacing.sm)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PRGlassPressButtonStyle())
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(isExpanded ? "Expanded" : "Collapsed"))
+        .accessibilityHint(Text(isExpanded ? accessibilityCollapseLabel : accessibilityExpandLabel))
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// Design targets at the default text size, in points. Cards grow past these at larger Dynamic
+/// Type sizes rather than shrinking text to fit.
+enum VampPairingMetrics {
+    static let cornerRadius: CGFloat = 22
+    static let cardPadding: CGFloat = 16
+    static let collapsedHeaderHeight: CGFloat = 68
+    static let chevronVisual: CGFloat = 30
+    static let chevronTouchTarget: CGFloat = 44
+    static let providerIcon: CGFloat = 34
+    static let deviceIcon: CGFloat = 32
+    static let appIcon: CGFloat = 42
+    static let controlHeight: CGFloat = 48
+    static let iconControlTarget: CGFloat = 44
+    static let rowMinHeight: CGFloat = 72
+}
+
+/// One spacing scale for the whole home, so cards, headings, and rows align to a shared grid.
+enum VampSpacing {
+    static let xxs: CGFloat = 4
+    static let xs: CGFloat = 8
+    static let sm: CGFloat = 12
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+    static let xl: CGFloat = 24
+    static let xxl: CGFloat = 32
+    /// Horizontal screen inset shared by the header, sections, rows, and the search field.
+    static let screenInset: CGFloat = 20
+    static let cardGap: CGFloat = 12
+    static let sectionGap: CGFloat = 24
+}
