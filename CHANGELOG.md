@@ -7,6 +7,49 @@ their original product names. The format follows
 
 ## [Unreleased]
 
+### Added: Vamp Stream pointer input reaches Vamp Control parity
+
+- **A paired Bluetooth mouse barely worked in Stream.** `BluetoothInputController` was bound to
+  Vamp Control's view model, so Stream could not use it at all: the hover cursor moved, but the
+  left/right/middle buttons and the scroll wheel went nowhere, a physical keyboard produced
+  nothing, and there was no sensitivity control. The bridge is now a shared
+  `RemotePointerInputSink` protocol that both clients implement, so one implementation serves
+  both apps. Stream observes paired devices for the session and exposes the same status sheet with
+  mouse and scroll sensitivity sliders.
+- **Stream had no haptics at all,** so a click that landed on the Mac felt identical to a swipe
+  that did not. It now uses Vamp Control's exact impact styles: light for single, two-, and
+  three-finger taps, medium for double-tap, soft and rigid for drag-lock release and engage.
+- The velocity-acceleration curve was inlined three times with the same magic constants (Control,
+  Stream's Sync path, and Stream's Assistant path), which is how a paired mouse drifts into
+  feeling different per app. It is now one shared `PointerDynamics` helper, so the three paths are
+  identical by construction rather than by coincidence.
+
+### Changed: calmer, hosts-first connect home
+
+- **Hosts are the primary content.** The home used to lead with two always-expanded pairing forms,
+  so a returning user scrolled past setup they had already finished to reach their Macs. Configured
+  Macs now come first, above a "Pair a host" divider, with both pairing cards collapsing to compact
+  headers and the version string moved to a subdued footer instead of the page title.
+- Both pairing cards share one reusable shell: the whole header is a single disclosure button with
+  the chevron as part of its label, and collapsed means header only — the body leaves layout and the
+  accessibility tree rather than hiding behind opacity. Each provider persists independently, and the
+  first-run default is latched once so a host briefly dropping off the network cannot flip the cards
+  open again.
+- Rows and forms sit on quiet opaque content surfaces with hairline borders instead of per-row glass,
+  which made every app look like an equally important floating control. The light-scheme wallpaper
+  scrim was 0.04 — bright enough for artwork to wash out row labels — and is now a real scrim.
+- The app pickers for both providers share one section surface, heading style, header metrics, and
+  search-field inset, so they no longer look like separate mini-apps. App icons are fitted rather
+  than stretched, window titles replace raw pixel dimensions in lists, and the "Installed · tap to
+  open" narration is gone from every installed row.
+
+### Fixed: a busy Mac no longer disables the whole home
+
+- A Vamp Sync host-busy rejection was merged into the Assistant error slot
+  (`assistant ?? coordinator`), so a Vamp Sync problem rendered as a **Vamp Assistant** problem and
+  as an unrelated page-wide card between provider sections. Errors now route to their own provider,
+  and "Mac is in use" is scoped to the single Mac that refused — the others stay usable.
+
 ### Fixed: portrait app-window fit restored on both host paths
 
 - **Vamp Stream letterboxed Mac apps again.** The shared adaptive window policy had replaced the
