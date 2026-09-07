@@ -27,6 +27,15 @@ final class AppStreamInputController: ObservableObject {
         willSet { if !newValue && isEnabled { releaseDragLock(); flushPending() } }
     }
 
+    // MARK: - Pointer feel (Vamp Control parity)
+    /// Multiplier applied to relative cursor movement, driven by the Bluetooth sensitivity
+    /// slider. Stream previously had no sensitivity control at all, so a paired mouse always
+    /// moved at a fixed 1:1 gain regardless of what the user preferred in Vamp Control.
+    var pointerSensitivity: Double = 1.0
+    /// Velocity-based acceleration: slow movement stays precise, fast movement covers more
+    /// distance. Matches `RemoteInteractionViewModel` so the two apps feel identical.
+    var pointerAccelerationEnabled: Bool = true
+
     private var interpreter: GestureInterpreter?
     private var window: DisplayDescriptor?
     private var viewSize: DesktopSize = .zero
@@ -113,10 +122,32 @@ final class AppStreamInputController: ObservableObject {
 
     // MARK: - Gestures → input
 
-    func tap(at point: DesktopPoint) { send(interpreter?.tap(at: point)) }
-    func doubleTap(at point: DesktopPoint) { send(interpreter?.doubleTap(at: point)) }
-    func rightClick(at point: DesktopPoint) { send(interpreter?.twoFingerTap(at: point)) }
-    func middleClick(at point: DesktopPoint) { send(interpreter?.threeFingerTap(at: point)) }
+    // Haptics mirror Vamp Control exactly: light for single/two/three-finger taps, medium for
+    // double-tap, soft/rigid for drag-lock release/engage. Stream had none, so a click that
+    // landed on the Mac felt identical to a swipe that did not — no confirmation at all.
+    func tap(at point: DesktopPoint) {
+        guard isEnabled, interpreter != nil else { return }
+        AppHaptics.impact(.light)
+        send(interpreter?.tap(at: point))
+    }
+
+    func doubleTap(at point: DesktopPoint) {
+        guard isEnabled, interpreter != nil else { return }
+        AppHaptics.impact(.medium)
+        send(interpreter?.doubleTap(at: point))
+    }
+
+    func rightClick(at point: DesktopPoint) {
+        guard isEnabled, interpreter != nil else { return }
+        AppHaptics.impact(.light)
+        send(interpreter?.twoFingerTap(at: point))
+    }
+
+    func middleClick(at point: DesktopPoint) {
+        guard isEnabled, interpreter != nil else { return }
+        AppHaptics.impact(.light)
+        send(interpreter?.threeFingerTap(at: point))
+    }
 
     /// One-finger movement matches Vamp Control: it moves the pointer, but does not press the
     /// mouse button. A long press toggles drag-lock for explicit drag/select operations.
@@ -135,8 +166,10 @@ final class AppStreamInputController: ObservableObject {
         lastPointerPoint = point
         if dragLocked {
             send(interpreter.dragLockEnd(at: point))
+            AppHaptics.impact(.soft)
         } else {
             send(interpreter.dragLockBegin(at: point))
+            AppHaptics.impact(.rigid)
         }
         dragLocked.toggle()
     }
@@ -145,14 +178,40 @@ final class AppStreamInputController: ObservableObject {
         send(interpreter?.scroll(deltaX: deltaX, deltaY: deltaY))
     }
 
-    /// Pointer/hover deltas are relative, like Vamp Control's mouse/hover path.
+    /// Pointer/hover deltas are relative, like Vamp Control's mouse/hover path. Control applies
+    /// sensitivity and acceleration to these before sending; Stream does the same here so one
+    /// Bluetooth mouse feels identical in both apps.
     func relativePointerMove(deltaX: Double, deltaY: Double) {
         guard let displayID = window?.id else { return }
         route(.pointerMove(PointerMoveCommand(
-            location: DesktopPoint(x: deltaX, y: deltaY),
+            location: dynamics(DesktopPoint(x: deltaX, y: deltaY)),
             displayID: displayID,
             isAbsolute: false
         )))
+    }
+
+    // MARK: - Pointer dynamics (Vamp Control parity)
+
+    /// Sensitivity plus velocity acceleration, applied only to relative motion. Absolute mapping
+    /// places the cursor directly from a touch coordinate, so dynamics must not distort it.
+    private func dynamics(_ delta: DesktopPoint) -> DesktopPoint {
+        PointerDynamics.apply(
+            delta,
+            sensitivity: pointerSensitivity,
+            accelerationEnabled: pointerAccelerationEnabled)
+    }
+
+    /// Bluetooth mouse buttons and scroll wheel. Location is nil: the Mac pointer is already
+    /// wherever the hover gesture left it, so these act in place.
+    func sendPointerButton(_ button: MouseButton, action: ButtonAction) {
+        guard isEnabled, let displayID = window?.id else { return }
+        route(.pointerButton(PointerButtonCommand(
+            button: button, action: action, location: nil, displayID: displayID)))
+    }
+
+    func sendScrollInput(deltaX: Double, deltaY: Double) {
+        guard isEnabled else { return }
+        coalesceScroll(dx: deltaX, dy: deltaY)
     }
 
     // MARK: - Keyboard
@@ -312,3 +371,12 @@ private final class AppStreamDisplayLinkProxy {
     @objc func tick() { handler() }
 }
 #endif
+
+/// Stream's pointer surface for a paired Bluetooth mouse/keyboard, using the same shared bridge
+/// as Vamp Control. `sendKey(keyCode:action:modifiers:)` adapts to the existing
+/// `sendKey(_:action:modifiers:)`, which other Stream call sites already use.
+extension AppStreamInputController: RemotePointerInputSink {
+    func sendKey(keyCode: UInt16, action: KeyAction, modifiers: KeyboardModifierFlags) {
+        sendKey(keyCode, action: action, modifiers: modifiers)
+    }
+}

@@ -33,6 +33,11 @@ struct AppStreamBrowserView: View {
     @State private var viewportWindowID: String?
     @State private var viewportZoom: CGFloat = 1
     @State private var viewportOffset: CGSize = .zero
+    /// A paired Bluetooth mouse/keyboard drives this session, exactly as it does in Vamp
+    /// Control. Stream previously ignored mouse buttons, the scroll wheel, and physical
+    /// keyboards entirely — only the on-screen hover cursor worked.
+    @StateObject private var bluetoothInput = BluetoothInputController()
+    @State private var showsBluetoothStatus = false
 
     init(environment: ClientAppEnvironment, vm: AppStreamViewModel, onClose: @escaping () -> Void) {
         self.environment = environment
@@ -79,11 +84,19 @@ struct AppStreamBrowserView: View {
                 sc?.requestKeyframeRefresh(reason: "app stream decode")
             }
             vm.start()
+            // Observe a paired Bluetooth mouse/keyboard for the whole session, the same way
+            // Vamp Control does. The sink is the stream input controller, so button and scroll
+            // events reach the Mac through the existing ordered, authenticated send path.
+            bluetoothInput.sink = input
+            bluetoothInput.startObserving()
             if hostIsLocked {
                 vm.pauseForHostLock()
             } else {
                 vm.requestApplicationList()
             }
+        }
+        .onChangeCompat(of: bluetoothInput.mouseSensitivity) { newValue in
+            input.pointerSensitivity = newValue
         }
         .onChangeCompat(of: vm.status) { status in
             guard !hostIsLocked else { return }
@@ -130,6 +143,9 @@ struct AppStreamBrowserView: View {
             }
         }
         .sheet(isPresented: $showsHelp) { AppStreamGestureHelpView() }
+        .sheet(isPresented: $showsBluetoothStatus) {
+            BluetoothInputStatusView(controller: bluetoothInput) { showsBluetoothStatus = false }
+        }
         .confirmationDialog(
             closePromptTitle,
             isPresented: Binding(
@@ -150,6 +166,9 @@ struct AppStreamBrowserView: View {
             rendererVM.stopReceiving()
             input.stop()
             vm.stop()
+            // Detach the shared bridge so a paired mouse cannot keep driving a session this
+            // view no longer owns, and so re-entering does not double-subscribe.
+            bluetoothInput.stopObserving()
         }
     }
 
@@ -551,6 +570,9 @@ struct AppStreamBrowserView: View {
                     }
                 }
                 Button("Gesture help", systemImage: "hand.draw") { showsHelp = true }
+                if bluetoothInput.isMouseConnected || bluetoothInput.isKeyboardConnected {
+                    Button("Bluetooth input", systemImage: "mouse") { showsBluetoothStatus = true }
+                }
                 if input.dragLocked {
                     Button("Release drag lock", systemImage: "lock.open") { input.releaseDragLock() }
                 }
@@ -590,6 +612,9 @@ struct AppStreamBrowserView: View {
     private func configureInteraction(viewSize: CGSize) {
         input.sessionID = environment.sessionCoordinator.activeSessionID
         input.isEnabled = canInteract
+        // Keep the Bluetooth sensitivity the user chose in the status sheet applied across
+        // window changes; `setWindow` rebuilds the mapper but must not reset pointer feel.
+        input.pointerSensitivity = bluetoothInput.mouseSensitivity
         if let window = vm.streamedWindow {
             input.setWindow(DisplayDescriptor(
                 id: window.windowID,

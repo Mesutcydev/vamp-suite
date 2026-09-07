@@ -1695,7 +1695,7 @@ private struct MirrorFullscreenStreamView: View {
             interactionVM.sessionMode = effectiveSessionMode
             interactionVM.pointerSensitivity = bluetoothInput.mouseSensitivity
             interactionVM.updateForConnectionState(sessionCoordinator.phase == .receiving ? .connected : .disconnected)
-            bluetoothInput.interactionVM = interactionVM
+            bluetoothInput.sink = interactionVM
             bluetoothInput.startObserving()
             audioRenderer.start()
             sessionCoordinator.onAudioFrame = { [weak audioRenderer = audioRenderer] msg in audioRenderer?.receive(msg) }

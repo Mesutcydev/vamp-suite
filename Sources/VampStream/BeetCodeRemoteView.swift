@@ -2,6 +2,7 @@ import Combine
 import CoreGraphics
 import SwiftUI
 import SharedModels
+import SharedUtilities
 
 #if canImport(UIKit)
 import UIKit
@@ -966,9 +967,10 @@ final class BeetCodeRemoteInputController: ObservableObject {
     func relativePointerMove(deltaX: Double, deltaY: Double) {
         guard let geometry, let rect = contentRect(for: geometry) else { return }
         let scale = max(geometry.displayWidth / max(rect.width, 1), geometry.displayHeight / max(rect.height, 1))
-        let speed = hypot(deltaX * scale, deltaY * scale)
-        let acceleration = 1.0 + min(speed / 50.0, 1.5)
-        route(.relative(dx: deltaX * scale * acceleration, dy: deltaY * scale * acceleration))
+        // Same velocity curve as Vamp Control and the Sync path, from the shared helper.
+        let moved = PointerDynamics.accelerate(
+            DesktopPoint(x: deltaX * scale, y: deltaY * scale))
+        route(.relative(dx: moved.x, dy: moved.y))
     }
 
     func sendText(_ text: String) {

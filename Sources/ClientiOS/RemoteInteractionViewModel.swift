@@ -351,15 +351,14 @@ final class RemoteInteractionViewModel: ObservableObject {
     // MARK: - Pointer dynamics
 
     private func accelerated(_ d: DesktopPoint) -> DesktopPoint {
-        guard pointerAccelerationEnabled else { return d }
-        let speed = (d.x * d.x + d.y * d.y).squareRoot()
-        // ~1x at low speed (preserves precise feel), up to ~2.5x at high speed.
-        let factor = 1.0 + min(speed / 50.0, 1.5)
-        return DesktopPoint(x: d.x * factor, y: d.y * factor)
+        PointerDynamics.accelerate(d, enabled: pointerAccelerationEnabled)
     }
 
     private func dynamics(_ d: DesktopPoint) -> DesktopPoint {
-        accelerated(DesktopPoint(x: d.x * pointerSensitivity, y: d.y * pointerSensitivity))
+        PointerDynamics.apply(
+            d,
+            sensitivity: pointerSensitivity,
+            accelerationEnabled: pointerAccelerationEnabled)
     }
 
     // MARK: - Guards
@@ -481,3 +480,8 @@ final class RemoteInteractionViewModel: ObservableObject {
         }
     }
 }
+
+/// Vamp Control's pointer surface for a paired Bluetooth mouse/keyboard. The methods already
+/// existed with exactly these signatures; declaring the conformance lets the shared
+/// `BluetoothInputController` drive Control and Stream alike.
+extension RemoteInteractionViewModel: RemotePointerInputSink {}
