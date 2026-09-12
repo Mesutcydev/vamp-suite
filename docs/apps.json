@@ -51,13 +51,13 @@
       "category": "utilities",
       "versions": [
         {
-          "version": "0.10.35",
-          "buildVersion": "95",
-          "marketingVersion": "0.10.35 (95)",
-          "date": "2026-09-08",
-          "localizedDescription": "Updates the feed to the published Vamp Assistant 0.10.35 iOS release.",
-          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/ios-v0.10.35/Vamp-Assistant-iOS-0.10.35-build-95-unsigned.ipa",
-          "size": 8918966,
+          "version": "0.10.36",
+          "buildVersion": "113",
+          "marketingVersion": "0.10.36 (113)",
+          "date": "2026-09-12",
+          "localizedDescription": "Adds the pearl interface, compact Mac Control cursor, and adaptive Advanced Setup controls.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.36/Vamp-Assistant-iOS-0.10.36-build-113-unsigned.ipa",
+          "size": 8993479,
           "minOSVersion": "18.0"
         },
         {
