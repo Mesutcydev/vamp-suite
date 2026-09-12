@@ -51,6 +51,16 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "0.10.35",
+          "buildVersion": "95",
+          "marketingVersion": "0.10.35 (95)",
+          "date": "2026-09-08",
+          "localizedDescription": "Updates the feed to the published Vamp Assistant 0.10.35 iOS release.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/ios-v0.10.35/Vamp-Assistant-iOS-0.10.35-build-95-unsigned.ipa",
+          "size": 8918966,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "0.1.41",
           "buildVersion": "95",
           "marketingVersion": "0.1.41 (95)",
@@ -134,6 +144,16 @@
       "tintColor": "#6E6E73",
       "category": "utilities",
       "versions": [
+        {
+          "version": "0.1.22",
+          "buildVersion": "50",
+          "marketingVersion": "0.1.22 (50)",
+          "date": "2026-09-12",
+          "localizedDescription": "Restores full splash artwork while preserving animation; improves readability, large-text layouts, onboarding, pairing recovery, cancellation, and reconnect controls.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-stream-0.1.22-build-50/VampStream-iOS-0.1.22-build-50-altstore-unsigned.ipa",
+          "size": 12243935,
+          "minOSVersion": "18.0"
+        },
         {
           "version": "0.1.18",
           "buildVersion": "32",
