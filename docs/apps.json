@@ -156,6 +156,16 @@
       "versions": [
         {
           "version": "0.1.22",
+          "buildVersion": "52",
+          "marketingVersion": "0.1.22 (52)",
+          "date": "2026-09-20",
+          "localizedDescription": "Matches the Vamp Assistant streaming chrome: one machined control bar with keycap controls and the stream options in the bar, no top bar, and the streamed window fitted below the status bar.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-stream-0.1.22-build-52/VampStream-iOS-0.1.22-build-52-altstore-unsigned.ipa",
+          "size": 11338091,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.1.22",
           "buildVersion": "50",
           "marketingVersion": "0.1.22 (50)",
           "date": "2026-09-12",
