@@ -46,7 +46,6 @@ struct VampAssistantAppStreamView: View {
                     BeetCodeRemoteView(
                         session: session,
                         windowID: selectedApplication.windowID,
-                        streamTitle: selectedApplication.name,
                         isTerminalApplication: AppStreamApplicationProfile.isTerminal(
                             bundleIdentifier: selectedApplication.bundleIdentifier,
                             name: selectedApplication.name),

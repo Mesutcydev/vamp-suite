@@ -84,7 +84,7 @@ targets:
     settings:
       base:
         MARKETING_VERSION: 0.1.22
-        CURRENT_PROJECT_VERSION: 50
+        CURRENT_PROJECT_VERSION: 52
         PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.stream
         PRODUCT_NAME: Vamp Stream
         CODE_SIGN_ENTITLEMENTS: Configuration/VampStream.entitlements

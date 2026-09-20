@@ -531,7 +531,8 @@ struct AppStreamBrowserView: View {
                             return last < recoveryStartedAt
                         }
                     }
-                    .padding(12)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
                 }
             }
             .overlay(alignment: .bottom) {
@@ -550,21 +551,26 @@ struct AppStreamBrowserView: View {
                         // deck's height changes.
                         .padding(
                             .bottom,
-                            AppStreamChromePill<EmptyView>.reservedBand(safeAreaBottom: 0) + AppSpacing.xs)
+                            AppStreamChromeBar.reservedBand(safeAreaBottom: 0) + AppSpacing.xs)
                         .allowsHitTesting(false)
                 }
             }
             .overlay(alignment: .bottom) {
                 if controlsHidden {
-                    AppStreamChromeRevealButton(bottomInset: proxy.safeAreaInsets.bottom) {
+                    AppStreamChromeRevealButton(
+                        bottomInset: max(proxy.safeAreaInsets.bottom, AppStreamChromeBar.bottomFloor)
+                    ) {
                         withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82)) {
                             controlsHidden = false
                         }
                     }
                 } else {
                     streamChromePill
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, max(proxy.safeAreaInsets.bottom, 0) + 12)
+                        .padding(.horizontal, AppStreamChromeBar.edgeInset)
+                        .padding(
+                            .bottom,
+                            max(proxy.safeAreaInsets.bottom, AppStreamChromeBar.bottomFloor)
+                                + AppStreamChromeBar.bottomMargin)
                 }
             }
             .overlay(alignment: .bottom) {
@@ -577,6 +583,11 @@ struct AppStreamBrowserView: View {
                     )
                     .allowsHitTesting(canInteract)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if viewportZoom > 1.05 || viewportOffset != .zero {
+                    zoomResetChip()
                 }
             }
             .task(id: vm.streamedWindow?.windowID) {
@@ -605,120 +616,95 @@ struct AppStreamBrowserView: View {
             }
 
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            streamTopBar(name: name).background(.black.opacity(0.28))
-        }
+        // The status-bar band prints black while streaming, not the launcher art, so the
+        // picture reads as one surface with the app-window above it.
+        .background(Color.black.ignoresSafeArea())
         // Respect the keyboard region (`.container` only): iOS then lays the whole surface out
         // above the system keyboard exactly once, which is what keeps the keyboard deck visible.
         // Ignoring it as well as adding our own inset pad moved the deck twice and pushed it off
-        // the top of the screen — the "buttons appear, then vanish" report.
+        // the top of the screen — the "buttons appear, then vanish" report. The top safe area is
+        // respected so the streamed window never runs under the status bar.
         .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
     }
 
-    private func streamTopBar(name: String) -> some View {
-        HStack(spacing: 10) {
-            Button { vm.backToApps() } label: {
-                Label("Apps", systemImage: "chevron.left")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 13).padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
+    /// The stream options, opened from the bar's trailing menu key. Everything the old top
+    /// bar's menu offered lives here, in the same place the Assistant control surface keeps
+    /// its options.
+    @ViewBuilder
+    private var streamOptionsMenu: some View {
+        Section("View on this device") {
+            // "Fit window" was documented in the gesture help but existed only on the
+            // Assistant path. Both menus now offer the same two picture actions.
+            Button("Fit window", systemImage: "arrow.down.right.and.arrow.up.left") {
+                input.releaseDragLock()
+                withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.86)) {
+                    resetViewportZoom()
+                }
+                adjustsViewport = false
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back to apps")
-            .accessibilityHint("Stop streaming and return to the Mac app list")
-            Spacer()
-            Text(adjustsViewport ? "Adjust view" : name)
-                .lineLimit(1)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 13).padding(.vertical, 8)
-                .background(.ultraThinMaterial, in: Capsule())
-            Spacer()
-            if viewportZoom > 1.05 {
-                Button {
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.86)) {
-                        resetViewportZoom()
-                    }
-                } label: {
-                    Text("1×")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Reset zoom")
-                .accessibilityValue("Currently zoomed to \(Int(viewportZoom * 100)) percent")
+            Button("Larger text (2×)", systemImage: "plus.magnifyingglass") {
+                input.releaseDragLock()
+                viewportZoom = 2
+                viewportOffset = .zero
+                adjustsViewport = true
             }
-            Button {
-                if input.dragLocked { input.releaseDragLock() }
-                adjustsViewport.toggle()
-            } label: {
-                Image(systemName: adjustsViewport ? "checkmark" : "viewfinder")
-                    .frame(minWidth: 44, minHeight: 44)
-                    .background(.ultraThinMaterial, in: Capsule())
-            }
-            .accessibilityLabel(adjustsViewport ? "Done adjusting" : "Adjust view")
-            .accessibilityHint("Switch between controlling the Mac and moving or zooming the picture")
-            Menu {
-                Section("View on this device") {
-                    // "Fit window" was documented in the gesture help but existed only on the
-                    // Assistant path. Both menus now offer the same two picture actions.
-                    Button("Fit window", systemImage: "arrow.down.right.and.arrow.up.left") {
-                        input.releaseDragLock()
-                        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.86)) {
-                            resetViewportZoom()
-                        }
-                        adjustsViewport = false
-                    }
-                    Button("Larger text (2×)", systemImage: "plus.magnifyingglass") {
-                        input.releaseDragLock()
-                        viewportZoom = 2
-                        viewportOffset = .zero
-                        adjustsViewport = true
-                    }
-                }
-                Section("Mac window") {
-                    Button("Adaptive resize") { vm.setSizingMode(.adaptive) }
-                    Button("Original Size") { vm.setSizingMode(.original) }
-                }
-                // "Auto" named a mechanism this preset does not have — it maps to the fixed
-                // balanced preset, not to adaptation. The three options are named for the
-                // outcome the user is choosing, matching the Assistant path's vocabulary.
-                Picker("Picture quality", selection: $qualityMode) {
-                    Text("Sharper text").tag("quality")
-                    Text("Balanced").tag("auto")
-                    Text("Lower bandwidth").tag("performance")
-                }
-                if let streamed = vm.streamedApplication,
-                   ApplicationClosePolicy.canClose(streamed.bundleIdentifier) {
-                    Button("Close \(streamed.name)", systemImage: "xmark.app", role: .destructive) {
-                        closeChoice = streamed
-                    }
-                }
-                Button("Gesture help", systemImage: "hand.draw") { showsHelp = true }
-                if bluetoothInput.isMouseConnected || bluetoothInput.isKeyboardConnected {
-                    Button("Bluetooth input", systemImage: "mouse") { showsBluetoothStatus = true }
-                }
-                if input.dragLocked {
-                    Button("Release drag lock", systemImage: "lock.open") { input.releaseDragLock() }
-                }
-                Button("Refresh video", systemImage: "arrow.clockwise") {
-                    sessionCoordinator.requestKeyframeRefresh(reason: "User requested video refresh")
-                }
-                Button("Reconnect", systemImage: "wifi") { Task { await sessionCoordinator.reconnectLast() } }
-            } label: {
-                Image(systemName: input.dragLocked ? "lock.fill" : "ellipsis.circle")
-                    .frame(minWidth: 44, minHeight: 44)
-            }
-            .accessibilityLabel(input.dragLocked ? "Stream options, drag lock on" : "Stream options")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
+        // "Auto" named a mechanism this preset does not have — it maps to the fixed
+        // balanced preset, not to adaptation. The three options are named for the
+        // outcome the user is choosing, matching the Assistant path's vocabulary.
+        Picker("Picture quality", selection: $qualityMode) {
+            Text("Sharper text").tag("quality")
+            Text("Balanced").tag("auto")
+            Text("Lower bandwidth").tag("performance")
+        }
+        if let streamed = vm.streamedApplication,
+           ApplicationClosePolicy.canClose(streamed.bundleIdentifier) {
+            Button("Close \(streamed.name)", systemImage: "xmark.app", role: .destructive) {
+                closeChoice = streamed
+            }
+        }
+        Button("Gesture help", systemImage: "hand.draw") { showsHelp = true }
+        if bluetoothInput.isMouseConnected || bluetoothInput.isKeyboardConnected {
+            Button("Bluetooth input", systemImage: "mouse") { showsBluetoothStatus = true }
+        }
+        if input.dragLocked {
+            Button("Release drag lock", systemImage: "lock.open") { input.releaseDragLock() }
+        }
+        Button("Refresh video", systemImage: "arrow.clockwise") {
+            sessionCoordinator.requestKeyframeRefresh(reason: "User requested video refresh")
+        }
+        Button("Reconnect", systemImage: "wifi") { Task { await sessionCoordinator.reconnectLast() } }
     }
 
-    /// The bottom control deck. It owns close, annotate, keyboard, Mac-window sizing, and hide;
-    /// the top bar keeps only navigation and the stream options menu so the two surfaces never
-    /// repeat the same control.
+    /// Floating reset for the local zoom/pan, drawn like the Assistant surface's floating
+    /// pills. The bar owns every primary control; this appears only while the picture is
+    /// magnified or panned.
+    private func zoomResetChip() -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.86)) {
+                resetViewportZoom()
+            }
+        } label: {
+            Text("1×")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 13)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.30), in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.7))
+                .frame(minWidth: AppHostMetrics.iconControlTarget, minHeight: AppHostMetrics.iconControlTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 12)
+        .padding(.trailing, 14)
+        .accessibilityLabel("Reset zoom")
+        .accessibilityValue("Currently zoomed to \(Int(viewportZoom * 100)) percent")
+    }
+
+    /// The bottom control deck, drawn as the Vamp Assistant control bar: a machined pearl
+    /// housing of keycap controls in the Assistant's order — close, apps, markup, keyboard,
+    /// adjust view, Mac-window sizing, options, divider, hide. There is no separate top bar.
     ///
     /// The sizing cluster is deliberately *two* choices — Adaptive resize and Original Size.
     /// Local picture modes (fit/fill, zoom presets) were removed: they never fixed a window the
@@ -726,23 +712,47 @@ struct AppStreamBrowserView: View {
     /// one actually changed the Mac.
     private var streamChromePill: some View {
         AppStreamChromePill {
-            AppStreamChromeButton(systemName: "xmark", isDestructive: true) {
-                onClose()
+            AppStreamChromeButton(
+                systemName: "xmark",
+                isDestructive: true,
+                accessibilityLabel: "Close remote control",
+                action: onClose)
+
+            AppStreamChromeButton(
+                systemName: "chevron.left",
+                accessibilityLabel: "Apps",
+                accessibilityValue: "Back to the Mac app list"
+            ) {
+                vm.backToApps()
             }
 
             AppStreamChromeButton(
                 systemName: annotationStore.isVisible ? "pencil.slash" : "pencil.tip",
-                isActive: annotationStore.isVisible
+                isActive: annotationStore.isVisible,
+                accessibilityLabel: "Markup",
+                accessibilityValue: annotationStore.isVisible ? "On" : "Off"
             ) {
                 annotationStore.isVisible.toggle()
             }
 
             AppStreamChromeButton(
                 systemName: keyboardActive ? "keyboard.chevron.compact.down" : "keyboard",
-                isActive: keyboardActive
+                isActive: keyboardActive,
+                accessibilityLabel: keyboardActive ? "Hide remote keyboard" : "Show remote keyboard",
+                accessibilityValue: keyboardActive ? "Visible" : "Hidden"
             ) {
                 if !keyboardActive, isStreamingTerminal { input.focusTerminal() }
                 keyboardActive.toggle()
+            }
+
+            AppStreamChromeButton(
+                systemName: adjustsViewport ? "checkmark" : "viewfinder",
+                isActive: adjustsViewport,
+                accessibilityLabel: adjustsViewport ? "Done adjusting" : "Adjust view",
+                accessibilityValue: adjustsViewport ? "Adjusting" : "Controlling"
+            ) {
+                if input.dragLocked { input.releaseDragLock() }
+                adjustsViewport.toggle()
             }
 
             AppStreamChromeMenu(
@@ -760,7 +770,21 @@ struct AppStreamBrowserView: View {
                 }
             }
 
-            AppStreamChromeButton(systemName: "eye.slash", isDimmed: true) {
+            AppStreamChromeMenu(
+                systemName: input.dragLocked ? "lock.fill" : "ellipsis",
+                isActive: input.dragLocked,
+                accessibilityLabel: input.dragLocked ? "Stream options, drag lock on" : "Stream options"
+            ) {
+                streamOptionsMenu
+            }
+
+            AppStreamChromeDivider()
+
+            AppStreamChromeButton(
+                systemName: "eye.slash",
+                isDimmed: true,
+                accessibilityLabel: "Hide controls"
+            ) {
                 withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82)) {
                     keyboardActive = false
                     annotationStore.isVisible = false
@@ -782,7 +806,7 @@ struct AppStreamBrowserView: View {
     /// send button, a toolbar) clear of the deck, and makes the Mac match the area the picture is
     /// actually drawn in instead of one taller than the phone can show.
     private static func controlDeckBand(safeAreaBottom: CGFloat) -> CGFloat {
-        AppStreamChromePill<EmptyView>.reservedBand(safeAreaBottom: safeAreaBottom)
+        AppStreamChromeBar.reservedBand(safeAreaBottom: safeAreaBottom)
     }
 
     /// The unobstructed part of the surface: the area the streamed picture may occupy.

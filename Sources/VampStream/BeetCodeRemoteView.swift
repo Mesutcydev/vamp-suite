@@ -40,7 +40,6 @@ struct BeetCodeRemoteView: View {
 
     let session: BeetCodeRemoteSessionViewModel.Session
     let windowID: UInt32?
-    let streamTitle: String?
     let isTerminalApplication: Bool
     let streamGeometryRevision: String
     let onClose: () -> Void
@@ -93,7 +92,6 @@ struct BeetCodeRemoteView: View {
     init(
         session: BeetCodeRemoteSessionViewModel.Session,
         windowID: UInt32? = nil,
-        streamTitle: String? = nil,
         isTerminalApplication: Bool = false,
         streamGeometryRevision: String = "",
         onClose: @escaping () -> Void,
@@ -107,7 +105,6 @@ struct BeetCodeRemoteView: View {
     ) {
         self.session = session
         self.windowID = windowID
-        self.streamTitle = streamTitle
         self.isTerminalApplication = isTerminalApplication
         self.streamGeometryRevision = streamGeometryRevision
         self.onClose = onClose
@@ -269,15 +266,11 @@ struct BeetCodeRemoteView: View {
         return session.status.message ?? "Vamp Assistant is still preparing Mac Control."
     }
 
+    /// There is no top bar: like the Assistant's whole-Mac control surface, the picture owns
+    /// the screen and one machined bar carries every control — back to the apps, markup,
+    /// keyboard, adjust view, window sizing, and the stream options all live in that bar.
     private var streamSurface: some View {
         VStack(spacing: 0) {
-            if onChooseApplication != nil, !controlsHidden {
-                // This must occupy layout space. Overlaying it hides the first rows of a
-                // tall Mac window and also reports an oversized viewport back to the Mac.
-                appStreamTopBar
-                    .background(Color.black)
-            }
-
             GeometryReader { proxy in
                 // The deck floats over the bottom of the surface, so the picture must stop
                 // above it — exactly as Vamp Sync lays out an app window. The Mac is asked
@@ -411,7 +404,8 @@ struct BeetCodeRemoteView: View {
                     if AppStreamVideoHealth.needsRecovery(lastDecodedAt: renderer.lastDecodedAt,
                         startedAt: videoStartedAt, now: videoHealthCheckTime), renderer.lastError == nil {
                         AppStreamVideoRecoveryBar { restartStream() }
-                            .padding(AppSpacing.sm)
+                            .padding(.horizontal, AppSpacing.xs)
+                            .padding(.top, AppSpacing.xs)
                     }
                 }
                 .overlay(alignment: .bottom) {
@@ -430,7 +424,7 @@ struct BeetCodeRemoteView: View {
                             // Derived from the deck so it follows the deck's height.
                             .padding(
                                 .bottom,
-                                AppStreamChromePill<EmptyView>.reservedBand(safeAreaBottom: 0) + AppSpacing.xs)
+                                AppStreamChromeBar.reservedBand(safeAreaBottom: 0) + AppSpacing.xs)
                             .allowsHitTesting(false)
                             .accessibilityLabel("Stream notice: \(notice)")
                     }
@@ -450,6 +444,11 @@ struct BeetCodeRemoteView: View {
                         )
                         .allowsHitTesting(canInteract)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if viewportZoom > defaultViewportZoom + 0.05 || viewportOffset != .zero {
+                        zoomResetChip()
                     }
                 }
                 .onAppear {
@@ -476,151 +475,142 @@ struct BeetCodeRemoteView: View {
         }
         .background(Color.black)
         // `.container` only, so the keyboard region is respected: the deck rides above the
-        // system keyboard once instead of being shifted a second time by hand.
+        // system keyboard once instead of being shifted a second time by hand. The top safe
+        // area is respected — the streamed window must not run under the status bar, where the
+        // app's own title row would sit underneath the clock.
         .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
     }
 
-    private var appStreamTopBar: some View {
-        HStack(spacing: 10) {
-            Button(action: { onChooseApplication?() }) {
-                Label("Apps", systemImage: "chevron.left")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back to apps")
-
-            Spacer()
-
-            Text(adjustsViewport ? "Adjust view" : (streamTitle ?? "Mac app"))
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial, in: Capsule())
-                .lineLimit(1)
-
-            Spacer()
-
-            Button {
+    /// The stream options, opened from the bar's trailing menu key. Everything the old top
+    /// bar's menu offered lives here, in the same place the Assistant control surface keeps
+    /// its options.
+    @ViewBuilder
+    private var streamOptionsMenu: some View {
+        Section("View on this device") {
+            Button("Fit window", systemImage: "arrow.down.right.and.arrow.up.left") {
                 if input.dragLocked { input.toggleDragLockCurrentPointer() }
-                adjustsViewport.toggle()
-            } label: {
-                Image(systemName: adjustsViewport ? "checkmark" : "viewfinder")
-                    .frame(minWidth: 44, minHeight: 44)
-                    .background(.ultraThinMaterial, in: Capsule())
+                resetViewportZoom()
+                adjustsViewport = false
             }
-            .accessibilityLabel(adjustsViewport ? "Done adjusting" : "Adjust view")
-            .accessibilityHint("Switch between controlling the Mac and moving or zooming the picture")
-            Menu {
-                Section("View on this device") {
-                    Button("Fit window", systemImage: "arrow.down.right.and.arrow.up.left") {
-                        if input.dragLocked { input.toggleDragLockCurrentPointer() }
-                        resetViewportZoom()
-                        adjustsViewport = false
-                    }
-                    Button("Larger text (2×)", systemImage: "plus.magnifyingglass") {
-                        if input.dragLocked { input.toggleDragLockCurrentPointer() }
-                        viewportZoom = 2
-                        viewportOffset = .zero
-                        adjustsViewport = true
-                    }
-                }
-                if onAdaptiveSizing != nil {
-                    Section("Mac window") {
-                        Button("Adaptive resize") { onAdaptiveSizing?() }
-                        // Was "Original proportions" here and "Original Size" on the Sync
-                        // path — the same action under two names.
-                        Button("Original Size") { onOriginalSizing?() }
-                    }
-                }
-                // Named for the outcome, like the Sync path's picker, with the resolution
-                // kept as secondary detail so nothing is lost. "Resolution" asked the user
-                // to reason about pixels; every other quality control in the app does not.
-                Picker("Picture quality", selection: $resolution) {
-                    ForEach(StreamResolution.allCases) { option in
-                        Text(option.title).tag(option.rawValue)
-                    }
-                }
-                Button("Gesture help", systemImage: "hand.draw") { showsGestureHelp = true }
-                if bluetoothInput.isMouseConnected || bluetoothInput.isKeyboardConnected {
-                    Button("Bluetooth input", systemImage: "mouse") { showsBluetoothStatus = true }
-                }
-                if input.dragLocked {
-                    Button("Release drag lock", systemImage: "lock.open") { input.toggleDragLockCurrentPointer() }
-                }
-                // The Sync path has always offered a manual restart; here the only way to
-                // recover a stuttering stream was to wait for the automatic recovery bar to
-                // decide the video had stalled, or to leave and reopen the app.
-                Button("Refresh video", systemImage: "arrow.clockwise") { restartStream() }
-            } label: {
-                Image(systemName: input.dragLocked ? "lock.fill" : "ellipsis.circle")
-                    .frame(
-                        minWidth: AppHostMetrics.iconControlTarget,
-                        minHeight: AppHostMetrics.iconControlTarget)
-            }
-            .accessibilityLabel(input.dragLocked ? "Stream options, drag lock on" : "Stream options")
-            .sheet(isPresented: $showsGestureHelp) { AppStreamGestureHelpView() }
-            if viewportZoom > defaultViewportZoom + 0.05 || viewportOffset != .zero {
-                Button {
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.86)) {
-                        resetViewportZoom()
-                    }
-                } label: {
-                    Text("1×")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Reset zoom")
-                .accessibilityValue("Currently zoomed to \(Int(viewportZoom * 100)) percent")
+            Button("Larger text (2×)", systemImage: "plus.magnifyingglass") {
+                if input.dragLocked { input.toggleDragLockCurrentPointer() }
+                viewportZoom = 2
+                viewportOffset = .zero
+                adjustsViewport = true
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
+        // Named for the outcome, like the Sync path's picker, with the resolution
+        // kept as secondary detail so nothing is lost. "Resolution" asked the user
+        // to reason about pixels; every other quality control in the app does not.
+        Picker("Picture quality", selection: $resolution) {
+            ForEach(StreamResolution.allCases) { option in
+                Text(option.title).tag(option.rawValue)
+            }
+        }
+        Button("Gesture help", systemImage: "hand.draw") { showsGestureHelp = true }
+        if bluetoothInput.isMouseConnected || bluetoothInput.isKeyboardConnected {
+            Button("Bluetooth input", systemImage: "mouse") { showsBluetoothStatus = true }
+        }
+        if input.dragLocked {
+            Button("Release drag lock", systemImage: "lock.open") { input.toggleDragLockCurrentPointer() }
+        }
+        // The Sync path has always offered a manual restart; here the only way to
+        // recover a stuttering stream was to wait for the automatic recovery bar to
+        // decide the video had stalled, or to leave and reopen the app.
+        Button("Refresh video", systemImage: "arrow.clockwise") { restartStream() }
     }
 
-    /// The bottom control deck, drawn with the *shared* `AppStreamChromePill` components.
-    ///
-    /// This used to be a hand-rolled copy of that deck, and the two had already drifted: a
-    /// different hide/reveal button, a different reset control, different tap targets. Both
-    /// host paths now draw the same deck in the same order, so a Sync stream and an Assistant
-    /// stream stop looking like two different apps.
+    /// Floating reset for the local zoom/pan, drawn like the Assistant surface's floating
+    /// pills. The bar owns every primary control; this appears only while the picture is
+    /// magnified or panned.
+    private func zoomResetChip() -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.86)) {
+                resetViewportZoom()
+            }
+        } label: {
+            Text("1×")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 13)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.30), in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.7))
+                .frame(minWidth: AppHostMetrics.iconControlTarget, minHeight: AppHostMetrics.iconControlTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, AppSpacing.xs)
+        .padding(.trailing, 14)
+        .accessibilityLabel("Reset zoom")
+        .accessibilityValue("Currently zoomed to \(Int(viewportZoom * 100)) percent")
+    }
+
+    /// The bottom control deck, drawn as the Vamp Assistant control bar: a machined pearl
+    /// housing of keycap controls in the Assistant's order — close, apps, markup, keyboard,
+    /// adjust view, window sizing, options, divider, hide — so an Assistant stream and the
+    /// Assistant app itself stop looking like two different products.
     @ViewBuilder
     private func classicBottomChrome(bottomInset: CGFloat) -> some View {
         if controlsHidden {
-            AppStreamChromeRevealButton(bottomInset: bottomInset) {
+            AppStreamChromeRevealButton(bottomInset: max(bottomInset, AppStreamChromeBar.bottomFloor)) {
                 withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82)) {
                     controlsHidden = false
                 }
             }
         } else {
             classicChromePill
-                .padding(.horizontal, AppSpacing.md)
-                .padding(.bottom, max(bottomInset, 0) + AppSpacing.sm)
+                .padding(.horizontal, AppStreamChromeBar.edgeInset)
+                .padding(.bottom, max(bottomInset, AppStreamChromeBar.bottomFloor) + AppStreamChromeBar.bottomMargin)
+                .sheet(isPresented: $showsGestureHelp) { AppStreamGestureHelpView() }
         }
     }
 
     private var classicChromePill: some View {
         AppStreamChromePill {
-            AppStreamChromeButton(systemName: "xmark", isDestructive: true, action: onClose)
+            AppStreamChromeButton(
+                systemName: "xmark",
+                isDestructive: true,
+                accessibilityLabel: "Close remote control",
+                action: onClose)
+
+            if onChooseApplication != nil {
+                AppStreamChromeButton(
+                    systemName: "chevron.left",
+                    accessibilityLabel: "Apps",
+                    accessibilityValue: "Back to the application list"
+                ) {
+                    onChooseApplication?()
+                }
+            }
 
             AppStreamChromeButton(
                 systemName: annotationStore.isVisible ? "pencil.slash" : "pencil.tip",
-                isActive: annotationStore.isVisible
+                isActive: annotationStore.isVisible,
+                accessibilityLabel: "Markup",
+                accessibilityValue: annotationStore.isVisible ? "On" : "Off"
             ) {
                 annotationStore.isVisible.toggle()
             }
 
             AppStreamChromeButton(
                 systemName: keyboardActive ? "keyboard.chevron.compact.down" : "keyboard",
-                isActive: keyboardActive
+                isActive: keyboardActive,
+                accessibilityLabel: keyboardActive ? "Hide remote keyboard" : "Show remote keyboard",
+                accessibilityValue: keyboardActive ? "Visible" : "Hidden"
             ) {
                 if !keyboardActive, isTerminalApplication { input.focusTerminal() }
                 keyboardActive.toggle()
+            }
+
+            AppStreamChromeButton(
+                systemName: adjustsViewport ? "checkmark" : "viewfinder",
+                isActive: adjustsViewport,
+                accessibilityLabel: adjustsViewport ? "Done adjusting" : "Adjust view",
+                accessibilityValue: adjustsViewport ? "Adjusting" : "Controlling"
+            ) {
+                if input.dragLocked { input.toggleDragLockCurrentPointer() }
+                adjustsViewport.toggle()
             }
 
             if windowID == nil, let displays = session.status.displays, displays.count > 1 {
@@ -684,7 +674,21 @@ struct BeetCodeRemoteView: View {
                 }
             }
 
-            AppStreamChromeButton(systemName: "eye.slash", isDimmed: true) {
+            AppStreamChromeMenu(
+                systemName: input.dragLocked ? "lock.fill" : "ellipsis",
+                isActive: input.dragLocked,
+                accessibilityLabel: input.dragLocked ? "Stream options, drag lock on" : "Stream options"
+            ) {
+                streamOptionsMenu
+            }
+
+            AppStreamChromeDivider()
+
+            AppStreamChromeButton(
+                systemName: "eye.slash",
+                isDimmed: true,
+                accessibilityLabel: "Hide controls"
+            ) {
                 withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82)) {
                     keyboardActive = false
                     annotationStore.isVisible = false
@@ -709,7 +713,7 @@ struct BeetCodeRemoteView: View {
     /// toolbar, a send button) clear of the deck, and makes the Mac match the area the picture is
     /// actually drawn in instead of one taller than the phone can show.
     private static func controlDeckBand(safeAreaBottom: CGFloat) -> CGFloat {
-        AppStreamChromePill<EmptyView>.reservedBand(safeAreaBottom: safeAreaBottom)
+        AppStreamChromeBar.reservedBand(safeAreaBottom: safeAreaBottom)
     }
 
     /// Rebuild the capture stream from the current settings. Shared by the automatic recovery
