@@ -94,7 +94,7 @@ struct VampStreamSyncPromoCard: View {
         .padding(.trailing, 18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .vampHomeLiveGlass(
-            in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous),
+            in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous),
             phaseOffset: 2.8
         )
     }

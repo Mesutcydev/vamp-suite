@@ -74,7 +74,11 @@ public struct HostCapabilityFlags: OptionSet, Codable, Hashable, Sendable {
             .supportsWorkspaces,
             // Any client running this code can render a window (App Streaming) stream — it is
             // just H.264/HEVC video. The host gates whether streaming is actually offered.
-            .supportsAppStreaming
+            .supportsAppStreaming,
+            // Every video surface in this client stack draws a local cursor overlay
+            // (LocalCursorOverlay), so cursorless capture gives all clients zero-latency
+            // pointer feedback instead of waiting for a captured frame round trip.
+            .supportsCursorlessCapture
         ]
         #if canImport(VideoToolbox)
         if VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC) {
@@ -85,7 +89,6 @@ public struct HostCapabilityFlags: OptionSet, Codable, Hashable, Sendable {
         if isMacClient {
             flags.insert(.supportsMacClient)
             flags.insert(.supportsDesktopControl)
-            flags.insert(.supportsCursorlessCapture)
         }
         return flags
     }

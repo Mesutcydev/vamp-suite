@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import XCTest
 @testable import HostApp
 import SharedModels
@@ -30,7 +31,7 @@ final class HostApplicationRegistryTests: XCTestCase {
     /// A Mac with a full /Applications encodes to several hundred KB with icons attached,
     /// which the control channel silently drops. The snapshot must still arrive.
     func testApplicationListEnvelopeStaysUnderTheControlChannelBudget() throws {
-        let icon = String(repeating: "A", count: 3_000) // ~ one 32x32 PNG, base64
+        let icon = String(repeating: "A", count: 3_000) // one small base64 icon payload
         let applications = (0..<200).map { index in
             RemoteApplication(
                 bundleIdentifier: "com.example.app\(index)",
@@ -137,6 +138,54 @@ final class HostApplicationRegistryTests: XCTestCase {
             "moving to a differently-scaled screen is a real change")
     }
 
+    // MARK: - App-list icon tile
+
+    /// The browser draws an app icon inside a fixed 42 pt row, so a 3x device samples it into
+    /// 126 device pixels: a tile below that is upscaled and reads as low resolution. The tile
+    /// must also still fit one control-channel page on its own, because the host silently
+    /// replaces an icon that cannot fit a page with a placeholder row.
+    func testIconTileIsHighResolutionAndStillFitsOnePage() throws {
+        XCTAssertGreaterThanOrEqual(
+            HostApplicationRegistry.iconTilePixels, 126,
+            "a 3x device samples the 42 pt row icon into 126 device pixels")
+        let tile = try XCTUnwrap(
+            HostApplicationRegistry.encodedIconTile(Self.detailedIcon()),
+            "an NSImage must encode to a PNG tile")
+        XCTAssertGreaterThanOrEqual(
+            tile.pixelsWide, HostApplicationRegistry.iconTilePixels,
+            "the served tile must not be smaller than the declared resolution")
+        XCTAssertEqual(tile.pixelsWide, tile.pixelsHigh, "the tile is square")
+        // A page of one entry is the worst case; the entry's JSON is a few hundred bytes, so
+        // leave a kilobyte of room before the host would drop this icon.
+        XCTAssertLessThanOrEqual(
+            tile.png.base64EncodedString().utf8.count,
+            HostSessionCoordinator.applicationListByteBudget - 1_024,
+            "an icon larger than one page is dropped from the list instead of being sent")
+    }
+
+    /// Artwork with gradients and strokes so the PNG compresses like a real app icon instead of
+    /// collapsing into a flat-color tile.
+    private static func detailedIcon() -> NSImage {
+        let side = 1_024
+        let image = NSImage(size: NSSize(width: side, height: side))
+        image.lockFocus()
+        NSGradient(colors: [.systemTeal, .systemIndigo, .systemPink])?
+            .draw(in: NSRect(x: 0, y: 0, width: side, height: side), angle: 45)
+        NSColor.white.withAlphaComponent(0.85).setStroke()
+        for index in 0..<24 {
+            let inset = CGFloat(index) * 18
+            let path = NSBezierPath(
+                roundedRect: NSRect(x: inset, y: inset,
+                                    width: CGFloat(side) - 2 * inset,
+                                    height: CGFloat(side) - 2 * inset),
+                xRadius: 40, yRadius: 40)
+            path.lineWidth = 6
+            path.stroke()
+        }
+        image.unlockFocus()
+        return image
+    }
+
     func testDedupPrefersActiveInstance() {
         let deduped = HostApplicationRegistry.dedupedByBundleID([
             app("com.apple.Terminal", name: "Terminal", active: false, windows: ["1"]),
@@ -238,14 +287,21 @@ final class HostApplicationRegistryTests: XCTestCase {
         XCTAssertLessThanOrEqual(frame.maxY, 876, "must stay inside the usable display area")
     }
 
-    /// Growing must not hand the phone a capture its H.264 decoder will reject.
+    /// Growing must not hand the phone a capture its hardware decoder will reject, and must still
+    /// be able to reach the target phone's native pixels.
     func testWindowFitIsCappedOnVeryLargeDisplays() {
         let frame = HostApplicationRegistry.targetWindowFrame(
             current: CGRect(x: 0, y: 0, width: 528, height: 374),
             display: CGRect(x: 0, y: 0, width: 5_120, height: 2_880),
             requestedAspect: 390.0 / 844.0
         )
-        XCTAssertLessThanOrEqual(max(frame.width, frame.height), 1_400)
+        // The cap is the shared policy value rather than a local constant, so this test tracks it.
+        XCTAssertLessThanOrEqual(max(frame.width, frame.height), AdaptiveWindowSizing.maxEdgePoints)
+        // The cap must cover an iPhone 17 Pro Max (1320×2868 px) on a 2x Mac…
+        XCTAssertGreaterThanOrEqual(AdaptiveWindowSizing.maxEdgePoints * 2, 2_868)
+        // …while staying inside the pixel envelope the window-stream ceiling enforces.
+        XCTAssertLessThanOrEqual(
+            AdaptiveWindowSizing.maxEdgePoints * 2, Double(StreamScaling.windowMaximumLongEdge))
         XCTAssertEqual(frame.width / frame.height, 390.0 / 844.0, accuracy: 0.005)
     }
 
@@ -254,6 +310,37 @@ final class HostApplicationRegistryTests: XCTestCase {
         XCTAssertNil(HostApplicationRegistry.matchingWindowIndex(frames: [nil, CGRect(x: 500, y: 200, width: 900, height: 700)], target: target))
         XCTAssertNil(HostApplicationRegistry.matchingWindowIndex(frames: [target, target], target: target))
         XCTAssertEqual(HostApplicationRegistry.matchingWindowIndex(frames: [nil, target], target: target), 1)
+    }
+
+    /// The host decides whether to retry an AX resize — and whether to tell the user the Mac kept
+    /// a different shape — from this one rule, so it must use the same 5% the client compares
+    /// against, and it must never treat degenerate geometry as a mismatch.
+    @MainActor
+    func testAspectMismatchIsTheSharedFivePercentRule() {
+        let desired = DesktopSize(width: 667, height: 1_364)      // portrait, 0.489
+        let matching = DesktopRect(origin: DesktopPoint(x: 0, y: 0), size: desired)
+        XCTAssertFalse(HostSessionCoordinator.aspectMismatch(matching, desired: desired))
+
+        // A window that kept its landscape shape (the reported regression).
+        let landscape = DesktopRect(
+            origin: DesktopPoint(x: 0, y: 0),
+            size: DesktopSize(width: 1_400, height: 980))
+        XCTAssertTrue(HostSessionCoordinator.aspectMismatch(landscape, desired: desired))
+
+        // A height clamp inside the tolerance is not reported.
+        let slightlyShort = DesktopRect(
+            origin: DesktopPoint(x: 0, y: 0),
+            size: DesktopSize(width: 667, height: 1_340))
+        XCTAssertFalse(HostSessionCoordinator.aspectMismatch(slightlyShort, desired: desired))
+
+        // Degenerate input never triggers a retry or a notice.
+        XCTAssertFalse(HostSessionCoordinator.aspectMismatch(
+            DesktopRect(origin: DesktopPoint(x: 0, y: 0), size: DesktopSize(width: 0, height: 1_364)),
+            desired: desired))
+        XCTAssertFalse(HostSessionCoordinator.aspectMismatch(
+            matching, desired: DesktopSize(width: 0, height: 1_364)))
+        XCTAssertFalse(HostSessionCoordinator.aspectMismatch(
+            matching, desired: DesktopSize(width: .nan, height: 1_364)))
     }
 
     func testAdaptiveSizingAcrossAppsPhonesRotationsAndDisplays() {

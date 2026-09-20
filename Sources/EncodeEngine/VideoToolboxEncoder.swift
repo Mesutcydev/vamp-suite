@@ -56,13 +56,30 @@ public final class VideoToolboxEncoder: EncoderPipelineProtocol, @unchecked Send
         codec: EncodedFrameCodec,
         dynamicRange: StreamDynamicRange
     ) async throws {
+        try await configure(
+            for: display,
+            qualityPreset: qualityPreset,
+            codec: codec,
+            dynamicRange: dynamicRange,
+            minLongEdge: 0
+        )
+    }
+
+    public func configure(
+        for display: DisplayDescriptor,
+        qualityPreset: StreamQualityPreset,
+        codec: EncodedFrameCodec,
+        dynamicRange: StreamDynamicRange,
+        minLongEdge: Int
+    ) async throws {
         func config(for codecChoice: EncodedFrameCodec) -> EncoderConfiguration {
             EncoderConfiguration.forPreset(
                 qualityPreset,
                 codec: codecChoice,
                 width: Int(display.pixelSize.width),
                 height: Int(display.pixelSize.height),
-                dynamicRange: codecChoice == .hevc ? dynamicRange : .sdr
+                dynamicRange: codecChoice == .hevc ? dynamicRange : .sdr,
+                minLongEdge: minLongEdge
             )
         }
 
@@ -118,7 +135,25 @@ public final class VideoToolboxEncoder: EncoderPipelineProtocol, @unchecked Send
             for: display,
             qualityPreset: qualityPreset,
             codec: codec,
-            dynamicRange: dynamicRange
+            dynamicRange: dynamicRange,
+            minLongEdge: 0
+        )
+    }
+
+    public func reconfigure(
+        for display: DisplayDescriptor,
+        qualityPreset: StreamQualityPreset,
+        codec: EncodedFrameCodec,
+        dynamicRange: StreamDynamicRange,
+        minLongEdge: Int
+    ) async throws {
+        await stopEncoding()
+        try await configure(
+            for: display,
+            qualityPreset: qualityPreset,
+            codec: codec,
+            dynamicRange: dynamicRange,
+            minLongEdge: minLongEdge
         )
     }
 

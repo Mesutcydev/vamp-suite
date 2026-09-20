@@ -122,6 +122,26 @@ final class RemoteInteractionViewModel: ObservableObject {
         rebuildMapper()
     }
 
+    // MARK: - Local cursor overlay (cursorless capture)
+
+    /// The fitted video content area in view coordinates — the overlay's clamp rect.
+    var cursorContentRect: CGRect? {
+        guard let rect = mapper?.fittedContentRect, rect.size.width > 0, rect.size.height > 0 else {
+            return nil
+        }
+        return CGRect(
+            x: rect.origin.x, y: rect.origin.y,
+            width: rect.size.width, height: rect.size.height)
+    }
+
+    /// View points per desktop point, for converting relative (desktop-space) pointer
+    /// deltas into local cursor movement in the overlay's coordinate space.
+    var cursorViewPointsPerDesktopPoint: Double? {
+        guard let display = selectedDisplay, let rect = mapper?.fittedContentRect,
+              rect.size.width > 0, display.frame.size.width > 0 else { return nil }
+        return rect.size.width / display.frame.size.width
+    }
+
     func updateViewportInsets(_ insets: DesktopEdgeInsets) {
         viewInsets = insets
         rebuildMapper()

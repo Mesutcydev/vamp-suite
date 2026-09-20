@@ -18,7 +18,12 @@ packages:
     path: .
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
-    from: 1.13.0
+    exactVersion: 1.18.0
+    # Pinned below 1.19.0 on purpose. 1.19.0 added a SwiftPM build-tool plugin whose
+    # SwiftTermBuildInfoGenerator is a macOS host executable; for an iOS destination Xcode
+    # looks for it in Build/Products/Debug while only Debug-iphonesimulator is produced, so
+    # every iOS build fails with "Build input file cannot be found". 1.18.0 is the last
+    # release without that plugin.
 
 settings:
   base:

@@ -834,7 +834,7 @@ struct SimpleHomeView: View {
         }
         .padding(14)
         .prGlassSurface(
-            in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous)
+            in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
         )
     }
 
@@ -909,7 +909,7 @@ struct SimpleHomeView: View {
                 .padding(.vertical, 18)
                 .padding(.horizontal, 10)
                 .prGlassSurface(
-                    in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous),
+                    in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous),
                     isInteractive: true
                 )
                 .opacity(online || wakeable ? 1 : 0.6)
@@ -990,7 +990,7 @@ struct SimpleHomeView: View {
             }
             .padding(14)
             .prGlassSurface(
-                in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous),
+                in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous),
                 isInteractive: true
             )
             .contentShape(Rectangle())
@@ -1098,9 +1098,9 @@ struct SimpleHomeView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: PR.r12, style: .continuous)
+            RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
                 .fill(PR.err.opacity(0.10))
-                .overlay(RoundedRectangle(cornerRadius: PR.r12).strokeBorder(PR.err.opacity(0.4)))
+                .overlay(RoundedRectangle(cornerRadius: PR.rCard).strokeBorder(PR.err.opacity(0.4)))
         )
     }
 
@@ -1130,7 +1130,7 @@ struct SimpleHomeView: View {
                 .overlay(Capsule().strokeBorder(PR.err.opacity(0.45), lineWidth: 1))
             }
             .padding(28)
-            .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+            .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
         }
     }
 
@@ -1520,10 +1520,10 @@ private struct TerminalOnlyHostTile: View {
         .padding(.horizontal, 12)
         .background(PR.bg2.opacity(0.72))
         .overlay(
-            RoundedRectangle(cornerRadius: PR.r12, style: .continuous)
+            RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
                 .strokeBorder(statusColor.opacity(0.35), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title), terminal-only host")
         .accessibilityHint("Open Vamp Terminal to use terminal tabs")
@@ -1539,6 +1539,7 @@ private struct MirrorFullscreenStreamView: View {
 
     @StateObject private var interactionVM: RemoteInteractionViewModel
     @StateObject private var multiDisplay: MultiDisplayRenderer
+    @StateObject private var cursorModel = LocalCursorModel()
     @State private var multiActive = false
     @ObservedObject private var sessionCoordinator: ClientSessionCoordinator
     @ObservedObject private var displayLayoutViewModel: DisplayLayoutViewModel
@@ -1557,6 +1558,13 @@ private struct MirrorFullscreenStreamView: View {
     @State private var isStatsVisible = true
     @StateObject private var annotationStore = AnnotationOverlayStore()
     @StateObject private var bluetoothInput = BluetoothInputController()
+
+    /// Cursorless-capture contract: only when negotiation agreed that the host omits the
+    /// macOS cursor from the frames does this surface draw its own local pointer. An
+    /// older host still captures the cursor, and drawing on top of it would double it.
+    private var usesLocalCursor: Bool {
+        sessionCoordinator.negotiatedCapabilities?.supportsCursorlessCapture == true
+    }
     @StateObject private var audioRenderer = ClientAudioRenderer()
     @StateObject private var pictureInPicture = RemotePictureInPictureController()
     @State private var isControlsHidden = false
@@ -1664,9 +1672,15 @@ private struct MirrorFullscreenStreamView: View {
             .onDisappear { multiDisplay.stopAll() }
             .onAppear {
                 interactionVM.updateViewSize(DesktopSize(width: proxy.size.width, height: proxy.size.height))
+                if let rect = interactionVM.cursorContentRect {
+                    cursorModel.setSurface(size: proxy.size, contentRect: rect)
+                }
             }
             .onChangeCompat(of: proxy.size) { newSize in
                 interactionVM.updateViewSize(DesktopSize(width: newSize.width, height: newSize.height))
+                if let rect = interactionVM.cursorContentRect {
+                    cursorModel.setSurface(size: newSize, contentRect: rect)
+                }
                 // A rotation changes the fitted-video box, invalidating any pan/zoom offset that was
                 // clamped against the old dimensions. Reset both zoom models so the picture
                 // re-centers cleanly rather than rendering off-center until the user pinches again.
@@ -1934,7 +1948,11 @@ private struct MirrorFullscreenStreamView: View {
                     .layoutPriority(1)
 
                 if !isKeyboardOverlayPresented {
-                    TrackpadSurfaceView(interactionVM: interactionVM)
+                    TrackpadSurfaceView(
+                        interactionVM: interactionVM,
+                        onRelativeMove: { dx, dy in
+                            updateLocalCursorRelative(dx: dx, dy: dy)
+                        })
                         .frame(height: modernTrackpadHeight(viewSize))
                         .padding(.horizontal, 14)
                         .transition(.opacity)
@@ -1991,7 +2009,11 @@ private struct MirrorFullscreenStreamView: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        TrackpadSurfaceView(interactionVM: interactionVM)
+                        TrackpadSurfaceView(
+                            interactionVM: interactionVM,
+                            onRelativeMove: { dx, dy in
+                                updateLocalCursorRelative(dx: dx, dy: dy)
+                            })
                             .frame(width: min(viewSize.width * 0.42, 460),
                                    height: min(viewSize.height * 0.55, 230))
                             .padding(.trailing, trailingPad)
@@ -2030,6 +2052,12 @@ private struct MirrorFullscreenStreamView: View {
             } ?? CGSize(width: 16, height: 10)
             let scale = min(geo.size.width / host.width, geo.size.height / host.height)
             let fitted = CGSize(width: max(host.width * scale, 1), height: max(host.height * scale, 1))
+            let fittedRect = CGRect(
+                x: (geo.size.width - fitted.width) / 2,
+                y: (geo.size.height - fitted.height) / 2,
+                width: fitted.width,
+                height: fitted.height)
+            let _ = cursorModel.setSurface(size: geo.size, contentRect: fittedRect)
             VideoFrameRendererView(
                 pixelBuffer: rendererVM.latestPixelBuffer,
                 displayMode: interactionVM.displayMode,
@@ -2074,6 +2102,13 @@ private struct MirrorFullscreenStreamView: View {
                     )
                 )
                 .frame(width: geo.size.width, height: geo.size.height) // center the fitted picture
+                .overlay {
+                    if usesLocalCursor {
+                        LocalCursorOverlay(cursor: cursorModel, contentZoom: previewZoom)
+                            .scaleEffect(previewZoom, anchor: .center)
+                            .offset(previewOffset)
+                    }
+                }
         }
 #else
         Color.black
@@ -2101,6 +2136,14 @@ private struct MirrorFullscreenStreamView: View {
 
     private func modernTrackpadHeight(_ viewSize: CGSize) -> CGFloat {
         max(160, min(viewSize.height * 0.30, 290))
+    }
+
+    private func updateLocalCursorRelative(dx: Double, dy: Double) {
+        guard let scale = interactionVM.cursorViewPointsPerDesktopPoint else { return }
+        cursorModel.moveRelative(
+            dx: dx,
+            dy: dy,
+            viewPointsPerDesktopPoint: scale)
     }
 
     @ViewBuilder
@@ -2365,6 +2408,13 @@ private struct MirrorFullscreenStreamView: View {
     private func videoLayer(viewSize: CGSize) -> some View {
 #if canImport(UIKit) && !os(macOS)
         ZStack {
+            // The mapper's fitted rect is only valid once display info arrives; re-feeding
+            // the cursor surface on every body pass (displayLayoutViewModel is observed)
+            // seeds/updates it the moment geometry exists, without an extra onChange.
+            // setSurface ignores zero rects, so an unready mapper is a no-op here.
+            let _ = cursorModel.setSurface(
+                size: viewSize,
+                contentRect: interactionVM.cursorContentRect ?? .zero)
             VideoFrameRendererView(
                 pixelBuffer: rendererVM.latestPixelBuffer,
                 displayMode: interactionVM.displayMode,
@@ -2380,18 +2430,23 @@ private struct MirrorFullscreenStreamView: View {
                 viewportOffset: viewportOffset,
                 viewSize: viewSize,
                 onTap: { pt in
+                    cursorModel.place(at: pt)
                     interactionVM.handleTap(at: DesktopPoint(x: pt.x, y: pt.y))
                 },
                 onDoubleTap: { pt in
+                    cursorModel.place(at: pt)
                     interactionVM.handleDoubleTap(at: DesktopPoint(x: pt.x, y: pt.y))
                 },
                 onRightClick: { pt in
+                    cursorModel.place(at: pt)
                     interactionVM.handleTwoFingerTap(at: DesktopPoint(x: pt.x, y: pt.y))
                 },
                 onMiddleClick: { pt in
+                    cursorModel.place(at: pt)
                     interactionVM.handleThreeFingerTap(at: DesktopPoint(x: pt.x, y: pt.y))
                 },
                 onDragChanged: { delta, loc in
+                    cursorModel.place(at: loc)
                     interactionVM.handleDragChanged(
                         translation: DesktopPoint(x: delta.width, y: delta.height),
                         currentViewPoint: DesktopPoint(x: loc.x, y: loc.y)
@@ -2411,24 +2466,7 @@ private struct MirrorFullscreenStreamView: View {
                     viewportOffset = clampedViewportOffset(newOffset, zoom: viewportZoom, in: viewSize)
                 },
                 onPinchChanged: { scale, focalPoint in
-                    let oldZoom = viewportZoom
-                    let newZoom = min(max(viewportZoom * scale, 1.0), 5.0)
-                    viewportZoom = newZoom
-                    if newZoom <= 1.0 {
-                        viewportOffset = .zero
-                    } else {
-                        // Preserve the remote pixel under the user's fingers instead
-                        // of zooming around the center of the phone.
-                        let ratio = newZoom / max(oldZoom, 0.001)
-                        let center = CGPoint(x: viewSize.width / 2, y: viewSize.height / 2)
-                        let anchoredOffset = CGSize(
-                            width: viewportOffset.width
-                                + (1 - ratio) * (focalPoint.x - center.x - viewportOffset.width),
-                            height: viewportOffset.height
-                                + (1 - ratio) * (focalPoint.y - center.y - viewportOffset.height)
-                        )
-                        viewportOffset = clampedViewportOffset(anchoredOffset, zoom: newZoom, in: viewSize)
-                    }
+                    applyPinch(scale: scale, focalPoint: focalPoint, viewSize: viewSize)
                 },
                 onPinchEnded: {
                     if viewportZoom < 1.15 {
@@ -2439,15 +2477,29 @@ private struct MirrorFullscreenStreamView: View {
                     }
                 },
                 onLongPress: { pt in
+                    cursorModel.place(at: pt)
                     interactionVM.toggleDragLock(at: DesktopPoint(x: pt.x, y: pt.y))
                 },
                 onPointerDelta: { delta in
-                    interactionVM.sendRelativePointerMove(
-                        deltaX: Double(delta.width) * bluetoothInput.mouseSensitivity,
-                        deltaY: Double(delta.height) * bluetoothInput.mouseSensitivity
-                    )
+                    let sensitivity = bluetoothInput.mouseSensitivity
+                    let dx = Double(delta.width) * sensitivity
+                    let dy = Double(delta.height) * sensitivity
+                    interactionVM.sendRelativePointerMove(deltaX: dx, deltaY: dy)
+                    if let scale = interactionVM.cursorViewPointsPerDesktopPoint {
+                        cursorModel.moveRelative(dx: dx, dy: dy, viewPointsPerDesktopPoint: scale)
+                    }
                 }
             )
+            .overlay {
+                // Cursorless capture: the host omits the macOS cursor from the video,
+                // so the pointer is drawn locally for zero-latency hover feedback. The
+                // overlay carries the viewport's zoom/pan to stay glued under magnify.
+                if usesLocalCursor {
+                    LocalCursorOverlay(cursor: cursorModel, contentZoom: viewportZoom)
+                        .scaleEffect(viewportZoom, anchor: .center)
+                        .offset(viewportOffset)
+                }
+            }
 
             if annotationStore.isVisible {
                 AnnotationCanvasOverlay(store: annotationStore)
@@ -2755,6 +2807,28 @@ private struct MirrorFullscreenStreamView: View {
             Label(label, systemImage: interactionVM.displayMode == mode ? "checkmark" : systemImage)
         }
         .disabled(interactionVM.displayMode == mode)
+    }
+
+    /// Pinch-to-zoom on the video layer. Extracted so the gesture builder stays inside
+    /// the type-checker's complexity budget.
+    private func applyPinch(scale pinchScale: CGFloat, focalPoint: CGPoint, viewSize: CGSize) {
+        let oldZoom = viewportZoom
+        let newZoom = min(max(viewportZoom * pinchScale, 1.0), 5.0)
+        viewportZoom = newZoom
+        if newZoom <= 1.0 {
+            viewportOffset = .zero
+            return
+        }
+        // Preserve the remote pixel under the user's fingers instead of zooming around
+        // the center of the phone.
+        let ratio = newZoom / max(oldZoom, 0.001)
+        let center = CGPoint(x: viewSize.width / 2, y: viewSize.height / 2)
+        let anchoredWidth = viewportOffset.width
+            + (1 - ratio) * (focalPoint.x - center.x - viewportOffset.width)
+        let anchoredHeight = viewportOffset.height
+            + (1 - ratio) * (focalPoint.y - center.y - viewportOffset.height)
+        viewportOffset = clampedViewportOffset(
+            CGSize(width: anchoredWidth, height: anchoredHeight), zoom: newZoom, in: viewSize)
     }
 
     private func clampedViewportOffset(_ proposed: CGSize, zoom: CGFloat, in viewSize: CGSize) -> CGSize {

@@ -102,9 +102,13 @@ final class AppStreamViewModel: ObservableObject {
     private var sizingIntent = AppStreamSizingIntent()
     private var resizeTask: Task<Void, Never>?
     private var targetSendTask: Task<Void, Never>?
+    private var videoRecoveryTask: Task<Void, Never>?
     private var lastControlRequestAt: TimeInterval?
     private var isSuspended = false
     private var lastRequestedViewport = CGSize.zero
+    /// Window whose viewport-shape assertion has already been sent. Reset whenever the user picks
+    /// a new target, so each window gets at most one "match my phone's shape" follow-up.
+    private var viewportAspectAssertedWindowID: String?
     private var resumeSelection: (RemoteApplication, String, String)?
     private var selectionFingerprint: String?
 
@@ -169,6 +173,8 @@ final class AppStreamViewModel: ObservableObject {
         launchTimeoutTask = nil
         closeTimeoutTask?.cancel()
         closeTimeoutTask = nil
+        videoRecoveryTask?.cancel()
+        videoRecoveryTask = nil
         applications = []
         streamedWindow = nil
         streamedApplication = nil
@@ -237,6 +243,41 @@ final class AppStreamViewModel: ObservableObject {
     }
 
     func forgetSelection() { resumeSelection = nil; selectionFingerprint = nil }
+
+    /// Re-selects the currently streamed app/window so the host rebuilds its capture
+    /// pipeline. Used by escalating video recovery when a keyframe request alone does
+    /// not restart frame flow (e.g. after a host restart killed the encoder).
+    func retryCurrentTarget() {
+        guard let application = streamedApplication else { return }
+        sendTargetRequest(application, windowID: streamedWindow?.windowID)
+    }
+
+    /// Escalating recovery for a stalled video channel. A single keyframe request cannot
+    /// revive a dead host pipeline — it would leave the user staring at an eternal
+    /// "Opening…" spinner with only a Recovery bar that never works. This walks up the
+    /// repair ladder: keyframe → full target re-switch (host rebuilds capture + encode)
+    /// → an explicit failure state the user can act on. `isStalled` reports whether no
+    /// frame has decoded since recovery began.
+    func recoverVideo(isStalled: @escaping () -> Bool) {
+        environment.sessionCoordinator.requestKeyframeRefresh(reason: "Video recovery: keyframe")
+        videoRecoveryTask?.cancel()
+        videoRecoveryTask = Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, isStalled() else { return }
+            self.retryCurrentTarget()
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled, isStalled() else { return }
+            if case .streaming = self.status {
+                self.status = .targetLost(reason: "Video could not be recovered. Reopen the app from the app list.")
+            }
+        }
+    }
+
+    func cancelVideoRecovery() {
+        videoRecoveryTask?.cancel()
+        videoRecoveryTask = nil
+    }
 
     func suspendInteraction() {
         pauseForHostLock()
@@ -341,6 +382,7 @@ final class AppStreamViewModel: ObservableObject {
         resumeSelection = nil
         selectionFingerprint = environment.sessionCoordinator.connectedHostFingerprint
         sizingIntent.cancel()
+        viewportAspectAssertedWindowID = nil
         streamedApplication = application
         sendTargetRequest(application, windowID: windowID)
     }
@@ -384,6 +426,42 @@ final class AppStreamViewModel: ObservableObject {
         let height = viewport.height > 0 && viewport.height.isFinite ? Double(viewport.height) : nil
         let sendAspect = hostAcknowledgedSizing && mode == .adaptive ? aspect : nil
         return (sendAspect, width, height)
+    }
+
+    /// Whether the window the Mac accepted still disagrees with this device's viewport shape.
+    ///
+    /// A stream can start before the surface reports its size — a resumed selection, or a switch
+    /// issued while the browser was still on screen — and the host then keeps the window at its
+    /// original landscape shape, which the phone renders letterboxed. Once the host has proven it
+    /// supports adaptive sizing, the client asserts the measured shape a single time per window;
+    /// the flag keeps a Mac that legitimately cannot take that shape from ping-ponging switches.
+    static func needsViewportAspectAssertion(
+        appliedWidth: Double,
+        appliedHeight: Double,
+        desiredAspect: Double?,
+        supportsAdaptiveSizing: Bool,
+        mode: AppWindowSizingMode,
+        alreadyAsserted: Bool
+    ) -> Bool {
+        guard supportsAdaptiveSizing, mode == .adaptive, !alreadyAsserted else { return false }
+        return windowShapeMismatch(
+            appliedWidth: appliedWidth, appliedHeight: appliedHeight, desiredAspect: desiredAspect)
+    }
+
+    /// The single definition of "the Mac kept a different shape": the accepted window's aspect
+    /// differs from the requested one by more than 5%. The host applies the same tolerance to the
+    /// notice it sends, and the client uses this to offer Fill Screen — so the message and the
+    /// remedy can never disagree.
+    static func windowShapeMismatch(
+        appliedWidth: Double,
+        appliedHeight: Double,
+        desiredAspect: Double?
+    ) -> Bool {
+        guard let desiredAspect, desiredAspect.isFinite, desiredAspect > 0,
+              appliedWidth > 0, appliedHeight > 0,
+              appliedWidth.isFinite, appliedHeight.isFinite
+        else { return false }
+        return abs(appliedWidth / appliedHeight - desiredAspect) > 0.05
     }
 
     private func performTargetRequest(_ application: RemoteApplication, windowID: String?) {
@@ -464,6 +542,7 @@ final class AppStreamViewModel: ObservableObject {
         pendingRequestID = nil
         streamedWindow = nil
         streamedApplication = nil
+        viewportAspectAssertedWindowID = nil
         status = .browsing
         requestApplicationList()
     }
@@ -596,6 +675,22 @@ final class AppStreamViewModel: ObservableObject {
                 pointHeight: Double(height),
                 scale: scale
             )
+            // The Mac applied its own shape (a stream that began before this surface was
+            // measured, or a window the Mac could not resize yet). Assert the phone's shape once
+            // per window so a portrait device never keeps a letterboxed landscape window.
+            let desiredAspect = clientViewportAspect
+                ?? (viewportSize.height > 0
+                    ? Double(viewportSize.width / viewportSize.height) : nil)
+            if Self.needsViewportAspectAssertion(
+                appliedWidth: Double(width),
+                appliedHeight: Double(height),
+                desiredAspect: desiredAspect,
+                supportsAdaptiveSizing: supportsAdaptiveSizing,
+                mode: sizingMode,
+                alreadyAsserted: viewportAspectAssertedWindowID == result.resolvedTarget.identifier) {
+                viewportAspectAssertedWindowID = result.resolvedTarget.identifier
+                lastRequestedViewport = .zero
+            }
         } else if result.status == .failed || result.status == .rejected {
             streamedWindow = nil
         }

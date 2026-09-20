@@ -38,14 +38,6 @@ enum VampStreamHostSource: String, CaseIterable, Identifiable, Equatable {
 
 enum VampStreamHostSourceStore {
     static let key = "vampstream.hostSource"
-
-    static func load(defaults: UserDefaults = .standard) -> VampStreamHostSource? {
-        defaults.string(forKey: key).flatMap(VampStreamHostSource.init(rawValue:))
-    }
-
-    static func save(_ source: VampStreamHostSource, defaults: UserDefaults = .standard) {
-        defaults.set(source.rawValue, forKey: key)
-    }
 }
 
 enum VampStreamHomeLinks {
@@ -54,14 +46,6 @@ enum VampStreamHomeLinks {
 
 enum VampStreamSyncPromoStore {
     static let installedKey = "vampstream.syncInstalled"
-
-    static func isInstalled(defaults: UserDefaults = .standard) -> Bool {
-        defaults.bool(forKey: installedKey)
-    }
-
-    static func setInstalled(_ installed: Bool, defaults: UserDefaults = .standard) {
-        defaults.set(installed, forKey: installedKey)
-    }
 }
 
 /// Expansion state for the two pairing cards on Stream's connect home.
@@ -151,14 +135,6 @@ enum VampStreamHomeCardStyle: String, CaseIterable, Equatable {
 
 enum VampStreamHomeCardStyleStore {
     static let key = "vampstream.homeCardStyle"
-
-    static func load(defaults: UserDefaults = .standard) -> VampStreamHomeCardStyle {
-        defaults.string(forKey: key).flatMap(VampStreamHomeCardStyle.init(rawValue:)) ?? .list
-    }
-
-    static func save(_ style: VampStreamHomeCardStyle, defaults: UserDefaults = .standard) {
-        defaults.set(style.rawValue, forKey: key)
-    }
 }
 
 /// Canonical order and copy for Vamp Stream's connect home.
@@ -176,12 +152,8 @@ enum VampStreamHomeLayout {
         /// Assistant error or as an unrelated page-wide card.
         case syncError
         case assistantMacs
-        /// "Pair a host" divider above the collapsible pairing cards.
+        /// "Connect a Mac" divider above the collapsible pairing cards.
         case pairHeading
-        /// Subdued version/build footer. Stream has no About or settings screen, so the version
-        /// string lives here instead of crowding the page title.
-        case versionFooter
-
         var id: String { rawValue }
     }
 
@@ -226,8 +198,8 @@ enum VampStreamHomeLayout {
             pairing.append(.assistantHostCard)
         }
 
-        guard !pairing.isEmpty else { return hosts + [.versionFooter] }
-        return hosts + [.pairHeading] + pairing + [.versionFooter]
+        guard !pairing.isEmpty else { return hosts }
+        return hosts + [.pairHeading] + pairing
     }
 }
 
@@ -257,17 +229,17 @@ enum VampStreamHostBusy {
 enum VampStreamHomeCopy {
     static let headerTitle = "Stream"
     static let headerSubtitle = "Choose a Mac to browse its apps."
-    static let headerDetail = "Choose a trusted Mac, then open and control one app at a time."
-    static let headerDetailSync = "Connect with Vamp Sync, then open and control one app at a time."
-    static let headerDetailAssistant = "Pair Vamp Assistant, then open and control one app at a time."
     static let changeHost = "Change host"
     static let showGrid = "Show grid view"
     static let showList = "Show list view"
-    static let pairHeading = "Pair a host"
+    static let pairHeading = "Connect a Mac"
 
-    static let hostOnboardingTitle = "How do you connect?"
-    static let hostOnboardingDetail = "Pick the Mac host you use. You can change this later."
+    static let hostOnboardingTitle = "Connect your Mac"
+    static let hostOnboardingDetail = "Choose the app installed on your Mac. You can change this later."
     static let hostOnboardingContinue = "Continue"
+    static let hostOnboardingPrompt = "Select your Mac app to continue."
+    static let hostOnboardingNearbyTitle = "Vamp Sync Macs found nearby"
+    static let hostOnboardingNearbyDetail = "Approve new devices on your Mac."
     static let hostSourceSyncDetail = "App windows from Vamp Sync on your Mac."
     static let hostSourceAssistantDetail = "App streams from a Vamp Assistant workspace."
     static let hostSourceBothTitle = "Both"
@@ -306,19 +278,11 @@ enum VampStreamHomeCopy {
     static let assistantConnectCollapsedDetail = "Connect an Assistant workspace"
 
     static let assistantTitle = "Vamp Assistant"
-    static let assistantDetail = "Pair a workspace when you want app streams from Vamp Assistant."
+    static let assistantDetail = "Pair your Mac to browse and stream its apps."
     static let pairAssistant = "Pair Vamp Assistant"
     static let pairAnotherAssistant = "Pair another Assistant"
     static let pairAssistantHint = "Enter the private address and one-time pairing code shown by Vamp Assistant"
     static let assistantMacsHeading = "Assistant Macs"
-
-    static func headerDetail(for source: VampStreamHostSource) -> String {
-        switch source {
-        case .sync: return headerDetailSync
-        case .assistant: return headerDetailAssistant
-        case .both: return headerDetail
-        }
-    }
 
     static func pairAssistantTitle(hasSavedAssistants: Bool) -> String {
         hasSavedAssistants ? pairAnotherAssistant : pairAssistant

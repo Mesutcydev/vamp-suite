@@ -30,29 +30,50 @@ struct VampPairingCard<Body: View>: View {
         reduceMotion ? nil : .easeOut(duration: 0.22)
     }
 
+    private var surface: RoundedRectangle {
+        RoundedRectangle(cornerRadius: VampPairingCardMetrics.radius, style: .continuous)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
             if isExpanded {
                 content()
-                    .padding(.horizontal, AppHostMetrics.cardPadding)
+                    .padding(.horizontal, VampPairingCardMetrics.contentPadding)
                     .padding(.top, AppSpacing.sm)
-                    .padding(.bottom, AppHostMetrics.cardPadding)
+                    .padding(.bottom, VampPairingCardMetrics.contentPadding)
                     .transition(.opacity)
             }
         }
-        .background {
-            // A quiet, more opaque content surface. Rows and forms are content, not floating
-            // controls, so they do not carry the conspicuous glass treatment.
-            RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous)
-                .fill(PR.card.opacity(0.72))
-                .overlay {
-                    RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous)
-                        .strokeBorder(PR.border, lineWidth: 1)
-                }
+            // A stable reading surface keeps the bright portal from washing out labels.
+            .background {
+                surface.fill(StreamReading.surface)
+            }
+        .prGlassSurface(
+            in: surface,
+            role: .card
+        )
+        .overlay {
+            surface
+                .strokeBorder(PR.border, lineWidth: 1)
         }
-        .clipShape(RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous))
+            .overlay {
+                surface
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.08),
+                                Color.white.opacity(0),
+                                Color.white.opacity(0.03)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        .clipShape(surface)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(title))
         .animation(animation, value: isExpanded)
@@ -69,12 +90,11 @@ struct VampPairingCard<Body: View>: View {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(PR.fg)
-                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
                     Text(isExpanded ? detail : collapsedDetail)
                         .font(.footnote)
-                        .foregroundStyle(PR.fg2)
-                        .lineLimit(isExpanded ? nil : 1)
+                        .foregroundStyle(StreamReading.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
                 }
@@ -90,23 +110,18 @@ struct VampPairingCard<Body: View>: View {
                 } else if let headerStatus {
                     Text(headerStatus)
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(PR.fg2)
-                        .lineLimit(1)
+                        .foregroundStyle(StreamReading.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel(headerStatus)
                 }
 
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(PR.fg2)
-                    .frame(
-                        width: AppHostMetrics.chevronVisual,
-                        height: AppHostMetrics.chevronVisual)
-                    .background {
-                        Circle().fill(PR.fg.opacity(0.08))
-                    }
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(PR.fg2.opacity(0.88))
+                    .frame(width: 20, height: 20)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, AppHostMetrics.cardPadding)
+            .padding(.horizontal, VampPairingCardMetrics.contentPadding)
             .frame(minHeight: AppHostMetrics.collapsedHeaderHeight)
             .padding(.vertical, AppSpacing.sm)
             .contentShape(Rectangle())
@@ -116,5 +131,21 @@ struct VampPairingCard<Body: View>: View {
         .accessibilityValue(Text(isExpanded ? "Expanded" : "Collapsed"))
         .accessibilityHint(Text(isExpanded ? accessibilityCollapseLabel : accessibilityExpandLabel))
         .accessibilityAddTraits(.isButton)
+    }
+
+}
+
+private enum VampPairingCardMetrics {
+    static let radius: CGFloat = 28
+    static let contentPadding: CGFloat = AppSpacing.xl
+}
+
+/// Press feedback for the engineered primary action. Brightness moves instead of scale, so the
+/// control's geometry and the tunnel behind it stay visually stable.
+struct VampStreamEngineeredButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .brightness(configuration.isPressed ? 0.10 : 0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }

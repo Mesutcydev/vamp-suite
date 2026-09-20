@@ -46,7 +46,10 @@ let package = Package(
         .library(name: "SharedUI", targets: ["SharedUI"])
     ],
     dependencies: [
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm", exact: "1.20.0")
+        // Pinned below 1.19.0: that release added a build-tool plugin whose host executable
+        // (SwiftTermBuildInfoGenerator) Xcode cannot place for an iOS destination, breaking
+        // every iOS build. 1.18.0 is the last release without it.
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm", exact: "1.18.0")
     ],
     targets: [
         .target(

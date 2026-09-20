@@ -575,7 +575,7 @@ struct VampHostPromoCard: View {
             .buttonStyle(.plain)
         }
         .padding(14)
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
     }
 
     private var iconTile: some View {
@@ -614,7 +614,7 @@ struct HowItWorksCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
     }
 
     private func step(_ n: Int, title: String, detail: String) -> some View {

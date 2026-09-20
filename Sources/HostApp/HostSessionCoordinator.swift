@@ -2730,6 +2730,24 @@ extension HostSessionCoordinator {
                abs(window.bounds.size.width - desired.width) > 2 || abs(window.bounds.size.height - desired.height) > 2 {
                 sizingNotice = "The Mac constrained the original window size to its available space."
             }
+            // One bounded retry. An app that constrains its first AX resize (before accepting
+            // the new origin, or while it relayouts) otherwise leaves the phone with a window
+            // that kept its own shape — the exact regression this sizing exists to remove. The
+            // retry re-anchors from the *accepted* bounds, since the AX match keys on them.
+            if sizingNotice == nil, request.sizingMode != .original,
+               Self.aspectMismatch(window.bounds, desired: desired) {
+                let retried = Self.resizeWindow(
+                    pid: window.ownerPID, matching: window.bounds, toSize: desired, display: display)
+                logger.info("""
+                    Window sizing retry: window=\(window.windowID) retryApplied=\(retried) \
+                    observed=\(Int(window.bounds.size.width))x\(Int(window.bounds.size.height)) \
+                    requested=\(Int(desired.width))x\(Int(desired.height))
+                    """)
+                if retried {
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    if let resized = applicationRegistry.windowInfo(windowID: window.windowID) { window = resized }
+                }
+            }
             let actualAspect = window.bounds.size.width / max(window.bounds.size.height, 1)
             if sizingNotice == nil, request.sizingMode != .original,
                abs(actualAspect - desired.width / max(desired.height, 1)) > 0.05 {
@@ -2781,12 +2799,15 @@ extension HostSessionCoordinator {
         await captureEngine.stopCapture()
         await encoderPipeline.stopEncoding()
         // Window capture is SDR-only (ScreenCaptureEngine.startCapture(windowID:)); pin the
-        // encoder to SDR so capture/encode never disagree on bit depth.
+        // encoder to SDR so capture/encode never disagree on bit depth. The performance
+        // floor keeps "Lower bandwidth" from quartering a window's already-small pixel
+        // count (capture passes the identical floor).
         try await encoderPipeline.configure(
             for: descriptor,
             qualityPreset: qualityPreset,
             codec: negotiatedEncoderCodec,
-            dynamicRange: .sdr
+            dynamicRange: .sdr,
+            minLongEdge: StreamScaling.windowPerformanceMinLongEdge
         )
         try await encoderPipeline.startEncoding()
         try await captureEngine.startCapture(
@@ -2985,8 +3006,30 @@ extension HostSessionCoordinator {
         ))
     }
 
+    /// Whether an accepted window frame still disagrees with the requested shape by more than
+    /// `tolerance` of aspect. Pure, and shared by the retry decision and the user-visible
+    /// notice, so "we retried" and "we told the user" can never disagree.
+    static func aspectMismatch(_ accepted: DesktopRect, desired: DesktopSize,
+                               tolerance: Double = 0.05) -> Bool {
+        guard accepted.size.width.isFinite, accepted.size.height.isFinite,
+              accepted.size.width > 0, accepted.size.height > 0,
+              desired.width.isFinite, desired.height.isFinite,
+              desired.width > 0, desired.height > 0 else { return false }
+        let acceptedAspect = accepted.size.width / accepted.size.height
+        let desiredAspect = desired.width / desired.height
+        return abs(acceptedAspect - desiredAspect) > tolerance
+    }
+
     /// Resize only the selected window and honor the bounds actually accepted by macOS.
     /// A missing or ambiguous AX match leaves every window unchanged.
+    ///
+    /// **Order matters.** AppKit constrains a window's frame to the screen when its size is
+    /// applied, so growing a window that sits low on the display silently clamps the height:
+    /// the client then receives a window that kept its own shape and a smaller capture surface
+    /// that the phone has to upscale ("The Mac kept a different window shape" + soft video).
+    /// Anchoring the window's top-left inside the usable area *first* makes the full requested
+    /// height reachable, and re-asserting the size once covers apps whose AX set lands before
+    /// the move has settled.
     private static func resizeWindow(pid: pid_t, matching bounds: DesktopRect,
                                      toSize size: DesktopSize, display: CGRect) -> Bool {
         guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return false }
@@ -2994,13 +3037,30 @@ extension HostSessionCoordinator {
         guard let axWindow = axWindow(in: axApp, matching: bounds) else { return false }
         var requestedSize = CGSize(width: min(size.width, max(display.width - 48, 1)),
                                    height: min(size.height, max(display.height - 76, 1)))
+
+        // 1. Anchor the top-left inside the usable area so the full height fits on screen.
+        //    Clamp against the *requested* size, not a freshly-read AX frame: an AX size set is
+        //    applied asynchronously, so an immediate read returns the old frame.
+        var anchor = CGPoint(
+            x: max(display.minX + 24, min(bounds.origin.x, max(display.maxX - requestedSize.width - 24, display.minX + 24))),
+            y: max(display.minY + 52, min(bounds.origin.y, max(display.maxY - requestedSize.height - 24, display.minY + 52))))
+        if let value = AXValueCreate(.cgPoint, &anchor) {
+            _ = AXUIElementSetAttributeValue(axWindow, kAXPositionAttribute as CFString, value)
+        }
+
+        // 2. Apply the size now that growing cannot push the window off-screen.
         guard let value = AXValueCreate(.cgSize, &requestedSize),
               AXUIElementSetAttributeValue(axWindow, kAXSizeAttribute as CFString, value) == .success else { return false }
-        // Position using the accepted bounds: applications can impose their own minimum size.
-        let actual = axFrame(of: axWindow)?.size ?? requestedSize
-        var position = CGPoint(x: max(display.minX + 24, min(bounds.origin.x, display.maxX - actual.width - 24)),
-                               y: max(display.minY + 52, min(bounds.origin.y, display.maxY - actual.height - 24)))
-        if let value = AXValueCreate(.cgPoint, &position) {
+
+        // 3. Re-assert once. Some apps respond to the size change by re-centering or by
+        //    reporting the pre-move frame; a second identical request is idempotent and is what
+        //    turns a half-applied resize into the requested shape.
+        if let settled = axFrame(of: axWindow)?.size,
+           abs(settled.width - requestedSize.width) > 2 || abs(settled.height - requestedSize.height) > 2 {
+            _ = AXUIElementSetAttributeValue(axWindow, kAXSizeAttribute as CFString, value)
+        }
+        // Keep the window where the resize was anchored; growing can shift the origin.
+        if let value = AXValueCreate(.cgPoint, &anchor) {
             _ = AXUIElementSetAttributeValue(axWindow, kAXPositionAttribute as CFString, value)
         }
         return true

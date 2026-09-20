@@ -392,7 +392,8 @@ struct MacAssistantRemoteView: View {
                     renderer.start(
                         client: session.client,
                         resolution: Self.streamResolution,
-                        displayID: selectedDisplayID)
+                        displayID: selectedDisplayID,
+                        showsCursor: session.status.supportsCursorlessCapture != true)
                 }
                     .buttonStyle(.bordered)
             } else {

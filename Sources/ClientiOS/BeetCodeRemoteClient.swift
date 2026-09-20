@@ -414,6 +414,8 @@ struct BeetCodeRemoteClient: Sendable {
         resolution: String = "1080p",
         displayID: UInt32? = nil,
         windowID: UInt32? = nil,
+        // Keep the legacy default safe for callers that do not negotiate cursorless
+        // capture. Cursorless clients pass false explicitly after capability negotiation.
         showsCursor: Bool = true
     ) -> AsyncThrowingStream<BeetCodeScreenFrame, Error> {
         AsyncThrowingStream { continuation in
@@ -883,6 +885,8 @@ final class BeetCodeVideoRendererViewModel: ObservableObject {
         resolution: String = "1080p",
         displayID: UInt32? = nil,
         windowID: UInt32? = nil,
+        // Local cursor overlay callers pass the negotiated value explicitly. Keep the
+        // default safe for older callers and hosts.
         showsCursor: Bool = true
     ) {
         stop()

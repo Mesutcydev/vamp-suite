@@ -4,13 +4,15 @@ import SwiftUI
 /// this only moves the light the material can catch.
 struct VampStreamHomeAtmosphere: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        if reduceMotion {
+        if reduceMotion || reduceTransparency {
             atmosphere(t: 0)
         } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: false)) { context in
+            TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: scenePhase != .active)) { context in
                 atmosphere(t: context.date.timeIntervalSinceReferenceDate)
             }
         }
@@ -63,12 +65,14 @@ struct VampStreamHomeAtmosphere: View {
 struct VampStreamHomeSheen: View {
     var phaseOffset: Double = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
-        if reduceMotion {
+        if reduceMotion || reduceTransparency {
             Color.clear
         } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 16.0, paused: false)) { context in
+            TimelineView(.animation(minimumInterval: 1.0 / 16.0, paused: scenePhase != .active)) { context in
                 let t = context.date.timeIntervalSinceReferenceDate + phaseOffset
                 let x = 0.5 + CGFloat(sin(t * 0.15)) * 0.52
                 LinearGradient(
@@ -90,6 +94,8 @@ struct VampStreamLivePulse: ViewModifier {
     var period: Double = 1.8
     var trough: Double = 0.78
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var dimmed = false
 
     func body(content: Content) -> some View {
@@ -97,9 +103,12 @@ struct VampStreamLivePulse: ViewModifier {
             .opacity(shouldPulse ? (dimmed ? trough : 1) : 1)
             .onAppear { startIfNeeded() }
             .onChangeCompat(of: isActive) { _ in startIfNeeded() }
+            .onChangeCompat(of: scenePhase) { _ in startIfNeeded() }
+            .onChangeCompat(of: reduceMotion) { _ in startIfNeeded() }
+            .onChangeCompat(of: reduceTransparency) { _ in startIfNeeded() }
     }
 
-    private var shouldPulse: Bool { isActive && !reduceMotion }
+    private var shouldPulse: Bool { isActive && !reduceMotion && !reduceTransparency && scenePhase == .active }
 
     private func startIfNeeded() {
         guard shouldPulse else {

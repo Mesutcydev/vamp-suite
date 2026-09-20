@@ -18,7 +18,6 @@ final class VampStreamHomeLayoutTests: XCTestCase {
                 .pairHeading,
                 .syncHostCard,
                 .assistantHostCard,
-                .versionFooter
             ]
         )
     }
@@ -35,7 +34,6 @@ final class VampStreamHomeLayoutTests: XCTestCase {
                 .syncMacs,
                 .pairHeading,
                 .syncHostCard,
-                .versionFooter
             ]
         )
     }
@@ -52,7 +50,6 @@ final class VampStreamHomeLayoutTests: XCTestCase {
                 .assistantMacs,
                 .pairHeading,
                 .assistantHostCard,
-                .versionFooter
             ]
         )
     }
@@ -74,7 +71,6 @@ final class VampStreamHomeLayoutTests: XCTestCase {
                 .syncPromo,
                 .syncHostCard,
                 .assistantHostCard,
-                .versionFooter
             ]
         )
     }
@@ -136,21 +132,6 @@ final class VampStreamHomeLayoutTests: XCTestCase {
         }
     }
 
-    /// The version footer is always last and always present, so it never competes with the title.
-    func testVersionFooterIsAlwaysLast() {
-        for source in VampStreamHostSource.allCases {
-            for hasHosts in [false, true] {
-                let sections = VampStreamHomeLayout.sections(
-                    source: source,
-                    hasSyncHosts: hasHosts,
-                    hasAssistants: hasHosts,
-                    hasAssistantError: false
-                )
-                XCTAssertEqual(sections.last, .versionFooter, "\(source) hosts=\(hasHosts)")
-                XCTAssertEqual(sections.filter { $0 == .versionFooter }.count, 1)
-            }
-        }
-    }
 
     /// Ordering must not depend on how many hosts discovery happens to have returned this tick.
     func testOrderIsStableAsHostCountsChange() {
@@ -240,16 +221,26 @@ final class VampStreamHomeLayoutTests: XCTestCase {
         XCTAssertTrue(VampStreamHostSource.both.showsAssistant)
     }
 
+    /// Onboarding writes the raw value through @AppStorage and the home decodes it with
+    /// `VampStreamHostSource(rawValue:)`, so that pair is the contract — an unset or
+    /// unrecognised value has to stay `nil`, which is what keeps onboarding on screen.
     func testHostSourceStoreRoundTrips() {
         let suite = "VampStreamHostSourceStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        XCTAssertNil(VampStreamHostSourceStore.load(defaults: defaults))
-        VampStreamHostSourceStore.save(.assistant, defaults: defaults)
-        XCTAssertEqual(VampStreamHostSourceStore.load(defaults: defaults), .assistant)
-        VampStreamHostSourceStore.save(.sync, defaults: defaults)
-        XCTAssertEqual(VampStreamHostSourceStore.load(defaults: defaults), .sync)
+        func storedSource() -> VampStreamHostSource? {
+            defaults.string(forKey: VampStreamHostSourceStore.key)
+                .flatMap(VampStreamHostSource.init(rawValue:))
+        }
+
+        XCTAssertNil(storedSource())
+        defaults.set(VampStreamHostSource.assistant.rawValue, forKey: VampStreamHostSourceStore.key)
+        XCTAssertEqual(storedSource(), .assistant)
+        defaults.set(VampStreamHostSource.sync.rawValue, forKey: VampStreamHostSourceStore.key)
+        XCTAssertEqual(storedSource(), .sync)
+        defaults.set("nonsense", forKey: VampStreamHostSourceStore.key)
+        XCTAssertNil(storedSource(), "an unrecognised value must leave the user in onboarding")
     }
 
     func testPrimaryScanCopyNamesVampSync() {
@@ -292,13 +283,16 @@ final class VampStreamHomeLayoutTests: XCTestCase {
             showsSyncPromo: false
         ).contains(.syncPromo))
 
+        // The card reads this key through @AppStorage, so the key and the "not installed
+        // until proven otherwise" default are the contract — not a wrapper around them.
         let suite = "VampStreamSyncPromoStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        XCTAssertFalse(VampStreamSyncPromoStore.isInstalled(defaults: defaults))
-        VampStreamSyncPromoStore.setInstalled(true, defaults: defaults)
-        XCTAssertTrue(VampStreamSyncPromoStore.isInstalled(defaults: defaults))
+        XCTAssertEqual(VampStreamSyncPromoStore.installedKey, "vampstream.syncInstalled")
+        XCTAssertFalse(defaults.bool(forKey: VampStreamSyncPromoStore.installedKey))
+        defaults.set(true, forKey: VampStreamSyncPromoStore.installedKey)
+        XCTAssertTrue(defaults.bool(forKey: VampStreamSyncPromoStore.installedKey))
         XCTAssertEqual(VampStreamHomeCopy.syncPromoInstalledTitle, "Is Vamp Sync installed on your Mac?")
         XCTAssertEqual(VampStreamHomeCopy.syncPromoInstalledYes, "Yes, it’s installed")
         XCTAssertEqual(VampStreamHomeCopy.syncPromoInstalledNotYet, "Not yet")
@@ -405,12 +399,36 @@ final class VampStreamHomeLayoutTests: XCTestCase {
         XCTAssertEqual(VampStreamHomeCopy.showGrid, "Show grid view")
         XCTAssertEqual(VampStreamHomeCopy.showList, "Show list view")
 
+        // The home reads this key through @AppStorage and decodes it with
+        // `VampStreamHomeCardStyle(rawValue:) ?? .list`, so that is what is asserted here.
         let suite = "VampStreamHomeCardStyleStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        XCTAssertEqual(VampStreamHomeCardStyleStore.load(defaults: defaults), .list)
-        VampStreamHomeCardStyleStore.save(.grid, defaults: defaults)
-        XCTAssertEqual(VampStreamHomeCardStyleStore.load(defaults: defaults), .grid)
+        XCTAssertEqual(VampStreamHomeCardStyleStore.key, "vampstream.homeCardStyle")
+
+        func storedStyle() -> VampStreamHomeCardStyle {
+            defaults.string(forKey: VampStreamHomeCardStyleStore.key)
+                .flatMap(VampStreamHomeCardStyle.init(rawValue:)) ?? .list
+        }
+
+        XCTAssertEqual(storedStyle(), .list, "an unset key must fall back to the list")
+        defaults.set(VampStreamHomeCardStyle.grid.rawValue, forKey: VampStreamHomeCardStyleStore.key)
+        XCTAssertEqual(storedStyle(), .grid)
+        defaults.set("nonsense", forKey: VampStreamHomeCardStyleStore.key)
+        XCTAssertEqual(storedStyle(), .list, "an unrecognised value must fall back, not crash")
+    }
+
+    func testHostSourceKeyIsTheOneOnboardingWrites() {
+        XCTAssertEqual(VampStreamHostSourceStore.key, "vampstream.hostSource")
+        XCTAssertNil(VampStreamHostSource(rawValue: ""), "an unset host source must stay unconfigured")
+        XCTAssertEqual(VampStreamHostSource(rawValue: "both"), .both)
+    }
+
+    /// The card style toggle is what the grid/list button flips.
+    func testCardStyleTogglesBothWays() {
+        XCTAssertEqual(VampStreamHomeCardStyle.list.toggled, .grid)
+        XCTAssertEqual(VampStreamHomeCardStyle.grid.toggled, .list)
+        XCTAssertEqual(VampStreamHomeCardStyle.list.toggled.toggled, .list)
     }
 }

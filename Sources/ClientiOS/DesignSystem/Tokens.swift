@@ -27,9 +27,14 @@ enum PR {
     static let warn = Color.primary
     static let err = Color.primary
 
+    // Radii are named for what they are, not for a number they no longer carry.
+    // `r12` used to be 16, so a view that wanted 12 points could not use the token and
+    // hardcoded the literal instead — which is how this tree accumulated nine different
+    // raw corner radii next to a design system that already had a scale.
     static let r6: CGFloat = 6
     static let r8: CGFloat = 8
-    static let r12: CGFloat = 16
+    /// Card/sheet radius. Matches `AppRadius` — see that scale for the full set.
+    static let rCard: CGFloat = 16
 }
 
 /// User-selectable accent palette. `glass` (colorless) is the default;
@@ -312,28 +317,13 @@ extension View {
     @ViewBuilder
     func prGlassSurface<S: InsettableShape>(
         in shape: S,
-        isInteractive: Bool = false
+        isInteractive: Bool = false,
+        role: PRGlassRole? = nil
     ) -> some View {
-#if os(iOS) && compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            self.background {
-                GeometryReader { geometry in
-                    Color.clear
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .glassEffect(
-                            prNativeGlass(isInteractive: isInteractive),
-                            in: shape
-                        )
-                }
-            }
-        } else {
-            self
-                .background(.ultraThinMaterial, in: shape)
-        }
-#else
-        self
-            .background(.ultraThinMaterial, in: shape)
-#endif
+        modifier(PRGlassSurfaceModifier(
+            shape: shape,
+            role: role ?? (isInteractive ? .button : .card)
+        ))
     }
 
 }
@@ -351,6 +341,71 @@ private func prNativeGlass(isInteractive: Bool) -> Glass {
     return glass
 }
 #endif
+
+private struct PRGlassSurfaceModifier<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let role: PRGlassRole
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+#if os(iOS) && compiler(>=6.2)
+        if #available(iOS 26.0, *), !reduceTransparency {
+            content.background {
+                GeometryReader { geometry in
+                    Color.clear
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .glassEffect(
+                            prNativeGlass(isInteractive: role.isInteractive),
+                            in: shape
+                        )
+                        .opacity(role.materialOpacity)
+                }
+            }
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+        }
+#else
+        content
+            .background(.ultraThinMaterial, in: shape)
+#endif
+    }
+}
+
+/// Material density tiers used by the shared colorless-glass system.
+enum PRGlassRole {
+    case hero
+    case card
+    case listRow
+    case button
+    case composer
+    case composerField
+    case capsule
+    case icon
+    case badge
+    case toolbarButton
+    case tabBar
+
+    var isInteractive: Bool {
+        switch self {
+        case .button, .composer, .composerField, .capsule, .icon, .badge,
+             .toolbarButton, .tabBar:
+            return true
+        case .hero, .card, .listRow:
+            return false
+        }
+    }
+
+    var materialOpacity: Double {
+        switch self {
+        case .hero, .card, .listRow: return 0.30
+        case .button: return 0.34
+        case .composer: return 0.72
+        case .composerField: return 0.62
+        case .capsule, .icon, .badge, .toolbarButton, .tabBar: return 0.52
+        }
+    }
+}
 
 struct PRGlassPressButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {

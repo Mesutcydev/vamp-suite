@@ -40,6 +40,10 @@ enum AppHostMetrics {
     static let cardRadius: CGFloat = AppRadius.extraLarge
     /// Text-field radius.
     static let fieldRadius: CGFloat = AppRadius.medium
+    /// Buttons and other standard-height controls.
+    static let controlRadius: CGFloat = AppRadius.medium
+    /// Small inline elements: app icons, provider marks, keyboard-deck keys, chips.
+    static let chipRadius: CGFloat = AppRadius.small
     /// Minimum grid tile width; narrower layouts fall back to one column.
     static let gridTileMinimum: CGFloat = 160
 }

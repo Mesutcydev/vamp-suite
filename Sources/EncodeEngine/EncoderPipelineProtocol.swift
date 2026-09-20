@@ -120,6 +120,23 @@ public protocol EncoderPipelineProtocol {
         codec: EncodedFrameCodec,
         dynamicRange: StreamDynamicRange
     ) async throws
+    /// Floor-aware variants for *window* streams: `minLongEdge` (see
+    /// `StreamScaling.scaledDimensions`) must equal the capture path's floor so
+    /// capture and encode dimensions stay in lockstep. Display streams pass 0.
+    func configure(
+        for display: DisplayDescriptor,
+        qualityPreset: StreamQualityPreset,
+        codec: EncodedFrameCodec,
+        dynamicRange: StreamDynamicRange,
+        minLongEdge: Int
+    ) async throws
+    func reconfigure(
+        for display: DisplayDescriptor,
+        qualityPreset: StreamQualityPreset,
+        codec: EncodedFrameCodec,
+        dynamicRange: StreamDynamicRange,
+        minLongEdge: Int
+    ) async throws
     func startEncoding() async throws
     func flush() async throws
     func stopEncoding() async

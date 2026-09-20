@@ -52,11 +52,13 @@ extension EncoderConfiguration {
         codec: EncodedFrameCodec,
         width: Int,
         height: Int,
-        dynamicRange: StreamDynamicRange = .sdr
+        dynamicRange: StreamDynamicRange = .sdr,
+        minLongEdge: Int = 0
     ) -> EncoderConfiguration {
         // Mirror CaptureConfiguration dimension scaling so the VTCompressionSession
         // is always configured at the same resolution as the captured frames.
-        let (encodedWidth, encodedHeight) = scaledDimensions(preset: preset, width: width, height: height, codec: codec)
+        let (encodedWidth, encodedHeight) = scaledDimensions(
+            preset: preset, width: width, height: height, codec: codec, minLongEdge: minLongEdge)
         return EncoderConfiguration(
             codec: codec,
             width: encodedWidth,
@@ -73,13 +75,21 @@ extension EncoderConfiguration {
 
     /// Returns the encode dimensions for a given preset and codec. Delegates to the
     /// shared `StreamScaling` so capture and encode always agree; HEVC unlocks the 4K
-    /// cap for `balanced`/`quality` while H.264 stays at 1080p.
-    public static func scaledDimensions(preset: StreamQualityPreset, width: Int, height: Int, codec: EncodedFrameCodec) -> (Int, Int) {
+    /// cap for `balanced`/`quality` while H.264 stays at 1080p. `minLongEdge` must
+    /// match the capture call site's floor or VideoToolbox rescales the mismatch.
+    public static func scaledDimensions(
+        preset: StreamQualityPreset,
+        width: Int,
+        height: Int,
+        codec: EncodedFrameCodec,
+        minLongEdge: Int = 0
+    ) -> (Int, Int) {
         let dims = StreamScaling.scaledDimensions(
             preset: preset,
             nativeWidth: width,
             nativeHeight: height,
-            allowsHighResolution: codec == .hevc
+            allowsHighResolution: codec == .hevc,
+            minLongEdge: minLongEdge
         )
         return (dims.width, dims.height)
     }

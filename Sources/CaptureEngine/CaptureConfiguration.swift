@@ -41,14 +41,16 @@ extension CaptureConfiguration {
         displayWidth: Int,
         displayHeight: Int,
         scaleFactor: Double,
-        allowsHighResolution: Bool
+        allowsHighResolution: Bool,
+        minLongEdge: Int = 0
     ) -> CaptureConfiguration {
         // Delegate to the shared scaler so capture dimensions always match the encoder's.
         let scaled = StreamScaling.scaledDimensions(
             preset: preset,
             nativeWidth: displayWidth,
             nativeHeight: displayHeight,
-            allowsHighResolution: allowsHighResolution
+            allowsHighResolution: allowsHighResolution,
+            minLongEdge: minLongEdge
         )
         // Derive the backing scale factor from the ratio the scaler applied.
         let scale = displayWidth > 0

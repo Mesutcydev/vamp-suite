@@ -52,7 +52,10 @@ public struct RemoteApplication: Codable, Hashable, Sendable, Identifiable {
     public var isRunning: Bool
     /// True when this app owns the frontmost (active) application on the Mac.
     public var isActive: Bool
-    /// Base64-encoded small PNG (nil when unavailable or intentionally omitted).
+    /// Base64-encoded PNG tile, 192 px per side (nil when unavailable or intentionally
+    /// omitted). The picker draws it in a 42 pt row, so 3x devices sample 126 device pixels;
+    /// the tile is kept at the largest size the control channel can carry in one page
+    /// (see `HostApplicationRegistry.iconTilePixels`).
     public var iconPNGBase64: String?
     /// `CGWindowID`s (as strings) of this app's on-screen windows, if running.
     public var windowIDs: [String]

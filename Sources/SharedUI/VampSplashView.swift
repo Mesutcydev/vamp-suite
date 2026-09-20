@@ -416,17 +416,22 @@ private struct StreamSplashBackdrop: View {
     let reveal: Double
 
     var body: some View {
-        Image("AppBackdrop")
+        Image("VampStreamBackdrop")
             .resizable()
             .interpolation(.high)
             .scaledToFill()
             .frame(width: size.width, height: size.height)
             .scaleEffect(1.035 + (0.015 * (1 - reveal)))
             .clipped()
-            .overlay(Color(red: 0.015, green: 0.035, blue: 0.055).opacity(0.72))
             .overlay {
                 LinearGradient(
-                    colors: [.black.opacity(0.18), .clear, .black.opacity(0.56)],
+                    colors: [
+                        .black.opacity(0.42),
+                        .black.opacity(0.06),
+                        .clear,
+                        .black.opacity(0.12),
+                        .black.opacity(0.62)
+                    ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -436,10 +441,16 @@ private struct StreamSplashBackdrop: View {
 
 private struct StreamSplashBrand: View {
     var body: some View {
-        Text("VAMP STREAM")
-            .font(.system(size: 11, weight: .semibold))
-            .tracking(2.4)
-            .foregroundStyle(.white.opacity(0.74))
+        VStack(spacing: 5) {
+            Text("VAMP STREAM")
+                .font(.system(size: 13, weight: .semibold))
+                .tracking(3.2)
+                .foregroundStyle(Color(red: 0.96, green: 0.94, blue: 0.90).opacity(0.92))
+            Text("STREAM MAC APPS TO YOUR iPHONE")
+                .font(.system(size: 10, weight: .medium))
+                .tracking(1.8)
+                .foregroundStyle(Color(red: 0.96, green: 0.94, blue: 0.90).opacity(0.65))
+        }
     }
 }
 
@@ -452,12 +463,12 @@ private struct StreamSplashConnection: View {
             device(systemName: "macbook", label: "Mac")
             ZStack {
                 Capsule()
-                    .fill(.white.opacity(0.18))
-                    .frame(width: 92, height: 1)
+                    .fill(Color(red: 0.96, green: 0.94, blue: 0.90).opacity(0.25))
+                    .frame(width: 92, height: 1.5)
                 Circle()
-                    .fill(.white)
-                    .frame(width: 6, height: 6)
-                    .shadow(color: .white.opacity(0.75), radius: 7)
+                    .fill(Color(red: 0.96, green: 0.94, blue: 0.90))
+                    .frame(width: 6.5, height: 6.5)
+                    .shadow(color: Color(red: 0.96, green: 0.94, blue: 0.90).opacity(0.85), radius: 8)
                     .offset(x: -43 + (86 * pulse))
             }
             .frame(width: 92, height: 24)
@@ -472,11 +483,11 @@ private struct StreamSplashConnection: View {
             Image(systemName: systemName)
                 .font(.system(size: 38, weight: .light))
                 .symbolRenderingMode(.monochrome)
-                .foregroundStyle(.white)
+                .foregroundStyle(Color(red: 0.96, green: 0.94, blue: 0.90))
                 .frame(width: 58, height: 58)
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(Color(red: 0.96, green: 0.94, blue: 0.90).opacity(0.65))
         }
     }
 }
@@ -485,14 +496,19 @@ private struct StreamSplashCopy: View {
     let reveal: Double
 
     var body: some View {
-        VStack(spacing: 9) {
+        VStack(spacing: 8) {
             Text("Vamp Stream")
-                .font(.system(size: 31, weight: .semibold, design: .rounded))
-                .tracking(-0.65)
-                .foregroundStyle(.white)
-            Text("Use a Mac App on your iPhone")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.white.opacity(0.66))
+                .font(.system(size: 30, weight: .semibold, design: .rounded))
+                .tracking(-0.5)
+                .foregroundStyle(Color(red: 0.96, green: 0.94, blue: 0.90))
+            Text("Stream Mac Apps to Your iPhone")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Color(red: 0.96, green: 0.94, blue: 0.90).opacity(0.72))
+            Text("WORK  •  CREATE  •  PLAY  •  ANYWHERE")
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(2.2)
+                .foregroundStyle(Color(red: 0.96, green: 0.94, blue: 0.90).opacity(0.48))
+                .padding(.top, 4)
         }
         .offset(y: 10 * (1 - reveal))
         .opacity(reveal)

@@ -258,7 +258,8 @@ public final class ScreenCaptureEngine: NSObject, CaptureEngineProtocol, @unchec
                 displayWidth: pixelWidth,
                 displayHeight: pixelHeight,
                 scaleFactor: Double(pixelScale),
-                allowsHighResolution: allowsHighResolution
+                allowsHighResolution: allowsHighResolution,
+                minLongEdge: StreamScaling.windowPerformanceMinLongEdge
             )
             config.showsCursor = withLock { _showsCursor }
             logger.info("Starting window capture: \(config.summaryDescription, privacy: .public)")

@@ -2,6 +2,8 @@
 import SwiftUI
 import SharedModels
 import SharedProtocol
+// Named directly by `picturePlacement(in:)`; the inferred `.fitDisplay` members did not.
+import SharedUtilities
 import UIKit
 
 /// Vamp Stream's core screen: the Mac's applications. Tap one to stream just that app's window
@@ -16,6 +18,7 @@ struct AppStreamBrowserView: View {
     var onClose: () -> Void
     @StateObject private var rendererVM: VideoRendererViewModel
     @StateObject private var input: AppStreamInputController
+    @StateObject private var cursorModel = LocalCursorModel()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("vampstream.favoriteApps") private var favoriteStorage = "[]"
@@ -28,8 +31,11 @@ struct AppStreamBrowserView: View {
     @State private var videoHealthCheckTime = ProcessInfo.processInfo.systemUptime
     @State private var videoStartedAt = ProcessInfo.processInfo.systemUptime
     @State private var keyboardActive = false
-    @State private var keyboardOverlayBottomPad: CGFloat = 0
     @State private var adjustsViewport = false
+    /// One bottom control deck owns close, annotate, keyboard, sizing, fit, and hide — the same
+    /// deck the Assistant path draws, so both Sync and Assistant streams look like one app.
+    @StateObject private var annotationStore = AnnotationOverlayStore()
+    @State private var controlsHidden = false
     @State private var viewportWindowID: String?
     @State private var viewportZoom: CGFloat = 1
     @State private var viewportOffset: CGSize = .zero
@@ -73,10 +79,14 @@ struct AppStreamBrowserView: View {
                     }
                 }
             }
-            .onAppear { vm.updateClientViewport(size: proxy.size) }
+            .onAppear {
+                vm.updateClientViewport(size: videoViewport(
+                    in: proxy.size, safeAreaBottom: proxy.safeAreaInsets.bottom))
+            }
             .onChangeCompat(of: proxy.size) { size in
                 if case .streaming = vm.status { return }
-                vm.updateClientViewport(size: size)
+                vm.updateClientViewport(size: videoViewport(
+                    in: size, safeAreaBottom: proxy.safeAreaInsets.bottom))
             }
         }
         .task {
@@ -166,6 +176,7 @@ struct AppStreamBrowserView: View {
             rendererVM.stopReceiving()
             input.stop()
             vm.stop()
+            vm.cancelVideoRecovery()
             // Detach the shared bridge so a paired mouse cannot keep driving a session this
             // view no longer owns, and so re-entering does not double-subscribe.
             bluetoothInput.stopObserving()
@@ -190,24 +201,25 @@ struct AppStreamBrowserView: View {
     private var hostIsLocked: Bool {
         sessionCoordinator.hostLockState == .lockedOrLoginWindow
     }
-    private var favoriteIDs: [String] { decodeIDs(favoriteStorage) }
+    /// Cursorless-capture contract: only when negotiation agreed that the host omits the
+    /// macOS cursor from the frames does this surface draw its own local pointer. An
+    /// older host still captures the cursor, and drawing on top of it would double it.
+    private var usesLocalCursor: Bool {
+        sessionCoordinator.negotiatedCapabilities?.supportsCursorlessCapture == true
+    }
+    private var favoriteIDs: [String] { AppStreamAppShortlists.decode(favoriteStorage) }
     private var matchingApps: [RemoteApplication] {
         vm.applications.filter { searchText.isEmpty || $0.name.localizedStandardContains(searchText) }
     }
     private var favorites: [RemoteApplication] { matchingApps.filter { favoriteIDs.contains($0.id) } }
     private var recent: [RemoteApplication] {
-        decodeIDs(recentStorage).compactMap { id in matchingApps.first { $0.id == id && !favoriteIDs.contains(id) } }
+        AppStreamAppShortlists.decode(recentStorage)
+            .compactMap { id in matchingApps.first { $0.id == id && !favoriteIDs.contains(id) } }
     }
     private var running: [RemoteApplication] { matchingApps.filter { $0.isRunning } }
     private var installed: [RemoteApplication] { matchingApps.filter { !$0.isRunning } }
-    private func decodeIDs(_ value: String) -> [String] {
-        (try? JSONDecoder().decode([String].self, from: Data(value.utf8))) ?? []
-    }
-    private func encodeIDs(_ value: [String]) -> String {
-        (try? String(decoding: JSONEncoder().encode(value), as: UTF8.self)) ?? "[]"
-    }
     private func open(_ app: RemoteApplication, windowID: String? = nil) {
-        recentStorage = encodeIDs(Array(([app.id] + decodeIDs(recentStorage).filter { $0 != app.id }).prefix(10)))
+        recentStorage = AppStreamAppShortlists.promoting(app.id, in: recentStorage)
         vm.select(app, windowID: windowID)
     }
     private func applyQuality() {
@@ -327,8 +339,7 @@ struct AppStreamBrowserView: View {
             }
             Button(favoriteIDs.contains(app.id) ? "Remove from Favorites" : "Add to Favorites",
                    systemImage: favoriteIDs.contains(app.id) ? "star.slash" : "star") {
-                favoriteStorage = encodeIDs(favoriteIDs.contains(app.id)
-                    ? favoriteIDs.filter { $0 != app.id } : favoriteIDs + [app.id])
+                favoriteStorage = AppStreamAppShortlists.toggled(app.id, in: favoriteStorage)
             }
             if app.isRunning, ApplicationClosePolicy.canClose(app.bundleIdentifier) {
                 Button("Close \(app.name)", systemImage: "xmark.app", role: .destructive) {
@@ -355,7 +366,7 @@ struct AppStreamBrowserView: View {
                 .foregroundStyle(PR.fg)
         }
         .padding(14)
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
     }
 
     @ViewBuilder private var loadingOrEmpty: some View {
@@ -383,13 +394,22 @@ struct AppStreamBrowserView: View {
             VampGlassActionButton(title: "Cancel", action: { vm.backToApps() })
         }
         .padding(22)
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
         .padding(.horizontal, 28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func streamSurface(name: String) -> some View {
         GeometryReader { proxy in
+            let videoArea = videoViewport(
+                in: proxy.size, safeAreaBottom: proxy.safeAreaInsets.bottom)
+            // The picture is drawn at exactly the size `placePicture` chose, and its height is
+            // therefore either the surface's own or short by only a hair. The render layer centers
+            // whatever it is given, so the picture's frame — not a full-height layer — decides
+            // where the spare points go: nothing is left above it, and the deck owns the band
+            // below it.
+            let placement = picturePlacement(in: videoArea)
+            let picture = CGSize(width: placement.size.width, height: placement.size.height)
             ZStack(alignment: .top) {
                 Color.black
 
@@ -403,7 +423,8 @@ struct AppStreamBrowserView: View {
                     )
                     .scaleEffect(viewportZoom, anchor: .center)
                     .offset(viewportOffset)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(width: picture.width, height: picture.height)
+                    .frame(width: videoArea.width, height: videoArea.height, alignment: .top)
 
                     // Direct-touch control: uses the same gesture semantics and ordered input
                     // pipeline as Vamp Control. Coordinates map through the streamed window's
@@ -412,12 +433,27 @@ struct AppStreamBrowserView: View {
                         allowsViewportAdjustment: adjustsViewport,
                         viewportZoom: viewportZoom,
                         viewportOffset: viewportOffset,
-                        viewSize: proxy.size,
-                        onTap: { input.tap(at: DesktopPoint(x: $0.x, y: $0.y)) },
-                        onDoubleTap: { input.doubleTap(at: DesktopPoint(x: $0.x, y: $0.y)) },
-                        onRightClick: { input.rightClick(at: DesktopPoint(x: $0.x, y: $0.y)) },
-                        onMiddleClick: { input.middleClick(at: DesktopPoint(x: $0.x, y: $0.y)) },
-                        onPointerMove: { input.pointerMoved(at: DesktopPoint(x: $0.x, y: $0.y)) },
+                        viewSize: picture,
+                        onTap: { point in
+                            cursorModel.place(at: CGPoint(x: point.x, y: point.y))
+                            input.tap(at: DesktopPoint(x: point.x, y: point.y))
+                        },
+                        onDoubleTap: { point in
+                            cursorModel.place(at: CGPoint(x: point.x, y: point.y))
+                            input.doubleTap(at: DesktopPoint(x: point.x, y: point.y))
+                        },
+                        onRightClick: { point in
+                            cursorModel.place(at: CGPoint(x: point.x, y: point.y))
+                            input.rightClick(at: DesktopPoint(x: point.x, y: point.y))
+                        },
+                        onMiddleClick: { point in
+                            cursorModel.place(at: CGPoint(x: point.x, y: point.y))
+                            input.middleClick(at: DesktopPoint(x: point.x, y: point.y))
+                        },
+                        onPointerMove: { point in
+                            cursorModel.place(at: CGPoint(x: point.x, y: point.y))
+                            input.pointerMoved(at: DesktopPoint(x: point.x, y: point.y))
+                        },
                         onPointerEnded: { input.pointerEnded() },
                         onScroll: { dx, dy in input.scroll(deltaX: dx, deltaY: dy) },
                         onViewportPan: { delta in
@@ -425,11 +461,11 @@ struct AppStreamBrowserView: View {
                                 CGSize(width: viewportOffset.width + delta.width,
                                        height: viewportOffset.height + delta.height),
                                 zoom: viewportZoom,
-                                in: proxy.size
+                                in: picture
                             )
                         },
                         onPinchChanged: { scale, focalPoint in
-                            updateViewportZoom(scale: scale, focalPoint: focalPoint, in: proxy.size)
+                            updateViewportZoom(scale: scale, focalPoint: focalPoint, in: picture)
                         },
                         onPinchEnded: {
                             if viewportZoom < 1.15 {
@@ -438,11 +474,41 @@ struct AppStreamBrowserView: View {
                                 }
                             }
                         },
-                        onLongPress: { input.toggleDragLock(at: DesktopPoint(x: $0.x, y: $0.y)) },
+                        onLongPress: { point in
+                            cursorModel.place(at: CGPoint(x: point.x, y: point.y))
+                            input.toggleDragLock(at: DesktopPoint(x: point.x, y: point.y))
+                        },
                         onLongPressEnded: { input.releaseDragLock() },
-                        onHoverDelta: { dx, dy in input.relativePointerMove(deltaX: dx, deltaY: dy) }
+                        onHoverDelta: { dx, dy in
+                            input.relativePointerMove(deltaX: dx, deltaY: dy)
+                            if let scale = input.cursorViewPointsPerDesktopPoint {
+                                cursorModel.moveRelative(
+                                    dx: dx, dy: dy, viewPointsPerDesktopPoint: scale)
+                            }
+                        }
                     )
-                    .allowsHitTesting(!keyboardActive && canInteract)
+                    .frame(width: picture.width, height: picture.height)
+                    .overlay {
+                        // Cursorless capture: the host omits the macOS cursor, so the
+                        // pointer is drawn here at the exact points the input pipeline
+                        // maps — zero-round-trip hover feedback. The overlay carries the
+                        // viewport's zoom/pan so it stays glued to the content when the
+                        // picture is magnified. It sits inside the picture's frame, before
+                        // the anchoring below, so a cover-crop cannot offset it.
+                        if usesLocalCursor {
+                            LocalCursorOverlay(cursor: cursorModel, contentZoom: viewportZoom)
+                                .scaleEffect(viewportZoom, anchor: .center)
+                                .offset(viewportOffset)
+                        }
+                    }
+                    .allowsHitTesting(!keyboardActive && !annotationStore.isVisible && canInteract)
+                    // Placement happens last: covering makes the picture's height exactly the
+                    // surface's, so it cannot creep under the deck that sits at that edge.
+                    .frame(width: videoArea.width, height: videoArea.height, alignment: .top)
+
+                    if annotationStore.isVisible {
+                        AnnotationCanvasOverlay(store: annotationStore)
+                    }
 
                 } else {
                     VStack(spacing: 12) {
@@ -459,16 +525,46 @@ struct AppStreamBrowserView: View {
                 if AppStreamVideoHealth.needsRecovery(lastDecodedAt: rendererVM.lastDecodedAt,
                     startedAt: videoStartedAt, now: videoHealthCheckTime) {
                     AppStreamVideoRecoveryBar {
-                        sessionCoordinator.requestKeyframeRefresh(reason: "Stalled app stream")
+                        let recoveryStartedAt = ProcessInfo.processInfo.systemUptime
+                        vm.recoverVideo { [rendererVM] in
+                            guard let last = rendererVM.lastDecodedAt else { return true }
+                            return last < recoveryStartedAt
+                        }
                     }
                     .padding(12)
                 }
             }
             .overlay(alignment: .bottom) {
                 if let notice = vm.sizingNotice, !keyboardActive {
-                    Text(notice).font(.caption).padding(8)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                        .padding(.bottom, 12).allowsHitTesting(false)
+                    Text(notice)
+                        .font(.caption)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(AppSpacing.xs)
+                        .background(
+                            .regularMaterial,
+                            in: RoundedRectangle(cornerRadius: PR.r8, style: .continuous))
+                        .padding(.horizontal, AppSpacing.md)
+                        // Clear the control deck so a sizing notice is never hidden behind it.
+                        // Derived from the deck, not a copied number, so it follows when the
+                        // deck's height changes.
+                        .padding(
+                            .bottom,
+                            AppStreamChromePill<EmptyView>.reservedBand(safeAreaBottom: 0) + AppSpacing.xs)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if controlsHidden {
+                    AppStreamChromeRevealButton(bottomInset: proxy.safeAreaInsets.bottom) {
+                        withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82)) {
+                            controlsHidden = false
+                        }
+                    }
+                } else {
+                    streamChromePill
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, max(proxy.safeAreaInsets.bottom, 0) + 12)
                 }
             }
             .overlay(alignment: .bottom) {
@@ -481,38 +577,42 @@ struct AppStreamBrowserView: View {
                     )
                     .allowsHitTesting(canInteract)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .padding(.bottom, keyboardOverlayBottomPad)
                 }
             }
             .task(id: vm.streamedWindow?.windowID) {
                 videoStartedAt = ProcessInfo.processInfo.systemUptime
+                vm.cancelVideoRecovery()
                 while !Task.isCancelled {
                     videoHealthCheckTime = ProcessInfo.processInfo.systemUptime
                     do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
                 }
             }
             .onAppear {
-                configureInteraction(viewSize: proxy.size)
-                vm.updateClientViewport(size: proxy.size)
+                configureInteraction(viewSize: picture)
+                vm.updateClientViewport(size: videoArea)
             }
             .onChangeCompat(of: proxy.size) { newSize in
-                configureInteraction(viewSize: newSize)
-                if !keyboardActive { vm.updateClientViewport(size: newSize) }
-                viewportOffset = clampedViewportOffset(viewportOffset, zoom: viewportZoom, in: newSize)
+                let area = videoViewport(in: newSize, safeAreaBottom: proxy.safeAreaInsets.bottom)
+                let fitted = picturePlacement(in: area).size
+                let fittedSize = CGSize(width: fitted.width, height: fitted.height)
+                configureInteraction(viewSize: fittedSize)
+                if !keyboardActive { vm.updateClientViewport(size: area) }
+                viewportOffset = clampedViewportOffset(viewportOffset, zoom: viewportZoom, in: fittedSize)
             }
             .onChangeCompat(of: vm.streamedWindow) { _ in
-                configureInteraction(viewSize: proxy.size)
-                viewportOffset = clampedViewportOffset(viewportOffset, zoom: viewportZoom, in: proxy.size)
+                configureInteraction(viewSize: picture)
+                viewportOffset = clampedViewportOffset(viewportOffset, zoom: viewportZoom, in: picture)
             }
-            .background(AppStreamKeyboardInsetReader { inset in
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { keyboardOverlayBottomPad = inset }
-            })
 
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             streamTopBar(name: name).background(.black.opacity(0.28))
         }
-        .ignoresSafeArea(edges: [.horizontal, .bottom])
+        // Respect the keyboard region (`.container` only): iOS then lays the whole surface out
+        // above the system keyboard exactly once, which is what keeps the keyboard deck visible.
+        // Ignoring it as well as adding our own inset pad moved the deck twice and pushed it off
+        // the top of the screen — the "buttons appear, then vanish" report.
+        .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
     }
 
     private func streamTopBar(name: String) -> some View {
@@ -561,9 +661,13 @@ struct AppStreamBrowserView: View {
             .accessibilityHint("Switch between controlling the Mac and moving or zooming the picture")
             Menu {
                 Section("View on this device") {
+                    // "Fit window" was documented in the gesture help but existed only on the
+                    // Assistant path. Both menus now offer the same two picture actions.
                     Button("Fit window", systemImage: "arrow.down.right.and.arrow.up.left") {
                         input.releaseDragLock()
-                        resetViewportZoom()
+                        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.86)) {
+                            resetViewportZoom()
+                        }
                         adjustsViewport = false
                     }
                     Button("Larger text (2×)", systemImage: "plus.magnifyingglass") {
@@ -577,9 +681,12 @@ struct AppStreamBrowserView: View {
                     Button("Adaptive resize") { vm.setSizingMode(.adaptive) }
                     Button("Original Size") { vm.setSizingMode(.original) }
                 }
-                Picker("Quality", selection: $qualityMode) {
-                    Text("Auto").tag("auto")
+                // "Auto" named a mechanism this preset does not have — it maps to the fixed
+                // balanced preset, not to adaptation. The three options are named for the
+                // outcome the user is choosing, matching the Assistant path's vocabulary.
+                Picker("Picture quality", selection: $qualityMode) {
                     Text("Sharper text").tag("quality")
+                    Text("Balanced").tag("auto")
                     Text("Lower bandwidth").tag("performance")
                 }
                 if let streamed = vm.streamedApplication,
@@ -604,21 +711,63 @@ struct AppStreamBrowserView: View {
                     .frame(minWidth: 44, minHeight: 44)
             }
             .accessibilityLabel(input.dragLocked ? "Stream options, drag lock on" : "Stream options")
-            Button {
-                if !keyboardActive, isStreamingTerminal { input.focusTerminal() }
-                keyboardActive.toggle()
-            } label: {
-                Image(systemName: keyboardActive ? "keyboard.chevron.compact.down" : "keyboard")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 13).padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(keyboardActive ? "Hide keyboard" : "Show keyboard")
-            .accessibilityHint("Type into the streamed Mac app")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
+    }
+
+    /// The bottom control deck. It owns close, annotate, keyboard, Mac-window sizing, and hide;
+    /// the top bar keeps only navigation and the stream options menu so the two surfaces never
+    /// repeat the same control.
+    ///
+    /// The sizing cluster is deliberately *two* choices — Adaptive resize and Original Size.
+    /// Local picture modes (fit/fill, zoom presets) were removed: they never fixed a window the
+    /// Mac had not reshaped, and four sizing-looking controls in one deck made it unclear which
+    /// one actually changed the Mac.
+    private var streamChromePill: some View {
+        AppStreamChromePill {
+            AppStreamChromeButton(systemName: "xmark", isDestructive: true) {
+                onClose()
+            }
+
+            AppStreamChromeButton(
+                systemName: annotationStore.isVisible ? "pencil.slash" : "pencil.tip",
+                isActive: annotationStore.isVisible
+            ) {
+                annotationStore.isVisible.toggle()
+            }
+
+            AppStreamChromeButton(
+                systemName: keyboardActive ? "keyboard.chevron.compact.down" : "keyboard",
+                isActive: keyboardActive
+            ) {
+                if !keyboardActive, isStreamingTerminal { input.focusTerminal() }
+                keyboardActive.toggle()
+            }
+
+            AppStreamChromeMenu(
+                systemName: "aspectratio",
+                isActive: vm.sizingMode == .original,
+                isDimmed: !vm.supportsAdaptiveSizing,
+                accessibilityLabel: "Mac window sizing",
+                accessibilityValue: vm.sizingMode == .adaptive ? "Adaptive resize" : "Original Size"
+            ) {
+                Button("Adaptive resize", systemImage: "rectangle.arrowtriangle.2.inward") {
+                    vm.setSizingMode(.adaptive)
+                }
+                Button("Original Size", systemImage: "arrow.up.left.and.arrow.down.right") {
+                    vm.setSizingMode(.original)
+                }
+            }
+
+            AppStreamChromeButton(systemName: "eye.slash", isDimmed: true) {
+                withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82)) {
+                    keyboardActive = false
+                    annotationStore.isVisible = false
+                    controlsHidden = true
+                }
+            }
+        }
     }
 
     private var isStreamingTerminal: Bool {
@@ -626,6 +775,40 @@ struct AppStreamBrowserView: View {
         return AppStreamApplicationProfile.isTerminal(
             bundleIdentifier: application.bundleIdentifier,
             name: application.name)
+    }
+
+    /// The control deck floats over the bottom of the stream surface, so the picture must not be
+    /// laid out underneath it. Reserving the band keeps the streamed app's own bottom controls (a
+    /// send button, a toolbar) clear of the deck, and makes the Mac match the area the picture is
+    /// actually drawn in instead of one taller than the phone can show.
+    private static func controlDeckBand(safeAreaBottom: CGFloat) -> CGFloat {
+        AppStreamChromePill<EmptyView>.reservedBand(safeAreaBottom: safeAreaBottom)
+    }
+
+    /// The unobstructed part of the surface: the area the streamed picture may occupy.
+    private func videoViewport(in size: CGSize, safeAreaBottom: CGFloat) -> CGSize {
+        CGSize(
+            width: max(size.width, 1),
+            height: max(size.height - Self.controlDeckBand(safeAreaBottom: safeAreaBottom), 1))
+    }
+
+    /// How the streamed picture is sized and anchored inside `area`, and therefore the geometry
+    /// the input mapper must use so touches land where they are drawn.
+    ///
+    /// A Mac app can decline the exact shape it was asked for by a few percent, which used to
+    /// show up as a black band between the picture and the control deck. `placePicture` absorbs a
+    /// shortfall that small by covering the surface: the height becomes exact — so the app's own
+    /// bottom controls stay put, clear of the deck — and the left and right edges crop slightly.
+    private func picturePlacement(in area: CGSize) -> DisplayMappingEngine.StreamPicturePlacement {
+        guard let window = vm.streamedWindow, window.pointWidth > 0, window.pointHeight > 0,
+              area.width > 0, area.height > 0 else {
+            return DisplayMappingEngine.StreamPicturePlacement(
+                size: DesktopSize(width: max(area.width, 1), height: max(area.height, 1)),
+                croppedFraction: 0)
+        }
+        return DisplayMappingEngine.placePicture(
+            streamSize: DesktopSize(width: window.pointWidth, height: window.pointHeight),
+            container: DesktopSize(width: area.width, height: area.height))
     }
 
     private func configureInteraction(viewSize: CGSize) {
@@ -649,6 +832,9 @@ struct AppStreamBrowserView: View {
             ))
         }
         input.setViewSize(DesktopSize(width: viewSize.width, height: viewSize.height))
+        if let rect = input.cursorContentRect {
+            cursorModel.setSurface(size: viewSize, contentRect: rect)
+        }
     }
 
     private func updateViewportZoom(scale: CGFloat, focalPoint: CGPoint, in viewSize: CGSize) {
@@ -746,7 +932,7 @@ private struct AppStreamLockedStateView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                     .foregroundStyle(PR.fg)
-                    .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+                    .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
                     .frame(maxWidth: 340)
                     .onSubmit(submitUnlock)
                     .accessibilityLabel("Mac login password")
@@ -765,7 +951,7 @@ private struct AppStreamLockedStateView: View {
                     .frame(maxWidth: 312)
                     .padding(.vertical, 12)
                     .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous)
                             .fill(PR.fg)
                     )
                 }
@@ -786,7 +972,7 @@ private struct AppStreamLockedStateView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .prGlassSurface(
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous),
+                        in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous),
                         isInteractive: true
                     )
                     .buttonStyle(PRGlassPressButtonStyle())
@@ -797,7 +983,7 @@ private struct AppStreamLockedStateView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .prGlassSurface(
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous),
+                            in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous),
                             isInteractive: true
                         )
                         .buttonStyle(PRGlassPressButtonStyle())
@@ -864,6 +1050,7 @@ private struct AppStreamApplicationRow: View {
                     if let icon {
                         Image(uiImage: icon)
                             .resizable()
+                            .interpolation(.high)
                             // Fit, not fill: a non-square icon stays undistorted.
                             .aspectRatio(contentMode: .fit)
                     } else {
@@ -872,11 +1059,11 @@ private struct AppStreamApplicationRow: View {
                             .aspectRatio(contentMode: .fit)
                             .padding(9)
                             .foregroundStyle(PR.fg2)
-                            .background(PR.fg.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            .background(PR.fg.opacity(0.08), in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
                     }
                 }
                 .frame(width: AppHostMetrics.appIcon, height: AppHostMetrics.appIcon)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
                 .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -923,7 +1110,8 @@ private struct AppStreamApplicationRow: View {
             let key = (application.id + String(encoded.hashValue)) as NSString
             Self.icons.countLimit = 256
             if let cached = Self.icons.object(forKey: key) { icon = cached; return }
-            guard let data = Data(base64Encoded: encoded), let decoded = UIImage(data: data) else { return }
+            guard let data = Data(base64Encoded: encoded),
+                  let decoded = UIImage(data: data, scale: 3) else { return }
             Self.icons.setObject(decoded, forKey: key)
             icon = decoded
         }
@@ -963,7 +1151,7 @@ struct AppStreamVideoRecoveryBar: View {
         }
         .padding(.horizontal, 14)
         .frame(maxWidth: 560)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: PR.rCard))
     }
 }
 
@@ -976,7 +1164,7 @@ struct AppStreamGestureHelpView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     Text("Your Mac, at your fingertips.")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(PR.fg2)
                     AppStreamControlHelpSection()
                     AppStreamPictureHelpSection()
                 }
@@ -984,21 +1172,26 @@ struct AppStreamGestureHelpView: View {
                 .padding(20)
                 .frame(maxWidth: .infinity)
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background(PR.bg.ignoresSafeArea())
             .navigationTitle("Stream controls")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Button("Done") { dismiss() }
                     .font(.headline)
-                    .frame(maxWidth: 560, minHeight: 50)
+                    .foregroundStyle(PR.bg)
+                    .frame(maxWidth: 560, minHeight: AppHostMetrics.controlHeight)
                     .frame(maxWidth: .infinity)
-                    .background(.tint, in: RoundedRectangle(cornerRadius: 16))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
+                    .background(
+                        PR.fg,
+                        in: RoundedRectangle(cornerRadius: AppHostMetrics.controlRadius, style: .continuous))
+                    .padding(.horizontal, AppHostMetrics.screenInset)
+                    .padding(.vertical, AppSpacing.sm)
                     .background(.regularMaterial)
             }
         }
+        // This sheet used to render in stock grouped-Settings colours on top of a black,
+        // custom-styled app. It now uses the same surfaces as everything around it.
+        .preferredColorScheme(.dark)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }
@@ -1017,8 +1210,13 @@ private struct AppStreamControlHelpSection: View {
                 AppStreamHelpRow(symbol: "hand.draw", title: "Drag", detail: "Touch and hold, then move. Lift to release.")
                 AppStreamHelpRow(symbol: "keyboard", title: "Type", detail: "Tap the keyboard button to type in the Mac app.")
             }
-            .padding(18)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+            .padding(AppHostMetrics.cardPadding)
+            .background(
+                PR.card,
+                in: RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous)
+                    .strokeBorder(PR.border, lineWidth: 1))
         }
     }
 }
@@ -1032,13 +1230,19 @@ private struct AppStreamPictureHelpSection: View {
             VStack(spacing: 20) {
                 AppStreamHelpRow(symbol: "viewfinder", title: "Zoom and move", detail: "Tap Adjust view, then pinch to zoom or drag to move the picture.")
                 AppStreamHelpRow(symbol: "checkmark", title: "Return to control", detail: "Tap the checkmark when you’re done adjusting.")
-                AppStreamHelpRow(symbol: "ellipsis.circle", title: "Find a comfortable size", detail: "Open the ••• menu. Choose Fit window to see everything or Larger text (2×) to zoom in.")
+                AppStreamHelpRow(symbol: "1.circle", title: "Back to actual size", detail: "Tap 1× at the top to undo any zoom and re-centre the picture.")
+                AppStreamHelpRow(symbol: "aspectratio", title: "Reshape the Mac window", detail: "Use the sizing button in the bottom bar: Adaptive resize fits the window to your phone, Original Size leaves it as it is on the Mac.")
             }
-            .padding(18)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
-            Text("Adjust view moves the picture on this device. It doesn’t resize the Mac window.")
+            .padding(AppHostMetrics.cardPadding)
+            .background(
+                PR.card,
+                in: RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous)
+                    .strokeBorder(PR.border, lineWidth: 1))
+            Text("Adjust view and 1× move the picture on this device. Only the sizing button changes the window on the Mac.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PR.fg2)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -1054,14 +1258,14 @@ private struct AppStreamHelpRow: View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: symbol)
                 .font(.system(size: iconSize, weight: .medium))
-                .foregroundStyle(.tint)
+                .foregroundStyle(PR.fg)
                 .frame(width: iconSize + 8, height: iconSize + 8)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.headline)
                 Text(detail)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PR.fg2)
             }
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1070,29 +1274,4 @@ private struct AppStreamHelpRow: View {
     }
 }
 
-struct AppStreamKeyboardInsetReader: UIViewRepresentable {
-    let onChange: (CGFloat) -> Void
-    func makeUIView(context: Context) -> KeyboardInsetView {
-        let view = KeyboardInsetView()
-        view.isUserInteractionEnabled = false
-        view.onChange = onChange
-        return view
-    }
-    func updateUIView(_ view: KeyboardInsetView, context: Context) { view.onChange = onChange }
-}
-
-final class KeyboardInsetView: UIView {
-    var onChange: ((CGFloat) -> Void)?
-    private var lastInset: CGFloat = -1
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        // The guide belongs to this view, so split-screen and external-display
-        // coordinates never need to be converted from a global screen.
-        let occlusion = max(0, bounds.maxY - keyboardLayoutGuide.layoutFrame.minY)
-        let inset = occlusion > safeAreaInsets.bottom + 1 ? occlusion : 0
-        guard abs(inset - lastInset) > 0.5 else { return }
-        lastInset = inset
-        DispatchQueue.main.async { [weak self] in self?.onChange?(inset) }
-    }
-}
 #endif

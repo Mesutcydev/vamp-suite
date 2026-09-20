@@ -27,6 +27,21 @@ public final class HostApplicationRegistry {
     /// is re-requested on every reconnect/refresh and re-encoding every icon each time is waste.
     private var iconCache: [String: String] = [:]
 
+    /// Edge, in pixels, of the square PNG tile published for every application in the browser.
+    ///
+    /// The picker draws an icon inside a fixed 42 pt row, so a 3x iPhone samples it into 126
+    /// device pixels. 192 px keeps ~1.5x headroom over that — a larger row, a 4x-class
+    /// display, or the Mac client rendering at 2x still land on a native-resolution tile
+    /// instead of an upscaled one — and it is the largest tile this transport can carry.
+    ///
+    /// The app list is paginated under `HostSessionCoordinator.applicationListByteBudget`
+    /// (112 KB, inside the control channel's 128 KB per-message cap), and an icon that cannot
+    /// fit a page on its own is silently replaced by a placeholder row. Measured over a full
+    /// `/Applications`, 192 px keeps every real icon inside a single page (~80 KB base64 worst
+    /// case, Xcode), while 256 px pushes the heaviest icons past the budget and costs that
+    /// app its icon entirely.
+    public static let iconTilePixels = 192
+
     public init() {}
 
     /// A live snapshot of streamable applications, ordered for the client's app browser.
@@ -255,10 +270,17 @@ public final class HostApplicationRegistry {
     }
 
     private static func encodeIcon(_ icon: NSImage?) -> String? {
+        encodedIconTile(icon).map { $0.png.base64EncodedString() }
+    }
+
+    /// Renders `icon` into the square PNG tile published to clients, together with the pixel
+    /// size it actually produced. Internal so the tile contract — the resolution the client
+    /// renders from, and the per-page byte budget it has to fit — is unit-tested.
+    static func encodedIconTile(
+        _ icon: NSImage?,
+        side: Int = HostApplicationRegistry.iconTilePixels
+    ) -> (png: Data, pixelsWide: Int, pixelsHigh: Int)? {
         guard let icon else { return nil }
-        // Downscale to a small tile so a whole app list stays well under the 1 MB data-channel
-        // cap; the client only renders these at list-row size.
-        let side = 32
         let target = NSImage(size: NSSize(width: side, height: side))
         target.lockFocus()
         icon.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
@@ -266,7 +288,7 @@ public final class HostApplicationRegistry {
         guard let tiff = target.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiff),
               let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
-        return png.base64EncodedString()
+        return (png, bitmap.pixelsWide, bitmap.pixelsHigh)
     }
 
     // MARK: - Pure ordering / selection (unit-tested)

@@ -37,7 +37,7 @@ struct VampAppSearchField: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .prGlassSurface(
-            in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous),
+            in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous),
             isInteractive: true
         )
         .accessibilityElement(children: .contain)

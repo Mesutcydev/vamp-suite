@@ -130,4 +130,53 @@ final class BeetCodeRemoteSessionViewModelTests: XCTestCase {
 
         XCTAssertFalse(status.shouldOfferRemoteUnlock)
     }
+    func testCancelledPairResponseCannotPublishOrPersistSession() async {
+        var resume: CheckedContinuation<BeetCodePairResponse, Error>?
+        let started = expectation(description: "Pair request started")
+        var statusRequests = 0
+        let model = BeetCodeRemoteSessionViewModel(defaults: defaults, pairRequest: { _, _ in
+            try await withCheckedThrowingContinuation { continuation in
+                resume = continuation
+                started.fulfill()
+            }
+        }, statusRequest: { _ in
+            statusRequests += 1
+            throw URLError(.badServerResponse)
+        })
+        let task = Task { await model.pair(address: "http://127.0.0.1:9575", code: "123456") }
+        await fulfillment(of: [started], timeout: 2)
+        model.cancelConnectionAttempt()
+        resume?.resume(returning: BeetCodePairResponse(token: "test-fixture", expiresAt: 0, product: nil))
+        await task.value
+        XCTAssertFalse(model.isPairing)
+        XCTAssertNil(model.session)
+        XCTAssertNil(model.lastError)
+        XCTAssertTrue(model.savedAssistants.isEmpty)
+        XCTAssertEqual(statusRequests, 0)
+    }
+
+    func testTaskCancellationDuringStatusCannotPersistOrNavigate() async throws {
+        var resume: CheckedContinuation<BeetCodeControlStatus, Error>?
+        let started = expectation(description: "Status request started")
+        let model = BeetCodeRemoteSessionViewModel(defaults: defaults, pairRequest: { _, _ in
+            BeetCodePairResponse(token: "test-fixture", expiresAt: 0, product: nil)
+        }, statusRequest: { _ in
+            try await withCheckedThrowingContinuation { continuation in
+                resume = continuation
+                started.fulfill()
+            }
+        })
+        let task = Task { await model.pair(address: "http://127.0.0.1:9575", code: "123456") }
+        await fulfillment(of: [started], timeout: 2)
+        task.cancel()
+        let status = try JSONDecoder().decode(BeetCodeControlStatus.self, from:
+            Data(#"{"enabled":true,"screenRecording":true,"accessibility":true,"ready":true}"#.utf8))
+        resume?.resume(returning: status)
+        await task.value
+        XCTAssertNil(model.session)
+        XCTAssertNil(model.lastError)
+        XCTAssertTrue(model.savedAssistants.isEmpty)
+        XCTAssertFalse(model.isPairing)
+    }
+
 }

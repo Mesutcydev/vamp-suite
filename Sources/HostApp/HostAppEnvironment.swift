@@ -1314,6 +1314,20 @@ final class PlaceholderHostServices:
     }
     func configure(for display: DisplayDescriptor, qualityPreset: StreamQualityPreset, codec: EncodedFrameCodec) async throws {}
     func reconfigure(for display: DisplayDescriptor, qualityPreset: StreamQualityPreset, codec: EncodedFrameCodec) async throws {}
+    func configure(
+        for display: DisplayDescriptor,
+        qualityPreset: StreamQualityPreset,
+        codec: EncodedFrameCodec,
+        dynamicRange: StreamDynamicRange,
+        minLongEdge: Int
+    ) async throws {}
+    func reconfigure(
+        for display: DisplayDescriptor,
+        qualityPreset: StreamQualityPreset,
+        codec: EncodedFrameCodec,
+        dynamicRange: StreamDynamicRange,
+        minLongEdge: Int
+    ) async throws {}
     func startEncoding() async throws {}
     func flush() async throws {}
     func stopEncoding() async {}

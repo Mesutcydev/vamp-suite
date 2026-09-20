@@ -327,6 +327,90 @@ final class AppStreamClientTests: XCTestCase {
         XCTAssertNil(fields.aspect)
     }
 
+    /// A stream that starts before the surface reports its size leaves the Mac window in its
+    /// original landscape shape, which a portrait phone can only render letterboxed. The client
+    /// then asserts the phone's shape once per window — and never loops on a Mac that keeps a
+    /// different shape for a legitimate reason.
+    func testViewportAspectAssertionAsksOnceAndOnlyWhenTheShapesDisagree() {
+        let portrait = 390.0 / 794.0
+        XCTAssertTrue(AppStreamViewModel.needsViewportAspectAssertion(
+            appliedWidth: 1_100, appliedHeight: 700, desiredAspect: portrait,
+            supportsAdaptiveSizing: true, mode: .adaptive, alreadyAsserted: false),
+            "a landscape window on a portrait phone must be re-requested once")
+
+        XCTAssertFalse(AppStreamViewModel.needsViewportAspectAssertion(
+            appliedWidth: 380, appliedHeight: 774, desiredAspect: portrait,
+            supportsAdaptiveSizing: true, mode: .adaptive, alreadyAsserted: false),
+            "a window that already matches the phone must not be re-requested")
+        XCTAssertFalse(AppStreamViewModel.needsViewportAspectAssertion(
+            appliedWidth: 1_100, appliedHeight: 700, desiredAspect: portrait,
+            supportsAdaptiveSizing: true, mode: .adaptive, alreadyAsserted: true),
+            "the assertion is sent once per window, not on every completion")
+        XCTAssertFalse(AppStreamViewModel.needsViewportAspectAssertion(
+            appliedWidth: 1_100, appliedHeight: 700, desiredAspect: portrait,
+            supportsAdaptiveSizing: false, mode: .adaptive, alreadyAsserted: false),
+            "a host that never acknowledged sizing must not be resized")
+        XCTAssertFalse(AppStreamViewModel.needsViewportAspectAssertion(
+            appliedWidth: 1_100, appliedHeight: 700, desiredAspect: portrait,
+            supportsAdaptiveSizing: true, mode: .original, alreadyAsserted: false),
+            "Original Size is an explicit choice and must be respected")
+        XCTAssertFalse(AppStreamViewModel.needsViewportAspectAssertion(
+            appliedWidth: 1_100, appliedHeight: 700, desiredAspect: nil,
+            supportsAdaptiveSizing: true, mode: .adaptive, alreadyAsserted: false),
+            "an unmeasured viewport cannot be asserted")
+    }
+
+    /// The mismatch flag drives the one-tap Fill Screen remedy, so it must use exactly the
+    /// tolerance the Sync host applies to the notice it sends (5% of aspect). If the two drift,
+    /// the user either sees a notice with no remedy or a remedy with no complaint.
+    func testWindowShapeMismatchUsesTheHostNoticeTolerance() {
+        let portrait = 390.0 / 794.0
+        XCTAssertTrue(AppStreamViewModel.windowShapeMismatch(
+            appliedWidth: 1_100, appliedHeight: 700, desiredAspect: portrait),
+            "a landscape window on a portrait phone is the letterboxed case")
+        XCTAssertFalse(AppStreamViewModel.windowShapeMismatch(
+            appliedWidth: 380, appliedHeight: 772, desiredAspect: portrait),
+            "a window inside the tolerance must not be reported")
+        // Right at the boundary: 0.05 is exclusive, matching the host's `> 0.05`.
+        XCTAssertFalse(AppStreamViewModel.windowShapeMismatch(
+            appliedWidth: portrait + 0.049, appliedHeight: 1, desiredAspect: portrait))
+        XCTAssertTrue(AppStreamViewModel.windowShapeMismatch(
+            appliedWidth: portrait + 0.051, appliedHeight: 1, desiredAspect: portrait))
+        // Degenerate input is never a mismatch: there is nothing to remedy yet.
+        XCTAssertFalse(AppStreamViewModel.windowShapeMismatch(
+            appliedWidth: 0, appliedHeight: 700, desiredAspect: portrait))
+        XCTAssertFalse(AppStreamViewModel.windowShapeMismatch(
+            appliedWidth: 1_100, appliedHeight: 700, desiredAspect: nil))
+        XCTAssertFalse(AppStreamViewModel.windowShapeMismatch(
+            appliedWidth: 1_100, appliedHeight: 700, desiredAspect: .nan))
+        XCTAssertFalse(AppStreamViewModel.windowShapeMismatch(
+            appliedWidth: .nan, appliedHeight: 700, desiredAspect: portrait))
+    }
+
+    /// The window cap must be able to hand an iPhone 17 Pro Max (1320×2868 px) its native
+    /// pixels from a 2x Mac. The pre-regression 1400-point cap produced 2800 px — 2.4% short —
+    /// so the phone upscaled the picture it was showing.
+    func testWindowCapReachesTheTargetPhoneNativePixelsOnARetinaMac() {
+        let phoneNativeLongEdge = 2_868.0     // iPhone 17 Pro Max screen height, pixels
+        let macBackingScale = 2.0
+        XCTAssertGreaterThanOrEqual(
+            AdaptiveWindowSizing.maxEdgePoints * macBackingScale, phoneNativeLongEdge,
+            "a 2x Mac must be able to fit the phone's native pixels")
+
+        // End-to-end on the real hardware pair: 2560×1440 Mac, 440×956 phone viewport.
+        let size = AdaptiveWindowSizing.size(
+            original: DesktopSize(width: 1_100, height: 700),
+            available: DesktopSize(width: 2_560 - 48, height: 1_440 - 76),
+            viewport: DesktopSize(width: 440, height: 956),
+            bundleIdentifier: "com.openai.chat")
+        XCTAssertEqual(size.width / size.height, 440.0 / 956.0, accuracy: 0.01)
+        XCTAssertEqual(size.height, 1_364, "fills the usable display height")
+        // That window is what the phone renders: 1364 pt × 2x = 2728 px tall, ~95% of the
+        // phone's native screen — sharp instead of an upscaled postage stamp.
+        XCTAssertGreaterThanOrEqual(size.height * macBackingScale, 2_700)
+        XCTAssertLessThanOrEqual(size.height, AdaptiveWindowSizing.maxEdgePoints)
+    }
+
     // MARK: - Host resize request wiring
 
     /// A portrait viewport must produce a portrait desired size for every real Stream viewport and

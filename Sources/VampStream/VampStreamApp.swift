@@ -31,28 +31,33 @@ struct VampStreamApp: App {
     var body: some Scene {
         WindowGroup {
             VampStreamRootView(environment: environment, appStream: appStream, vampAssistant: vampAssistant)
-                .vampSplash(.vampStream(), minimumDuration: 1.7)
+                .vampStreamAnimatedSplash()
+                .preferredColorScheme(.dark)
         }
     }
 }
 
 /// Focused root state machine. There is no tab bar: the app is either choosing a saved Mac,
-/// connecting, controlling its display, or selecting and streaming one of its app windows.
+/// connecting, or selecting and streaming one of its app windows.
+///
+/// There is deliberately no whole-display destination here. Vamp Stream is the app-window
+/// client; controlling an entire Mac desktop is Vamp Control's job. The Assistant surface
+/// still falls back to `BeetCodeRemoteView` for the locked/permission states, but a paired
+/// Mac always lands in the app browser.
 struct VampStreamRootView: View {
-    private enum AssistantExperience {
-        case remoteControl
-        case appStream
-    }
-
     let environment: ClientAppEnvironment
     @ObservedObject var appStream: AppStreamViewModel
     @ObservedObject var vampAssistant: BeetCodeRemoteSessionViewModel
     @ObservedObject private var sessionCoordinator: ClientSessionCoordinator
     @State private var connectingName: String?
+    @State private var lastSyncHost: DiscoveredHostRow?
+    @State private var lastAssistant: BeetCodeRemoteSessionViewModel.SavedAssistant?
+    @State private var forgetChoice: BeetCodeRemoteSessionViewModel.SavedAssistant?
+    @State private var assistantTask: Task<Void, Never>?
+    @State private var syncTask: Task<Void, Never>?
     @State private var showVampAssistantPairing = false
     @State private var showVampHostScanner = false
     @State private var hostScannerError: String?
-    @State private var assistantExperience: AssistantExperience = .remoteControl
 
     init(
         environment: ClientAppEnvironment,
@@ -84,7 +89,7 @@ struct VampStreamRootView: View {
 
     var body: some View {
         ZStack {
-            PRAppBackground()
+            VampStreamAppBackground()
             content
         }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -94,9 +99,8 @@ struct VampStreamRootView: View {
         .onChangeCompat(of: sessionCoordinator.phase) { phase in
             if phase == .error { connectingName = nil }
         }
-        .sheet(isPresented: $showVampAssistantPairing) {
+        .fullScreenCover(isPresented: $showVampAssistantPairing) {
             BeetCodePairingView(model: vampAssistant)
-                .presentationDetents([.large])
         }
         .sheet(isPresented: $showVampHostScanner) {
             NavigationStack {
@@ -111,6 +115,22 @@ struct VampStreamRootView: View {
             }
             .presentationDetents([.large])
         }
+        .confirmationDialog(
+            "Forget \(forgetChoice?.displayName ?? "this Mac")?",
+            isPresented: Binding(get: { forgetChoice != nil }, set: { if !$0 { forgetChoice = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Forget Mac", role: .destructive) {
+                if let saved = forgetChoice {
+                    vampAssistant.forget(saved)
+                    if lastAssistant?.id == saved.id { lastAssistant = nil }
+                }
+                forgetChoice = nil
+            }
+            Button("Cancel", role: .cancel) { forgetChoice = nil }
+        } message: {
+            Text("This removes the saved connection from this device. You will need to pair with this Mac again.")
+        }
         .alert("QR code not recognised", isPresented: Binding(
             get: { hostScannerError != nil },
             set: { if !$0 { hostScannerError = nil } }
@@ -123,19 +143,15 @@ struct VampStreamRootView: View {
 
     @ViewBuilder private var content: some View {
         if let session = vampAssistant.session {
-            switch assistantExperience {
-            case .remoteControl:
-                BeetCodeRemoteView(
-                    session: session,
-                    onClose: { vampAssistant.disconnect() },
-                    onRefresh: { await vampAssistant.refreshStatus() }
-                )
-            case .appStream:
-                VampAssistantAppStreamView(
-                    session: session,
-                    onClose: { vampAssistant.disconnect() },
-                    onRefreshStatus: { await vampAssistant.refreshStatus() }
-                )
+            VampAssistantAppStreamView(
+                session: session,
+                onClose: { vampAssistant.disconnect() },
+                onRefreshStatus: { await vampAssistant.refreshStatus() }
+            )
+        } else if vampAssistant.isPairing && !showVampAssistantPairing {
+            VampStreamConnectingView(name: lastAssistant?.displayName ?? "Mac", detail: "Checking your saved connection and loading apps.") {
+                assistantTask?.cancel()
+                vampAssistant.cancelConnectionAttempt()
             }
         } else if isConnected {
             if let caps = sessionCoordinator.negotiatedCapabilities {
@@ -155,36 +171,22 @@ struct VampStreamRootView: View {
             } else {
                 // Connected, but capabilities aren't negotiated yet — keep waiting, don't
                 // misreport as unsupported.
-                VampStreamConnectingView(name: sessionCoordinator.connectedHostName ?? connectingName ?? "Mac") {
+                VampStreamConnectingView(name: sessionCoordinator.connectedHostName ?? connectingName ?? "Mac", detail: connectionDetail) {
+                    syncTask?.cancel()
                     Task { await sessionCoordinator.disconnect() }
                 }
             }
         } else if isConnecting {
-            VampStreamConnectingView(name: connectingName ?? "Mac") {
+            VampStreamConnectingView(name: connectingName ?? "Mac", detail: connectionDetail) {
+                syncTask?.cancel()
                 connectingName = nil
                 Task { await sessionCoordinator.disconnect() }
             }
         } else {
             VampStreamConnectView(
                 environment: environment,
-                onConnect: { host in
-                    connectingName = host.title
-                    environment.sharedHostsViewModel.connect(to: host)
-                    Task {
-                        if sessionCoordinator.activeSessionID != nil { await sessionCoordinator.disconnect() }
-                        await sessionCoordinator.connect(
-                            to: host.endpoint,
-                            qualityPreset: environment.effectivePreferredQualityPreset
-                        )
-                    }
-                },
-                onPairVampAssistant: {
-                    // Pairing must land on the same destination the picker offers. Remote
-                    // Control is gated off in this build, and sending a freshly paired Mac
-                    // there opened the whole desktop instead of the app browser.
-                    assistantExperience = .appStream
-                    showVampAssistantPairing = true
-                },
+                onConnect: { host in connect(to: host) },
+                onPairVampAssistant: { showVampAssistantPairing = true },
                 onScanVampHost: { showVampHostScanner = true },
                 pairedVampAssistants: vampAssistant.savedAssistants,
                 vampAssistantAvailability: vampAssistant.availabilityByAddress,
@@ -197,17 +199,10 @@ struct VampStreamRootView: View {
                 busyHostName: VampStreamHostBusy.isHostBusy(sessionCoordinator.errorMessage)
                     ? sessionCoordinator.connectedHostName
                     : nil,
-                onRemoteControl: { saved in
-                    assistantExperience = .remoteControl
-                    Task { await vampAssistant.reconnect(saved) }
-                },
-                onAppStream: { saved in
-                    assistantExperience = .appStream
-                    Task { await vampAssistant.reconnect(saved) }
-                },
-                onForgetVampAssistant: { saved in
-                    vampAssistant.forget(saved)
-                }
+                onAppStream: { saved in reconnectAssistant(saved) },
+                onForgetVampAssistant: { saved in forgetChoice = saved },
+                onRetrySync: lastSyncHost.map { host in { connect(to: host) } },
+                onRetryAssistant: lastAssistant.map { saved in { reconnectAssistant(saved) } }
             )
             .task(id: vampAssistant.savedAssistants) {
                 await vampAssistant.refreshAvailability()
@@ -223,18 +218,43 @@ struct VampStreamRootView: View {
             return
         }
         showVampHostScanner = false
-        connectingName = pairing.displayName ?? host.title
         connect(to: host)
     }
 
+    private func reconnectAssistant(_ saved: BeetCodeRemoteSessionViewModel.SavedAssistant) {
+        lastAssistant = saved
+        assistantTask?.cancel()
+        assistantTask = Task { await vampAssistant.reconnect(saved) }
+    }
+
+    private var connectionDetail: String {
+        switch sessionCoordinator.phase {
+        case .idle, .connecting: return "Contacting your Mac. Keep Vamp Sync open and stay on the same private network."
+        case .signalingConnected: return "Mac reached. Preparing the secure connection."
+        case .negotiating: return "Establishing the session. If your Mac requests approval, review the device there."
+        case .waitingForMedia, .receiving: return "Connected. Loading apps from your Mac."
+        case .error: return "The connection could not be completed. Return to your Macs to try again."
+        }
+    }
+
     private func connect(to host: DiscoveredHostRow) {
+        lastSyncHost = host
+        connectingName = host.title
+        syncTask?.cancel()
         environment.sharedHostsViewModel.connect(to: host)
-        Task {
+        syncTask = Task {
             if sessionCoordinator.activeSessionID != nil { await sessionCoordinator.disconnect() }
+            guard !Task.isCancelled else { return }
             await sessionCoordinator.connect(
                 to: host.endpoint,
                 qualityPreset: environment.effectivePreferredQualityPreset
             )
         }
+    }
+}
+
+struct VampStreamAppBackground: View {
+    var body: some View {
+        VampStreamEnvironmentBackdrop()
     }
 }

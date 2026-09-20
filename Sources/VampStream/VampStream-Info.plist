@@ -39,10 +39,8 @@
 	<string>Vamp Stream uses your local network to discover and connect to Macs running Vamp Sync or Vamp Assistant.</string>
 	<key>UILaunchScreen</key>
 	<dict>
-		<key>UIImageName</key>
-		<string>AppBackdrop</string>
-		<key>UIImageRespectsSafeAreaInsets</key>
-		<false/>
+		<key>UIColorName</key>
+		<string>VampStreamLaunchBackground</string>
 	</dict>
 	<key>UIRequiresFullScreen</key>
 	<true/>

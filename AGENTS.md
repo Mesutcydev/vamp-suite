@@ -55,8 +55,15 @@ account, hosted relay, or public port forwarding is required.
 MacHost and VampTerminalHost commands below are legacy shared-source
 verification targets, not maintained products or distribution paths.
 
+SwiftTerm is pinned to 1.18.0 in every spec. 1.19.0 added a build-tool plugin whose
+`SwiftTermBuildInfoGenerator` is a macOS host executable that Xcode cannot place for an
+iOS destination, which breaks every iOS build. Do not loosen the pin without checking
+that an iOS build still succeeds.
+
 ```bash
 swift test
+
+xcodegen generate --spec project.yml
 
 xcodebuild -project RemoteDesktopToolApps.xcodeproj -scheme MacHost \
   -configuration Release CODE_SIGNING_ALLOWED=NO build

@@ -35,55 +35,82 @@ struct AppStreamKeyboardOverlayView: View {
         }
     }
 
+    /// The deck sits directly above the system keyboard, so it has to fit in what is left of the
+    /// screen rather than push itself off it. The composer and header keep a stable identity —
+    /// they must not be torn down and rebuilt, or the field would lose first responder and the
+    /// keyboard would drop out mid-sentence — while the optional rows below them degrade through
+    /// `ViewThatFits`: everything, then just the rows people actually type with, then the keys.
     private var standardDeck: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: AppSpacing.xs) {
             header
             composer
-            quickActions
-            shortcutRow
-            modifierRow
-            keyRow
-            helper
+
+            ViewThatFits(in: .vertical) {
+                VStack(spacing: AppSpacing.xs) {
+                    quickActions
+                    shortcutRow
+                    modifierRow
+                    keyRow
+                    helper
+                }
+                VStack(spacing: AppSpacing.xs) {
+                    quickActions
+                    modifierRow
+                    keyRow
+                }
+                VStack(spacing: AppSpacing.xs) {
+                    modifierRow
+                    keyRow
+                }
+                keyRow
+            }
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .background(PR.card.opacity(0.96), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.horizontal, AppSpacing.xs)
+        .padding(.top, AppSpacing.xs)
+        .padding(.bottom, AppSpacing.xs)
+        .background(
+            PR.card.opacity(0.96),
+            in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
                 .strokeBorder(PR.borderHi, lineWidth: 1)
         )
-        .padding(.horizontal, 8)
-        .padding(.bottom, 8)
+        .padding(.horizontal, AppSpacing.xs)
+        .padding(.bottom, AppSpacing.xs)
         .onAppear { refocusTextField() }
         .onDisappear { isTextFieldFocused = false }
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: AppSpacing.xs) {
             Capsule()
                 .fill(PR.borderHi)
                 .frame(width: 28, height: 4)
+                .accessibilityHidden(true)
 
-            Text("keyboard")
-                .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                .foregroundColor(PR.fg)
+            Text("Keyboard")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(PR.fg)
 
             Spacer()
 
-            headerChip("focus") { refocusTextField() }
-            headerChip("hide kb") { dismissSystemKeyboard() }
+            headerChip("Focus") { refocusTextField() }
+            headerChip("Hide") { dismissSystemKeyboard() }
 
             Button {
                 dismissSystemKeyboard()
                 onDismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(PR.fg)
-                    .frame(width: 28, height: 28)
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(PR.fg)
+                    .frame(width: 30, height: 30)
                     .background(PR.bg2, in: Circle())
                     .overlay(Circle().strokeBorder(PR.border))
+                    .frame(
+                        width: AppHostMetrics.iconControlTarget,
+                        height: AppHostMetrics.iconControlTarget)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close keyboard")
@@ -91,27 +118,31 @@ struct AppStreamKeyboardOverlayView: View {
     }
 
     private var composer: some View {
-        HStack(spacing: 8) {
-            TextField("type and send", text: $textInput)
-                .font(.system(size: 15, weight: .regular, design: .monospaced))
+        HStack(spacing: AppSpacing.xs) {
+            TextField("Type to send to your Mac", text: $textInput)
+                .font(.body)
                 .focused($isTextFieldFocused)
                 .submitLabel(.send)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .onSubmit { sendText() }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(PR.cardHi, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.horizontal, AppSpacing.sm)
+                .frame(minHeight: AppHostMetrics.iconControlTarget)
+                .background(
+                    PR.cardHi,
+                    in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous)
                         .strokeBorder(PR.border, lineWidth: 0.8)
                 )
 
             Button { sendText() } label: {
                 Image(systemName: "paperplane.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(textInput.isEmpty ? PR.dim : PR.bg)
-                    .frame(width: 40, height: 40)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(textInput.isEmpty ? PR.dim : PR.bg)
+                    .frame(
+                        width: AppHostMetrics.iconControlTarget,
+                        height: AppHostMetrics.iconControlTarget)
                     .background(textInput.isEmpty ? PR.bg2 : PR.accent, in: Circle())
                     .overlay(Circle().strokeBorder(textInput.isEmpty ? PR.border : PR.accent.opacity(0.45)))
             }
@@ -122,75 +153,82 @@ struct AppStreamKeyboardOverlayView: View {
     }
 
     private var quickActions: some View {
-        HStack(spacing: 7) {
-            rowButton("paste", icon: "doc.on.clipboard") { pasteClipboard() }
-            rowButton("backspace", icon: "delete.left") { tapSpecialKey(51) }
-            rowButton("return", icon: "return") { tapSpecialKey(36) }
-            rowButton("space", icon: "space") { onText(" ") }
+        HStack(spacing: AppSpacing.xxs) {
+            rowButton("Paste", icon: "doc.on.clipboard") { pasteClipboard() }
+            rowButton("Delete", icon: "delete.left") { tapSpecialKey(51) }
+            rowButton("Return", icon: "return") { tapSpecialKey(36) }
+            rowButton("Space", icon: "space") { onText(" ") }
         }
     }
 
     private var shortcutRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 7) {
-                shortcutChip("⌘C copy") { tapCombo(8, [.command]) }
-                shortcutChip("⌘V paste") { tapCombo(9, [.command]) }
-                shortcutChip("⌘A all") { tapCombo(0, [.command]) }
-                shortcutChip("⌘Z undo") { tapCombo(6, [.command]) }
-                shortcutChip("⌘⇧3 shot") { tapCombo(20, [.command, .shift]) }
-                shortcutChip("⌘⇧4 area") { tapCombo(21, [.command, .shift]) }
-                shortcutChip("⌘␣ spotlight") { tapCombo(49, [.command]) }
-                shortcutChip("⌘⇥ switch") { tapCombo(48, [.command]) }
+            HStack(spacing: AppSpacing.xxs) {
+                shortcutChip("⌘C", "Copy") { tapCombo(8, [.command]) }
+                shortcutChip("⌘V", "Paste") { tapCombo(9, [.command]) }
+                shortcutChip("⌘A", "Select all") { tapCombo(0, [.command]) }
+                shortcutChip("⌘Z", "Undo") { tapCombo(6, [.command]) }
+                shortcutChip("⌘⇧3", "Screenshot") { tapCombo(20, [.command, .shift]) }
+                shortcutChip("⌘⇧4", "Capture area") { tapCombo(21, [.command, .shift]) }
+                shortcutChip("⌘␣", "Spotlight") { tapCombo(49, [.command]) }
+                shortcutChip("⌘⇥", "Switch app") { tapCombo(48, [.command]) }
             }
+            .padding(.horizontal, 1)
         }
     }
 
     private var modifierRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 7) {
-                modifierKey("cmd", flag: .command)
-                modifierKey("shift", flag: .shift)
-                modifierKey("opt", flag: .option)
-                modifierKey("ctrl", flag: .control)
-                modifierKey("fn", flag: .function)
+            HStack(spacing: AppSpacing.xxs) {
+                // The Mac's own glyphs, not abbreviations: this is the vocabulary the keys
+                // are printed with. VoiceOver gets the spoken name instead.
+                modifierKey("⌘", name: "Command", flag: .command)
+                modifierKey("⇧", name: "Shift", flag: .shift)
+                modifierKey("⌥", name: "Option", flag: .option)
+                modifierKey("⌃", name: "Control", flag: .control)
+                modifierKey("fn", name: "Function", flag: .function)
             }
+            .padding(.horizontal, 1)
         }
     }
 
     private var keyRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 7) {
-                keyButton("esc", keyCode: 53)
-                keyButton("tab", keyCode: 48)
-                keyButton("del", keyCode: 51)
-                keyButton("←", keyCode: 123)
-                keyButton("→", keyCode: 124)
-                keyButton("↑", keyCode: 126)
-                keyButton("↓", keyCode: 125)
-                keyButton("f1", keyCode: 122)
-                keyButton("f2", keyCode: 120)
-                keyButton("f3", keyCode: 99)
-                keyButton("f4", keyCode: 118)
+            HStack(spacing: AppSpacing.xxs) {
+                keyButton("esc", name: "Escape", keyCode: 53)
+                keyButton("⇥", name: "Tab", keyCode: 48)
+                keyButton("⌫", name: "Delete", keyCode: 51)
+                keyButton("←", name: "Left arrow", keyCode: 123)
+                keyButton("→", name: "Right arrow", keyCode: 124)
+                keyButton("↑", name: "Up arrow", keyCode: 126)
+                keyButton("↓", name: "Down arrow", keyCode: 125)
+                keyButton("F1", name: "F1", keyCode: 122)
+                keyButton("F2", name: "F2", keyCode: 120)
+                keyButton("F3", name: "F3", keyCode: 99)
+                keyButton("F4", name: "F4", keyCode: 118)
             }
+            .padding(.horizontal, 1)
         }
     }
 
     private var helper: some View {
-        Text("modifiers apply to the next key, then release · cmd + typed letter sends the combo")
-            .font(.system(size: 11, weight: .regular, design: .monospaced))
-            .foregroundColor(PR.dim)
+        Text("A modifier applies to the next key, then releases. Hold one and type a letter to send the combo.")
+            .font(.caption2)
+            .foregroundStyle(PR.dim)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func headerChip(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundColor(PR.fg2)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 6)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(PR.fg2)
+                .padding(.horizontal, AppSpacing.sm)
+                .frame(minHeight: AppHostMetrics.iconControlTarget)
                 .background(PR.bg2, in: Capsule())
                 .overlay(Capsule().strokeBorder(PR.border))
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -198,60 +236,93 @@ struct AppStreamKeyboardOverlayView: View {
     private func rowButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: icon)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundColor(PR.fg2)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .foregroundStyle(PR.fg2)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(PR.bg2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(PR.border))
+                .frame(minHeight: AppHostMetrics.iconControlTarget)
+                .background(
+                    PR.bg2,
+                    in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous)
+                        .strokeBorder(PR.border))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    private func shortcutChip(_ title: String, action: @escaping () -> Void) -> some View {
+    /// `glyph` is the key combination as printed on a Mac keyboard; `name` is what it does.
+    /// Both are shown — the old chips ran them together ("⌘⇧3 shot") which read as neither.
+    private func shortcutChip(_ glyph: String, _ name: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundColor(PR.fg)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 9)
-                .background(PR.bg2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(PR.border))
+            HStack(spacing: AppSpacing.xxs) {
+                Text(glyph)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PR.fg)
+                Text(name)
+                    .font(.caption)
+                    .foregroundStyle(PR.fg2)
+            }
+            .lineLimit(1)
+            .padding(.horizontal, AppSpacing.sm)
+            .frame(minHeight: AppHostMetrics.iconControlTarget)
+            .background(
+                PR.bg2,
+                in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous)
+                    .strokeBorder(PR.border))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(name), \(glyph)")
     }
 
-    private func modifierKey(_ title: String, flag: KeyboardModifierFlags) -> some View {
+    private func modifierKey(_ glyph: String, name: String, flag: KeyboardModifierFlags) -> some View {
         let isActive = activeModifiers.contains(flag)
         return Button {
             if isActive { activeModifiers.remove(flag) } else { activeModifiers.insert(flag) }
             refocusTextField()
         } label: {
-            Text(title)
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundColor(isActive ? PR.bg : PR.fg2)
-                .frame(minWidth: 52)
-                .padding(.vertical, 9)
-                .background(isActive ? PR.accent : PR.bg2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            Text(glyph)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(isActive ? PR.bg : PR.fg2)
+                .frame(minWidth: 54)
+                .frame(minHeight: AppHostMetrics.iconControlTarget)
+                .background(
+                    isActive ? PR.accent : PR.bg2,
+                    in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous)
                         .strokeBorder(isActive ? PR.accent.opacity(0.45) : PR.border)
                 )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(name)
+        .accessibilityValue(isActive ? "On, applies to the next key" : "Off")
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
     }
 
-    private func keyButton(_ title: String, keyCode: UInt16) -> some View {
+    private func keyButton(_ glyph: String, name: String, keyCode: UInt16) -> some View {
         Button { tapSpecialKey(keyCode) } label: {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundColor(PR.fg)
-                .frame(minWidth: 46)
-                .padding(.vertical, 9)
-                .background(PR.bg2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(PR.border))
+            Text(glyph)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(PR.fg)
+                .frame(minWidth: 48)
+                .frame(minHeight: AppHostMetrics.iconControlTarget)
+                .background(
+                    PR.bg2,
+                    in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous)
+                        .strokeBorder(PR.border))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(name)
     }
 
     private func sendText() {
@@ -330,85 +401,113 @@ private struct TerminalAppStreamKeyboardDeck: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(spacing: AppSpacing.xs) {
+            HStack(spacing: AppSpacing.xs) {
+                // Monospace is kept here on purpose: this deck drives a terminal, and the
+                // glyphs it sends are terminal glyphs. The prose beside it is not.
                 Text("terminal")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .font(.system(.subheadline, design: .monospaced).weight(.semibold))
                     .foregroundStyle(PR.fg)
-                Text("type a command or use aux keys")
-                    .font(.system(size: 10, design: .monospaced))
+                Text("Type a command, or use the keys")
+                    .font(.caption2)
                     .foregroundStyle(PR.dim)
+                    .lineLimit(1)
                 Spacer()
                 Button {
                     isFocused = false
                     onDismiss()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .frame(width: 28, height: 28)
+                        .font(.caption.weight(.bold))
+                        .frame(width: 30, height: 30)
                         .background(PR.bg2, in: Circle())
+                        .frame(
+                            width: AppHostMetrics.iconControlTarget,
+                            height: AppHostMetrics.iconControlTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close terminal controls")
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    auxKey("esc", 53)
-                    auxKey("tab", 48)
+                HStack(spacing: AppSpacing.xxs) {
+                    auxKey("esc", 53, hint: "Escape")
+                    auxKey("⇥", 48, hint: "Tab")
                     auxKey("⌃C", 8, [.control], hint: "Interrupt")
                     auxKey("⌃L", 37, [.control], hint: "Clear terminal")
-                    auxKey("←", 123)
-                    auxKey("↑", 126)
-                    auxKey("↓", 125)
-                    auxKey("→", 124)
-                    auxKey("home", 115)
-                    auxKey("end", 119)
-                    auxKey("pg↑", 116)
-                    auxKey("pg↓", 121)
+                    auxKey("←", 123, hint: "Left arrow")
+                    auxKey("↑", 126, hint: "Up arrow")
+                    auxKey("↓", 125, hint: "Down arrow")
+                    auxKey("→", 124, hint: "Right arrow")
+                    auxKey("home", 115, hint: "Home")
+                    auxKey("end", 119, hint: "End")
+                    auxKey("pg↑", 116, hint: "Page up")
+                    auxKey("pg↓", 121, hint: "Page down")
                 }
+                .padding(.horizontal, 1)
             }
 
-            HStack(spacing: 7) {
+            HStack(spacing: AppSpacing.xxs) {
                 Button(action: pasteIntoCommand) {
                     Image(systemName: "doc.on.clipboard")
-                        .frame(width: 34, height: 38)
-                        .background(PR.bg2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .font(.subheadline)
+                        .frame(
+                            width: AppHostMetrics.iconControlTarget,
+                            height: AppHostMetrics.iconControlTarget)
+                        .background(
+                            PR.bg2,
+                            in: RoundedRectangle(
+                                cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Paste into command")
 
                 TextField("command", text: $command)
-                    .font(.system(size: 15, design: .monospaced))
+                    .font(.system(.body, design: .monospaced))
                     .focused($isFocused)
                     .submitLabel(.send)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .onSubmit(submit)
-                    .padding(.horizontal, 11)
-                    .frame(height: 38)
-                    .background(PR.cardHi, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(PR.border))
+                    .padding(.horizontal, AppSpacing.sm)
+                    .frame(minHeight: AppHostMetrics.iconControlTarget)
+                    .background(
+                        PR.cardHi,
+                        in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous)
+                            .strokeBorder(PR.border))
 
                 Button(action: submit) {
                     Image(systemName: "return")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.subheadline.weight(.bold))
                         .foregroundStyle(command.isEmpty ? PR.dim : PR.bg)
-                        .frame(width: 42, height: 38)
-                        .background(command.isEmpty ? PR.bg2 : PR.accent,
-                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .frame(
+                            width: AppHostMetrics.iconControlTarget,
+                            height: AppHostMetrics.iconControlTarget)
+                        .background(
+                            command.isEmpty ? PR.bg2 : PR.accent,
+                            in: RoundedRectangle(
+                                cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(command.isEmpty)
                 .accessibilityLabel("Run command")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(PR.card.opacity(0.97), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(PR.borderHi))
-        .padding(.horizontal, 8)
-        .padding(.bottom, 6)
+        .padding(.horizontal, AppSpacing.xs)
+        .padding(.vertical, AppSpacing.xs)
+        .background(
+            PR.card.opacity(0.97),
+            in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
+                .strokeBorder(PR.borderHi))
+        .padding(.horizontal, AppSpacing.xs)
+        .padding(.bottom, AppSpacing.xxs)
         .onAppear { refocus() }
     }
 
@@ -423,12 +522,17 @@ private struct TerminalAppStreamKeyboardDeck: View {
             refocus()
         } label: {
             Text(title)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(.system(.footnote, design: .monospaced).weight(.semibold))
                 .foregroundStyle(PR.fg)
-                .frame(minWidth: 38)
-                .padding(.vertical, 8)
-                .background(PR.bg2, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(PR.border))
+                .frame(minWidth: 44)
+                .frame(minHeight: AppHostMetrics.iconControlTarget)
+                .background(
+                    PR.bg2,
+                    in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous)
+                        .strokeBorder(PR.border))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(hint ?? title)

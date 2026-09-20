@@ -14,9 +14,6 @@ options:
 packages:
   VampStreamCore:
     path: .
-  SwiftTerm:
-    url: https://github.com/migueldeicaza/SwiftTerm
-    exactVersion: 1.20.0
 
 settings:
   base:
@@ -46,6 +43,18 @@ targets:
           # Legacy paywall source is intentionally not part of the open-source
           # Stream target and may exist in older local working copies.
           - StreamingPaywallView.swift
+          # Vamp Control's own tab UI and its first-run flow. Vamp Stream has its own
+          # root (VampStreamRootView) and its own onboarding
+          # (VampStreamHostSourceOnboarding) and never mounts either of these, so they
+          # were ~6k lines of unreachable code compiled into every build.
+          - Views
+          - Onboarding
+          # Terminal Mode is reachable only from Vamp Control's MirrorScreen (above).
+          # It is also the sole importer of SwiftTerm in this target — excluding it is
+          # what lets Vamp Stream drop that package, whose prebuild plugin cannot run
+          # for an iOS destination ("SwiftTermBuildInfoGenerator" is a macOS host tool
+          # that is never produced in Debug-iphonesimulator).
+          - TerminalModeView.swift
     info:
       path: Sources/VampStream/VampStream-Info.plist
       properties:
@@ -67,8 +76,7 @@ targets:
           - _screenharbor._tcp
         UIRequiresFullScreen: true
         UILaunchScreen:
-          UIImageName: AppBackdrop
-          UIImageRespectsSafeAreaInsets: false
+          UIColorName: VampStreamLaunchBackground
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UISupportedInterfaceOrientations~ipad:
@@ -76,7 +84,7 @@ targets:
     settings:
       base:
         MARKETING_VERSION: 0.1.22
-        CURRENT_PROJECT_VERSION: 36
+        CURRENT_PROJECT_VERSION: 50
         PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.stream
         PRODUCT_NAME: Vamp Stream
         CODE_SIGN_ENTITLEMENTS: Configuration/VampStream.entitlements
@@ -103,8 +111,6 @@ targets:
         product: Permissions
       - package: VampStreamCore
         product: SharedUI
-      - package: SwiftTerm
-        product: SwiftTerm
 
   VampStreamTests:
     type: bundle.unit-test

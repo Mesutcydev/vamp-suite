@@ -818,6 +818,7 @@ private struct VampSyncCompanionPopover: View {
 
 private struct VampSyncCompanionBackground: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
@@ -827,15 +828,16 @@ private struct VampSyncCompanionBackground: View {
                 .scaledToFill()
                 .frame(width: proxy.size.width, height: proxy.size.height)
                 .clipped()
-                .saturation(colorScheme == .dark ? 0.82 : 0.96)
                 .overlay {
                     if reduceTransparency {
-                        Color(nsColor: .windowBackgroundColor).opacity(0.92)
+                        Color(nsColor: .windowBackgroundColor)
                     } else {
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [.black.opacity(0.48), .black.opacity(0.62)]
-                                : [.white.opacity(0.22), .white.opacity(0.38)],
+                                ? [.black.opacity(contrast == .increased ? 0.78 : 0.52),
+                                   .black.opacity(contrast == .increased ? 0.88 : 0.68)]
+                                : [.white.opacity(contrast == .increased ? 0.96 : 0.88),
+                                   .white.opacity(contrast == .increased ? 0.98 : 0.94)],
                             startPoint: .top,
                             endPoint: .bottom
                         )

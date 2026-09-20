@@ -316,8 +316,52 @@ private struct VampAssistantApplicationBrowser: View {
     @State private var closeChoice: BeetCodeRemoteApplication?
 
     @State private var searchText = ""
+    // Favourites and recents are shared with the Sync browser: both key on the bundle
+    // identifier, so a Mac app you starred stays starred whichever kind of Mac it is on.
+    // This browser previously had neither.
+    @AppStorage(AppStreamAppShortlists.favoritesKey) private var favoriteStorage = "[]"
+    @AppStorage(AppStreamAppShortlists.recentsKey) private var recentStorage = "[]"
+
     private func matches(_ app: BeetCodeRemoteApplication) -> Bool {
         searchText.isEmpty || app.name.localizedStandardContains(searchText)
+    }
+
+    private var favoriteIDs: [String] { AppStreamAppShortlists.decode(favoriteStorage) }
+
+    /// Every app the browser knows about, deduplicated by id, so a favourite is found whether
+    /// it is currently running or merely installed.
+    private var allApplications: [BeetCodeRemoteApplication] {
+        runningApplications + installedApplications
+    }
+
+    private func shortlist(_ ids: [String], excluding excluded: Set<String> = []) -> [BeetCodeRemoteApplication] {
+        ids.compactMap { id in
+            guard !excluded.contains(id) else { return nil }
+            return allApplications.first { $0.id == id && matches($0) }
+        }
+    }
+
+    private func select(_ application: BeetCodeRemoteApplication) {
+        recentStorage = AppStreamAppShortlists.promoting(application.id, in: recentStorage)
+        onSelect(application)
+    }
+
+    private func toggleFavorite(_ application: BeetCodeRemoteApplication) {
+        favoriteStorage = AppStreamAppShortlists.toggled(application.id, in: favoriteStorage)
+    }
+
+    private func section(
+        _ title: LocalizedStringKey,
+        _ applications: [BeetCodeRemoteApplication]
+    ) -> some View {
+        VampAssistantApplicationSection(
+            title: title,
+            applications: applications,
+            isDisabled: launchingName != nil,
+            favoriteIDs: Set(favoriteIDs),
+            onSelect: { select($0) },
+            onToggleFavorite: { toggleFavorite($0) },
+            onQuit: { closeChoice = $0 })
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -339,7 +383,7 @@ private struct VampAssistantApplicationBrowser: View {
                             Spacer()
                         }
                         .padding(14)
-                        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+                        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
                     }
                     if runningApplications.isEmpty, installedApplications.isEmpty {
                         VampStreamAppListEmptyHint(
@@ -354,21 +398,24 @@ private struct VampAssistantApplicationBrowser: View {
                         if runningMatches.isEmpty, installedMatches.isEmpty {
                             VampStreamAppListEmptyHint(title: "No apps match")
                         } else {
+                            // Same order as the Sync browser: Favorites, Recent, Running, All Apps.
+                            let favorites = shortlist(favoriteIDs)
+                            let recents = searchText.isEmpty
+                                ? shortlist(
+                                    AppStreamAppShortlists.decode(recentStorage),
+                                    excluding: Set(favoriteIDs))
+                                : []
+                            if !favorites.isEmpty {
+                                section("Favorites", favorites)
+                            }
+                            if !recents.isEmpty {
+                                section("Recent", recents)
+                            }
                             if !runningMatches.isEmpty {
-                                VampAssistantApplicationSection(
-                                    title: "Running",
-                                    applications: runningMatches,
-                                    isDisabled: launchingName != nil,
-                                    onSelect: onSelect,
-                                    onQuit: { closeChoice = $0 })
+                                section("Running", runningMatches)
                             }
                             if !installedMatches.isEmpty {
-                                VampAssistantApplicationSection(
-                                    title: "All Apps",
-                                    applications: installedMatches,
-                                    isDisabled: launchingName != nil,
-                                    onSelect: onSelect,
-                                    onQuit: { closeChoice = $0 })
+                                section("All Apps", installedMatches)
                             }
                         }
                     }
@@ -442,7 +489,9 @@ private struct VampAssistantApplicationSection: View {
     let title: LocalizedStringKey
     let applications: [BeetCodeRemoteApplication]
     let isDisabled: Bool
+    let favoriteIDs: Set<String>
     let onSelect: (BeetCodeRemoteApplication) -> Void
+    let onToggleFavorite: (BeetCodeRemoteApplication) -> Void
     let onQuit: (BeetCodeRemoteApplication) -> Void
 
     var body: some View {
@@ -463,17 +512,25 @@ private struct VampAssistantApplicationSection: View {
                         Divider()
                             .padding(.leading, AppHostMetrics.cardPadding + AppHostMetrics.appIcon + AppSpacing.sm)
                     }
+                    let isFavorite = favoriteIDs.contains(application.id)
                     Button { onSelect(application) } label: {
                         VampAssistantApplicationRow(
                             name: application.name,
                             detail: application.listDetail,
                             isRunning: application.isRunning,
                             isActive: application.isActive,
+                            isFavorite: isFavorite,
                             iconPNGBase64: application.iconPNGBase64)
                     }
                     .buttonStyle(PRGlassPressButtonStyle())
                     .disabled(isDisabled)
                     .contextMenu {
+                        Button(
+                            isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                            systemImage: isFavorite ? "star.slash" : "star"
+                        ) {
+                            onToggleFavorite(application)
+                        }
                         if application.isRunning,
                            let bundle = application.bundleIdentifier,
                            ApplicationClosePolicy.canClose(bundle) {
@@ -496,13 +553,14 @@ private struct VampAssistantApplicationRow: View {
     let detail: String?
     let isRunning: Bool
     let isActive: Bool
+    let isFavorite: Bool
     let iconPNGBase64: String?
 
     var body: some View {
         HStack(spacing: AppSpacing.sm) {
             applicationIcon
                 .frame(width: AppHostMetrics.appIcon, height: AppHostMetrics.appIcon)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -518,6 +576,13 @@ private struct VampAssistantApplicationRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            if isFavorite {
+                Image(systemName: "star.fill")
+                    .font(.caption)
+                    .foregroundStyle(PR.accent)
+                    .accessibilityLabel("Favorite")
+            }
 
             // A chevron implies another selection level follows. A running window opens directly,
             // so it gets a disclosure only in the sense of "go"; an installed app is launched,
@@ -540,7 +605,7 @@ private struct VampAssistantApplicationRow: View {
     @ViewBuilder private var applicationIcon: some View {
         if let iconPNGBase64,
            let data = Data(base64Encoded: iconPNGBase64),
-           let image = UIImage(data: data) {
+           let image = UIImage(data: data, scale: 3) {
             // Fit, not fill: a non-square icon stays undistorted and gets no extra frame.
             Image(uiImage: image).resizable().interpolation(.high).scaledToFit()
         } else {
@@ -549,7 +614,7 @@ private struct VampAssistantApplicationRow: View {
                 .scaledToFit()
                 .padding(9)
                 .foregroundStyle(PR.fg2)
-                .background(PR.fg.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .background(PR.fg.opacity(0.08), in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
         }
     }
 }
@@ -568,6 +633,6 @@ private struct VampAssistantApplicationError: View {
                 .foregroundStyle(PR.fg)
         }
         .padding(14)
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
     }
 }

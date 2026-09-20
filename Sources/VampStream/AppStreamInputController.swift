@@ -120,6 +120,27 @@ final class AppStreamInputController: ObservableObject {
         interpreter = GestureInterpreter(displayID: window.id, mapper: mapper)
     }
 
+    // MARK: - Local cursor overlay (cursorless capture)
+
+    /// The visible video content area in view coordinates — the overlay's clamp rect.
+    var cursorContentRect: CGRect? {
+        guard interpreter != nil, viewSize.width > 0, viewSize.height > 0 else { return nil }
+        let rect = interpreter?.mapper.fittedContentRect
+        return CGRect(
+            x: rect?.origin.x ?? 0,
+            y: rect?.origin.y ?? 0,
+            width: rect?.size.width ?? 0,
+            height: rect?.size.height ?? 0)
+    }
+
+    /// View points per desktop point, for converting relative (desktop-space) pointer
+    /// deltas into local cursor movement in the overlay's coordinate space.
+    var cursorViewPointsPerDesktopPoint: Double? {
+        guard let window, let rect = interpreter?.mapper.fittedContentRect,
+              rect.size.width > 0, window.frame.size.width > 0 else { return nil }
+        return rect.size.width / window.frame.size.width
+    }
+
     // MARK: - Gestures → input
 
     // Haptics mirror Vamp Control exactly: light for single/two/three-finger taps, medium for
