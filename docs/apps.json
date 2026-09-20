@@ -51,6 +51,16 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "0.10.37",
+          "buildVersion": "116",
+          "marketingVersion": "0.10.37 (116)",
+          "date": "2026-09-20",
+          "localizedDescription": "New dot-matrix app icon. Accessibility and pairing fixes: 44pt back control on the disconnected screen, pairing code dismisses the keypad so Connect is reachable, readable placeholders at large text sizes, and the session access keys now state the approval policy they actually apply.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.37/Vamp-Assistant-iOS-0.10.37-build-116-unsigned.ipa",
+          "size": 7340536,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "0.10.36",
           "buildVersion": "113",
           "marketingVersion": "0.10.36 (113)",
