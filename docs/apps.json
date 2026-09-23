@@ -51,6 +51,16 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "0.10.39",
+          "buildVersion": "118",
+          "marketingVersion": "0.10.39 (118)",
+          "date": "2026-09-24",
+          "localizedDescription": "Add API keys from iPhone or iPad, browse compatible providers, configure a custom endpoint, and add model IDs when a provider does not list them.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.39/Vamp-Assistant-iOS-0.10.39-build-118-unsigned.ipa",
+          "size": 7432375,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "0.10.38",
           "buildVersion": "117",
           "marketingVersion": "0.10.38 (117)",
