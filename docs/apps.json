@@ -51,6 +51,16 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "0.10.38",
+          "buildVersion": "117",
+          "marketingVersion": "0.10.38 (117)",
+          "date": "2026-09-23",
+          "localizedDescription": "Improves conversation Retry and recovery, composer accessibility and activity feedback, and the narrow-screen Sessions shortcut.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.38/Vamp-Assistant-iOS-0.10.38-build-117-unsigned.ipa",
+          "size": 7344371,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "0.10.37",
           "buildVersion": "116",
           "marketingVersion": "0.10.37 (116)",
