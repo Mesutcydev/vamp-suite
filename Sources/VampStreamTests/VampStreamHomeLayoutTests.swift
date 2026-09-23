@@ -431,4 +431,27 @@ final class VampStreamHomeLayoutTests: XCTestCase {
         XCTAssertEqual(VampStreamHomeCardStyle.grid.toggled, .list)
         XCTAssertEqual(VampStreamHomeCardStyle.list.toggled.toggled, .list)
     }
+
+    /// Forgetting hides a Mac by every identity it carries; restoring one Mac's identities brings
+    /// it back without touching other forgotten Macs.
+    func testForgottenHostsRoundTrip() {
+        let macA = VampStreamForgottenHosts.identities(hostID: UUID(), fingerprint: "  ABCDEF  ")
+        let macB = VampStreamForgottenHosts.identities(hostID: UUID(), fingerprint: nil)
+        XCTAssertTrue(macA.contains("abcdef"))
+        XCTAssertEqual(macB.count, 1)
+
+        let forgotten = VampStreamForgottenHosts.forgetting(macA.union(macB), in: "")
+        let remaining = VampStreamForgottenHosts.restoring(macA, in: forgotten)
+        XCTAssertEqual(VampStreamForgottenHosts.decode(remaining), macB)
+        XCTAssertEqual(VampStreamForgottenHosts.restoring(macB, in: remaining), "")
+    }
+
+    /// Stream groups its fingerprint exactly like Vamp Sync's approval card so they compare 1:1.
+    func testFingerprintGroupingMatchesSync() {
+        let fingerprint = String(repeating: "0123456789abcdef", count: 4)
+        let lines = VampStreamFingerprint.formatted(fingerprint).split(separator: "\n")
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertEqual(lines[0], "01234567 89abcdef 01234567 89abcdef")
+        XCTAssertEqual(VampStreamFingerprint.formatted(fingerprint).filter { !$0.isWhitespace }, fingerprint)
+    }
 }

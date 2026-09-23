@@ -50,53 +50,81 @@ struct VampStreamHostSourceOnboarding: View {
                         .contentShape(Rectangle())
                 }
                 .background(
-                    draft == nil ? StreamReading.surface : Color.white,
+                    draft == nil ? StreamReading.surface : PR.fg,
                     in: RoundedRectangle(cornerRadius: AppHostMetrics.controlRadius, style: .continuous))
-                .foregroundStyle(draft == nil ? StreamReading.secondary : .black)
+                .foregroundStyle(draft == nil ? StreamReading.secondary : Color(uiColor: .systemBackground))
                 .disabled(draft == nil)
             }
             .padding(AppHostMetrics.screenInset)
-            .background(Color.black)
+            .background(Color(uiColor: .systemBackground))
         }
     }
 }
 
-struct VampStreamHostSourcePickerSheet: View {
-    let current: VampStreamHostSource
-    let onSelect: (VampStreamHostSource) -> Void
+/// Stream's settings: which Mac app to show, appearance, and the background artwork.
+/// Every choice applies as it is made, so there is nothing to confirm or cancel.
+struct VampStreamSettingsSheet: View {
+    @Binding var hostSource: VampStreamHostSource
     @Environment(\.dismiss) private var dismiss
-    @State private var draft: VampStreamHostSource?
-
-    init(current: VampStreamHostSource, onSelect: @escaping (VampStreamHostSource) -> Void) {
-        self.current = current
-        self.onSelect = onSelect
-        _draft = State(initialValue: current)
-    }
+    @AppStorage(VampStreamAppearance.key) private var appearance = VampStreamAppearance.dark
+    @AppStorage(VampStreamAppearance.backgroundArtKey) private var showsBackgroundArt = true
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VampStreamHostSourceOptions(selection: $draft)
-                    .padding(AppHostMetrics.screenInset)
+                VStack(alignment: .leading, spacing: AppSpacing.lg) {
+                    section("Mac app") {
+                        VampStreamHostSourceOptions(selection: Binding(
+                            get: { hostSource },
+                            set: { if let source = $0 { hostSource = source } }))
+                    }
+                    section("Appearance") {
+                        Picker("Appearance", selection: $appearance) {
+                            ForEach(VampStreamAppearance.allCases) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    section("Background") {
+                        Toggle(isOn: $showsBackgroundArt) {
+                            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                                Text("Background artwork")
+                                    .font(.headline)
+                                    .foregroundStyle(PR.fg)
+                                Text("Turn off for a plain background with solid cards.")
+                                    .font(.footnote)
+                                    .foregroundStyle(StreamReading.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(AppHostMetrics.cardPadding)
+                        .appQuietSurface()
+                    }
+                }
+                .padding(AppHostMetrics.screenInset)
             }
-            .navigationTitle(VampStreamHomeCopy.changeHost)
+            .background { VampStreamEnvironmentBackdrop() }
+            .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        if let draft {
-                            onSelect(draft)
-                        }
-                        dismiss()
-                    }
-                    .fontWeight(.semibold)
+                    Button("Done") { dismiss() }
+                        .fontWeight(.semibold)
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
+        // A presented sheet does not pick up the root's scheme change until it is dismissed.
+        .preferredColorScheme(appearance.colorScheme)
+    }
+
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(StreamReading.secondary)
+                .accessibilityAddTraits(.isHeader)
+            content()
+        }
     }
 }
 

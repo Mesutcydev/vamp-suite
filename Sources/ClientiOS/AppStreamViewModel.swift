@@ -125,6 +125,22 @@ final class AppStreamViewModel: ObservableObject {
     private var listOffset = 0
     private var loadingApplications: [RemoteApplication] = []
 
+    /// An older host may omit icons to keep a refresh below the control-channel limit. Keep
+    /// artwork already received in this session for the same bundle identifier.
+    static func preservingIcons(
+        in incoming: [RemoteApplication],
+        from previous: [RemoteApplication]
+    ) -> [RemoteApplication] {
+        let known = previous.reduce(into: [String: String]()) { icons, app in
+            if let encoded = app.iconPNGBase64, !encoded.isEmpty { icons[app.id] = encoded }
+        }
+        return incoming.map { app in
+            var result = app
+            if result.iconPNGBase64?.isEmpty ?? true { result.iconPNGBase64 = known[app.id] }
+            return result
+        }
+    }
+
     init(environment: ClientAppEnvironment) {
         self.environment = environment
     }
@@ -605,7 +621,8 @@ final class AppStreamViewModel: ObservableObject {
                     return
                 }
                 var seen = Set<String>()
-                applications = loadingApplications.filter { seen.insert($0.id).inserted }
+                let unique = loadingApplications.filter { seen.insert($0.id).inserted }
+                applications = Self.preservingIcons(in: unique, from: applications)
                 loadingApplications = []
                 status = .browsing
                 if let (app, windowID, fingerprint) = resumeSelection {

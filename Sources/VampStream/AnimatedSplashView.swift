@@ -178,7 +178,9 @@ private struct VampStreamSplashPresenter: ViewModifier {
     @State private var visible = true
 
     func body(content: Content) -> some View {
-        content.overlay {
+        // Covered content is still in the accessibility tree unless hidden, so VoiceOver could
+        // walk the home screen behind the splash.
+        content.accessibilityHidden(visible).overlay {
             if visible {
                 AnimatedSplashView {
                     withAnimation(.easeOut(duration: 0.02)) {

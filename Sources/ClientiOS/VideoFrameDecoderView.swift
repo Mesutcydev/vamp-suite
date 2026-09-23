@@ -42,6 +42,12 @@ final class VideoFrameDecoder: @unchecked Sendable {
     /// a stream that's receiving frames but never decoding (e.g. the initial keyframe's
     /// parameter sets were lost on the unreliable channel). Nil until the first success.
     private var _lastSuccessfulDecodeAt: TimeInterval?
+    /// Output-callback failures since the last successful decode. VideoToolbox can fail every
+    /// frame of a session after a bad start (-8969, bad data) and a keyframe carrying the same
+    /// parameter sets never rebuilt it, so only a manual "Retry video" recovered. Past this
+    /// many, the next keyframe rebuilds the session, which is what that retry did.
+    private var _callbackFailuresSinceSuccess = 0
+    private static let callbackFailuresBeforeRebuild = 10
     private let logger = Logger(subsystem: "com.mesutcy.remotedesktop.terminal", category: "VideoDecoder")
     private var hasLoggedDecodeStart = false
     private var hasLoggedDecodeSuccess = false
@@ -126,6 +132,7 @@ final class VideoFrameDecoder: @unchecked Sendable {
         callbackSelfRef = nil
         // Clear so the watchdog treats the next session as freshly started.
         _lastSuccessfulDecodeAt = nil
+        _callbackFailuresSinceSuccess = 0
         lock.unlock()
 
         if let session {
@@ -169,9 +176,11 @@ final class VideoFrameDecoder: @unchecked Sendable {
                 if let formatDescription {
                     needsReset = !CMFormatDescriptionEqual(formatDescription, otherFormatDescription: newFmt)
                         || currentDynamicRange != frame.dynamicRange
+                        || _callbackFailuresSinceSuccess >= Self.callbackFailuresBeforeRebuild
                 } else {
                     needsReset = true
                 }
+                if needsReset { _callbackFailuresSinceSuccess = 0 }
                 lock.unlock()
 
                 if needsReset {
@@ -437,6 +446,11 @@ final class VideoFrameDecoder: @unchecked Sendable {
                 let decoder = Unmanaged<VideoFrameDecoder>.fromOpaque(refcon).takeUnretainedValue()
                 guard status == noErr, let pixelBuffer else {
                     decoder.logger.error("Decode callback failed: \(status)")
+                    decoder.lock.withLock {
+                        decoder._decodeErrors += 1
+                        decoder._callbackFailuresSinceSuccess += 1
+                    }
+                    decoder.requestKeyframeRecovery()
                     return
                 }
                 let dynamicRange = decoder.lock.withLock { decoder.currentDynamicRange }
@@ -489,6 +503,7 @@ final class VideoFrameDecoder: @unchecked Sendable {
                 }
                 decoder.lock.lock()
                 decoder._decodedFrames += 1
+                decoder._callbackFailuresSinceSuccess = 0
                 decoder._lastSuccessfulDecodeAt = Date().timeIntervalSinceReferenceDate
                 let shouldLogDecodeSuccess = !decoder.hasLoggedDecodeSuccess
                 if shouldLogDecodeSuccess {

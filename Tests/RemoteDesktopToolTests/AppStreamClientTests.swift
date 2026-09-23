@@ -6,6 +6,25 @@ import SharedProtocol
 @MainActor
 final class AppStreamClientTests: XCTestCase {
 
+    func testInventoryRefreshKeepsKnownIconsOnlyForMatchingApps() {
+        let previous = [
+            RemoteApplication(bundleIdentifier: "com.example.a", name: "A", isRunning: false,
+                              isActive: false, iconPNGBase64: "old-a"),
+            RemoteApplication(bundleIdentifier: "com.example.b", name: "B", isRunning: false,
+                              isActive: false, iconPNGBase64: "old-b"),
+        ]
+        let incoming = [
+            RemoteApplication(bundleIdentifier: "com.example.a", name: "A", isRunning: true,
+                              isActive: true),
+            RemoteApplication(bundleIdentifier: "com.example.b", name: "B", isRunning: false,
+                              isActive: false, iconPNGBase64: "new-b"),
+            RemoteApplication(bundleIdentifier: "com.example.c", name: "C", isRunning: false,
+                              isActive: false),
+        ]
+        let refreshed = AppStreamViewModel.preservingIcons(in: incoming, from: previous)
+        XCTAssertEqual(refreshed.map(\.iconPNGBase64), ["old-a", "new-b", nil])
+    }
+
     func testNewestSizingChoiceSurvivesOlderRequestCompletion() {
         var intent = AppStreamSizingIntent()
         let adaptive = intent.request()
@@ -446,4 +465,3 @@ final class AppStreamClientTests: XCTestCase {
         }
     }
 }
-

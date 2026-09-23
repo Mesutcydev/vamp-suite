@@ -682,6 +682,7 @@ struct BeetCodeRemoteView: View {
                 streamOptionsMenu
             }
 
+        } trailing: {
             AppStreamChromeDivider()
 
             AppStreamChromeButton(

@@ -2,15 +2,16 @@ import SwiftUI
 import SharedModels
 import SharedUI
 
-/// Vamp Stream — a focused iPhone streaming client. Vamp Sync connections open the Mac app
-/// browser, while a paired Vamp Assistant Mac offers two explicit experiences: the original
-/// whole-display Remote Control surface or a separate app/window stream picker.
+/// Vamp Stream — a focused iPhone streaming client. Both Vamp Sync and Vamp Assistant Macs open
+/// the app/window browser; whole-desktop control is Vamp Control's job.
 @main
 struct VampStreamApp: App {
     @UIApplicationDelegateAdaptor(VampStreamAppDelegate.self) private var appDelegate
     @StateObject private var environment: ClientAppEnvironment
     @StateObject private var appStream: AppStreamViewModel
     @StateObject private var vampAssistant: BeetCodeRemoteSessionViewModel
+    @AppStorage(VampStreamAppearance.key) private var appearance = VampStreamAppearance.dark
+    @AppStorage(VampStreamAppearance.backgroundArtKey) private var showsBackgroundArt = true
 
     init() {
         VampStreamStreamingQualityPolicy.migrateAssistantResolution()
@@ -32,7 +33,8 @@ struct VampStreamApp: App {
         WindowGroup {
             VampStreamRootView(environment: environment, appStream: appStream, vampAssistant: vampAssistant)
                 .vampStreamAnimatedSplash()
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(appearance.colorScheme)
+                .environment(\.prSolidSurfaces, !showsBackgroundArt)
         }
     }
 }
@@ -58,6 +60,7 @@ struct VampStreamRootView: View {
     @State private var showVampAssistantPairing = false
     @State private var showVampHostScanner = false
     @State private var hostScannerError: String?
+    @AppStorage(VampStreamForgottenHosts.key) private var forgottenHostsRaw = ""
 
     init(
         environment: ClientAppEnvironment,
@@ -98,6 +101,18 @@ struct VampStreamRootView: View {
         }
         .onChangeCompat(of: sessionCoordinator.phase) { phase in
             if phase == .error { connectingName = nil }
+        }
+        .onChangeCompat(of: sessionCoordinator.connectedHostFingerprint) { fingerprint in
+            // A QR or typed address starts as an anonymous row; the Mac's real identity only
+            // arrives with the handshake. Connecting is the user asking for this Mac, so a Mac
+            // they once forgot comes back under every identity it is known by.
+            guard let fingerprint = fingerprint?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                  !fingerprint.isEmpty else { return }
+            var ids: Set<String> = [fingerprint]
+            for row in environment.sharedHostsViewModel.hosts where row.forgetIdentities.contains(fingerprint) {
+                ids.formUnion(row.forgetIdentities)
+            }
+            forgottenHostsRaw = VampStreamForgottenHosts.restoring(ids, in: forgottenHostsRaw)
         }
         .fullScreenCover(isPresented: $showVampAssistantPairing) {
             BeetCodePairingView(model: vampAssistant)
@@ -171,13 +186,13 @@ struct VampStreamRootView: View {
             } else {
                 // Connected, but capabilities aren't negotiated yet — keep waiting, don't
                 // misreport as unsupported.
-                VampStreamConnectingView(name: sessionCoordinator.connectedHostName ?? connectingName ?? "Mac", detail: connectionDetail) {
+                VampStreamConnectingView(name: sessionCoordinator.connectedHostName ?? connectingName ?? "Mac", detail: connectionDetail, fingerprint: approvalFingerprint) {
                     syncTask?.cancel()
                     Task { await sessionCoordinator.disconnect() }
                 }
             }
         } else if isConnecting {
-            VampStreamConnectingView(name: connectingName ?? "Mac", detail: connectionDetail) {
+            VampStreamConnectingView(name: connectingName ?? "Mac", detail: connectionDetail, fingerprint: approvalFingerprint) {
                 syncTask?.cancel()
                 connectingName = nil
                 Task { await sessionCoordinator.disconnect() }
@@ -227,17 +242,26 @@ struct VampStreamRootView: View {
         assistantTask = Task { await vampAssistant.reconnect(saved) }
     }
 
+    /// Only while the Mac can be holding an approval prompt; earlier it would be noise.
+    private var approvalFingerprint: String? {
+        switch sessionCoordinator.phase {
+        case .signalingConnected, .negotiating: return environment.clientIdentity.publicKeyFingerprint
+        default: return nil
+        }
+    }
+
     private var connectionDetail: String {
         switch sessionCoordinator.phase {
         case .idle, .connecting: return "Contacting your Mac. Keep Vamp Sync open and stay on the same private network."
         case .signalingConnected: return "Mac reached. Preparing the secure connection."
-        case .negotiating: return "Establishing the session. If your Mac requests approval, review the device there."
+        case .negotiating: return "If Vamp Sync asks to approve this device, check that the fingerprint below matches, then approve it on your Mac."
         case .waitingForMedia, .receiving: return "Connected. Loading apps from your Mac."
         case .error: return "The connection could not be completed. Return to your Macs to try again."
         }
     }
 
     private func connect(to host: DiscoveredHostRow) {
+        forgottenHostsRaw = VampStreamForgottenHosts.restoring(host.forgetIdentities, in: forgottenHostsRaw)
         lastSyncHost = host
         connectingName = host.title
         syncTask?.cancel()

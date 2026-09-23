@@ -42,6 +42,7 @@ struct VampAssistantAppStreamView: View {
                         session: session,
                         onClose: onClose,
                         onRefresh: onRefreshStatus)
+                    .vampStreamVideoSurface()
                 } else if let selectedApplication {
                     BeetCodeRemoteView(
                         session: session,
@@ -62,6 +63,7 @@ struct VampAssistantAppStreamView: View {
                         sizingNotice: errorMessage,
                         onAdaptiveSizing: { adaptive = true; sizingRequested = true; sizingActionID = UUID() },
                         onOriginalSizing: { adaptive = false; sizingRequested = true; sizingActionID = UUID() })
+                    .vampStreamVideoSurface()
                 } else {
                     VampAssistantApplicationBrowser(
                         macName: session.displayName,
@@ -293,10 +295,12 @@ struct VampAssistantAppStreamView: View {
     }
 
     private func apply(_ applications: [BeetCodeRemoteApplication]) {
-        let liveIDs = Set(applications.compactMap(\.windowID))
+        let refreshed = BeetCodeRemoteApplication.preservingIcons(
+            in: applications, from: runningApplications + installedApplications)
+        let liveIDs = Set(refreshed.compactMap(\.windowID))
         originalApplications = originalApplications.filter { liveIDs.contains($0.key) }
-        runningApplications = applications.filter(\.isRunning)
-        installedApplications = applications.filter { !$0.isRunning }
+        runningApplications = refreshed.filter(\.isRunning)
+        installedApplications = refreshed.filter { !$0.isRunning }
     }
 }
 
@@ -426,7 +430,7 @@ private struct VampAssistantApplicationBrowser: View {
             .refreshable { onRefresh() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(PRAppBackground().ignoresSafeArea())
+        .background { VampStreamEnvironmentBackdrop() }
         .confirmationDialog(
             closeChoice.map { "Close \($0.name)?" } ?? "Close this app?",
             isPresented: Binding(
@@ -554,6 +558,20 @@ private struct VampAssistantApplicationRow: View {
     let isActive: Bool
     let isFavorite: Bool
     let iconPNGBase64: String?
+    private static let icons = NSCache<NSString, UIImage>()
+
+    /// Assistant returns the same PNG on every inventory refresh. Decode it once per payload,
+    /// instead of decoding every visible row again whenever the browser redraws.
+    private var icon: UIImage? {
+        guard let encoded = iconPNGBase64, !encoded.isEmpty else { return nil }
+        let key = "\(encoded.count):\(encoded.hashValue)" as NSString
+        if let cached = Self.icons.object(forKey: key) { return cached }
+        guard let data = Data(base64Encoded: encoded),
+              let decoded = UIImage(data: data) else { return nil }
+        Self.icons.countLimit = 256
+        Self.icons.setObject(decoded, forKey: key)
+        return decoded
+    }
 
     var body: some View {
         HStack(spacing: AppSpacing.sm) {
@@ -602,11 +620,9 @@ private struct VampAssistantApplicationRow: View {
     }
 
     @ViewBuilder private var applicationIcon: some View {
-        if let iconPNGBase64,
-           let data = Data(base64Encoded: iconPNGBase64),
-           let image = UIImage(data: data, scale: 3) {
+        if let icon {
             // Fit, not fill: a non-square icon stays undistorted and gets no extra frame.
-            Image(uiImage: image).resizable().interpolation(.high).scaledToFit()
+            Image(uiImage: icon).resizable().interpolation(.high).scaledToFit()
         } else {
             Image(systemName: "app.dashed")
                 .resizable()

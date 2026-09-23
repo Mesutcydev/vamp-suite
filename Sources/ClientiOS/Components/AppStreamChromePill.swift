@@ -31,17 +31,28 @@ enum AppStreamChromeBar {
 /// horizontally when the options outgrow the screen, with a divider before the trailing
 /// hide control. Both Stream host paths — Vamp Sync and Vamp Assistant — draw this same
 /// deck, so a Sync stream and an Assistant stream never look like two different apps.
-struct AppStreamChromePill<Content: View>: View {
+///
+/// `trailing` (the divider and hide control) is pinned outside the scroll area. Inside it, the
+/// hide key was the one pushed off the right edge on a 402 pt iPhone, with no scroll indicator to
+/// say it was there. Keys stay 44 pt; only the gaps between them are tight enough that the whole
+/// deck fits a standard iPhone without scrolling.
+struct AppStreamChromePill<Content: View, Trailing: View>: View {
     @ViewBuilder var content: () -> Content
+    @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 4) {
-                content()
+        HStack(spacing: 2) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 2) {
+                    content()
+                }
+                .padding(.vertical, 4)
+                .padding(.leading, 2)
             }
-            .padding(4)
+            .scrollIndicators(.hidden)
+            trailing()
         }
-        .scrollIndicators(.hidden)
+        .padding(.trailing, 2)
         .frame(height: AppStreamChromeBar.height)
         .frame(maxWidth: 520)
         .background(

@@ -156,7 +156,21 @@ struct BeetCodeRemoteApplication: Decodable, Equatable, Hashable, Identifiable, 
     let height: Double
     let isRunning: Bool
     let isActive: Bool
-    let iconPNGBase64: String?
+    var iconPNGBase64: String?
+
+    static func preservingIcons(
+        in incoming: [Self],
+        from previous: [Self]
+    ) -> [Self] {
+        let known = previous.reduce(into: [String: String]()) { icons, app in
+            if let encoded = app.iconPNGBase64, !encoded.isEmpty { icons[app.id] = encoded }
+        }
+        return incoming.map { app in
+            var result = app
+            if result.iconPNGBase64?.isEmpty ?? true { result.iconPNGBase64 = known[app.id] }
+            return result
+        }
+    }
 
     var id: String {
         if let bundleIdentifier, !bundleIdentifier.isEmpty { return bundleIdentifier }

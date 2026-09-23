@@ -503,7 +503,7 @@ final class ClientSessionCoordinator: ObservableObject {
                     bonjourSig.connectionPIN = nil
                     sigSvc.disconnect()
                     throw RemoteDesktopError.connectionFailed(
-                        "Secure connection to the Mac failed. Make sure a Vamp host is running on that Mac — Vamp Host for the full desktop, Vamp Sync for a single app window, or Vamp Terminal Host for terminal tabs. Update it, then try again."
+                        "Secure connection to the Mac failed. Make sure Vamp Sync is open and up to date on that Mac, then try again."
                     )
                 }
             }
@@ -1043,14 +1043,14 @@ final class ClientSessionCoordinator: ObservableObject {
                 if self.activeSessionID == sessionID,
                    (self.phase == .negotiating || self.phase == .signalingConnected) {
                     self.phase = .error
-                    self.errorMessage = "The Mac closed the pairing request. Open its Vamp host window — Vamp Sync or Vamp Assistant — approve this device, then connect again."
+                    self.errorMessage = "The Mac closed the pairing request. Click Vamp Sync in the Mac's menu bar, approve this device, then connect again."
                 }
             } catch {
                 self.logger.warning("Signaling receive ended: \(error.localizedDescription)")
                 if self.activeSessionID == sessionID,
                    (self.phase == .negotiating || self.phase == .signalingConnected) {
                     self.phase = .error
-                    self.errorMessage = "Waiting for approval ended. Open the Mac's Vamp host window — Vamp Sync or Vamp Assistant — approve this device, then connect again."
+                    self.errorMessage = "Approval timed out. Click Vamp Sync in the Mac's menu bar, approve this device, then connect again."
                 }
             }
         }

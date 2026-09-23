@@ -7,6 +7,60 @@ their original product names. The format follows
 
 ## [Unreleased]
 
+## Vamp Stream 0.1.23 (build 53) and Vamp Sync 2.3.0 (build 71) — 2026-09-23
+
+### Added: Settings, light mode, and a plain background in Vamp Stream
+
+- The home's "Change host" button is now **Settings**: which Mac app to show (Vamp Sync, Vamp
+  Assistant, or both), **Appearance** (System, Light, Dark — Dark stays the default), and a
+  **Background artwork** switch. Every choice applies as it is made.
+- With the artwork off the app sits on a plain system background and every glass surface becomes
+  an opaque card. Clear glass over a flat fill has nothing to refract and reads as a missing card.
+- Home, onboarding, the app browsers, connecting states, and gesture help follow the chosen
+  appearance. The live video surface stays dark in every mode, like any video player.
+- The Assistant app browser drew Vamp Control's wallpaper instead of Stream's own artwork.
+
+### Added: forget a Vamp Sync Mac
+
+- Vamp Sync Macs had no way to be removed. Each row now has a ••• menu (long-press on grid tiles)
+  with **Copy address** and **Forget this Mac**. A forgotten Mac stays hidden even while it is
+  announcing itself on the network, and comes back when it is added again by QR code or address.
+
+### Fixed: Vamp Stream
+
+- **Pairing asked for a comparison the phone could not make.** Vamp Sync's approval card says to
+  compare the fingerprint "with the one shown on the device", but Stream never showed one. The
+  connecting screen now shows this device's fingerprint while approval can be pending, grouped
+  exactly like Sync's card.
+- **A stream could stay black until "Retry video".** After a window resize VideoToolbox could fail
+  every frame of the session (-8969) and a keyframe with the same parameter sets never rebuilt it.
+  Output-callback failures now request a keyframe, and after ten in a row the next keyframe
+  rebuilds the session — measured recovery about one second instead of a manual retry.
+- **The hide-controls key was cut off** on a 402 pt iPhone: the deck overflowed and the key sat
+  half off-screen with no scroll indicator. The divider and hide key are pinned outside the
+  scroll area and the key gaps tightened (keys stay 44 pt), so the deck fits.
+- The "could not be resized safely" notice covered the streamed window's bottom row until the next
+  resize result; it now fades after five seconds.
+- The gesture-help Done button rendered as a washed-out grey instead of a solid button.
+- VoiceOver could reach the home screen behind the launch splash.
+- Connection errors pointed at a "Vamp host window" and at the discontinued Vamp Host and Vamp
+  Terminal Host; they now name Vamp Sync and say to open it from the Mac's menu bar.
+- Mac rows drop the "App windows ·" prefix every Sync Mac shared, so the address fits one line.
+- App icons already received are kept when a later refresh arrives without them (an older host
+  sheds icons to stay under the control-channel limit), on both the Sync and Assistant lists.
+
+### Fixed: Vamp Sync
+
+- The menu-bar icon shows its warning dot when Screen Recording or Accessibility is missing, not
+  only inside the closed panel.
+- The pairing QR code no longer points at a down interface or a self-assigned 169.254 address.
+- Revoking a trusted device asks for confirmation first; it disconnects that device immediately.
+- The open panel no longer re-renders itself (QR code included) every second while idle.
+- Version restored to the public track: a project regeneration from a stale spec had reset Vamp
+  Sync to 3.2.0 build 2; this is 2.3.0 build 71, following build 70.
+
+## Vamp Stream 0.1.13–0.1.22 and Vamp Sync builds 64–70 — 2026-09-05 to 2026-09-20
+
 ### Fixed: every app target in the repository can be built again
 
 - **No iOS target in this repository built.** SwiftTerm 1.19.0 added a SwiftPM build-tool plugin

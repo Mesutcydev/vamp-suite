@@ -161,6 +161,10 @@ final class HostApplicationRegistryTests: XCTestCase {
             tile.png.base64EncodedString().utf8.count,
             HostSessionCoordinator.applicationListByteBudget - 1_024,
             "an icon larger than one page is dropped from the list instead of being sent")
+        let decoded = try XCTUnwrap(NSBitmapImageRep(data: tile.png))
+        let center = try XCTUnwrap(decoded.colorAt(x: decoded.pixelsWide / 2, y: decoded.pixelsHigh / 2))
+        XCTAssertGreaterThan(center.alphaComponent, 0.5,
+                             "a correctly sized PNG must still contain visible artwork")
     }
 
     /// Artwork with gradients and strokes so the PNG compresses like a real app icon instead of

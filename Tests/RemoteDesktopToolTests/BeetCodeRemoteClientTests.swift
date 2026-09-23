@@ -106,6 +106,16 @@ final class BeetCodeRemoteClientTests: XCTestCase {
         XCTAssertFalse(application.isRunning)
     }
 
+    func testAssistantRefreshPreservesKnownIconsForMatchingApps() throws {
+        let old = try decode(#"{"bundleIdentifier":"com.example.a","name":"A","iconPNGBase64":"old-a"}"#)
+        let missing = try decode(#"{"bundleIdentifier":"com.example.a","name":"A"}"#)
+        let updated = try decode(#"{"bundleIdentifier":"com.example.b","name":"B","iconPNGBase64":"new-b"}"#)
+        let unrelated = try decode(#"{"bundleIdentifier":"com.example.c","name":"C"}"#)
+        let refreshed = BeetCodeRemoteApplication.preservingIcons(
+            in: [missing, updated, unrelated], from: [old])
+        XCTAssertEqual(refreshed.map(\.iconPNGBase64), ["old-a", "new-b", nil])
+    }
+
     // MARK: - App list context line
 
     private func decode(_ json: String) throws -> BeetCodeRemoteApplication {

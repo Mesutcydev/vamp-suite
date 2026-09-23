@@ -40,6 +40,40 @@ enum VampStreamHostSourceStore {
     static let key = "vampstream.hostSource"
 }
 
+/// Vamp Sync Macs the user removed from the home. Discovery keeps re-announcing a Mac that is on
+/// the network, so deleting only its saved record would bring it straight back. The removal is
+/// remembered by the Mac's stable identity (host ID and key fingerprint) until the user adds that
+/// Mac again by QR code or address.
+enum VampStreamForgottenHosts {
+    static let key = "vampstream.forgottenSyncHosts"
+
+    static func identities(hostID: UUID, fingerprint: String?) -> Set<String> {
+        var ids: Set<String> = [hostID.uuidString]
+        let fingerprint = fingerprint?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let fingerprint, !fingerprint.isEmpty { ids.insert(fingerprint) }
+        return ids
+    }
+
+    static func decode(_ raw: String) -> Set<String> {
+        Set(raw.split(separator: "\n").map(String.init))
+    }
+
+    // Pure string transforms, written back through each view's own `@AppStorage`. A direct
+    // `UserDefaults.set` is not observed by `@AppStorage` for a dotted key (KVO reads the dot as
+    // a key path), so the list would only update after a relaunch.
+    static func forgetting(_ ids: Set<String>, in raw: String) -> String {
+        encode(decode(raw).union(ids))
+    }
+
+    static func restoring(_ ids: Set<String>, in raw: String) -> String {
+        encode(decode(raw).subtracting(ids))
+    }
+
+    private static func encode(_ ids: Set<String>) -> String {
+        ids.sorted().joined(separator: "\n")
+    }
+}
+
 enum VampStreamHomeLinks {
     static let syncDownload = URL(string: "https://thevamp.app/sync/#download")!
 }
@@ -229,7 +263,7 @@ enum VampStreamHostBusy {
 enum VampStreamHomeCopy {
     static let headerTitle = "Stream"
     static let headerSubtitle = "Choose a Mac to browse its apps."
-    static let changeHost = "Change host"
+    static let settings = "Settings"
     static let showGrid = "Show grid view"
     static let showList = "Show list view"
     static let pairHeading = "Connect a Mac"

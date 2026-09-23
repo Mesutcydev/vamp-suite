@@ -7,9 +7,13 @@ struct VampStreamHomeAtmosphere: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(VampStreamAppearance.backgroundArtKey) private var showsArt = true
 
     var body: some View {
-        if reduceMotion || reduceTransparency {
+        if !showsArt {
+            // Part of the backdrop: with the artwork off the page is a plain, still background.
+            Color.clear
+        } else if reduceMotion || reduceTransparency {
             atmosphere(t: 0)
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: scenePhase != .active)) { context in

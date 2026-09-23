@@ -469,7 +469,7 @@ final class HostsListViewModel: ObservableObject {
 
     private func localNetworkMessage(for message: String) -> String {
         // Generic fallback — try to be actionable rather than blame-the-user.
-        "Couldn't find any Macs on this network yet. Make sure Vamp Host is open and on the same Wi-Fi, or tap “Enter address manually”."
+        "Couldn't find any Macs on this network yet. Make sure Vamp Sync is open on the Mac and both devices are on the same Wi-Fi, or connect by address."
     }
 
     // MARK: - Manual Connection

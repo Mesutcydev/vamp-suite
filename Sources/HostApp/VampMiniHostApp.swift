@@ -174,7 +174,9 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
         statusItem?.button?.image?.isTemplate = true
 
         let dotState: VampSyncMenuBarStatusDotView.State
-        if environment.sessionCoordinator.phase == .error {
+        // A missing Screen Recording or Accessibility grant makes every stream fail, so it is a
+        // problem worth flagging in the menu bar, not only inside the closed panel.
+        if environment.sessionCoordinator.phase == .error || !environment.permissionsViewModel.blockers.isEmpty {
             dotState = .problem
         } else if environment.pendingTrustPrompt != nil {
             dotState = .approval
@@ -280,6 +282,7 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
     private var statusMenuTitle: String {
         guard let environment else { return "Starting" }
         if environment.pendingTrustPrompt != nil { return "Pairing approval required" }
+        if let blocker = environment.permissionsViewModel.blockers.first { return "\(blocker.title) required" }
         switch environment.sessionCoordinator.phase {
         case .streaming: return "Connected"
         case .advertising, .awaitingClient: return "Ready"
@@ -547,9 +550,8 @@ private struct VampSyncCompanionPopover: View {
     @State private var tailscaleInfo: TailscaleConnectionInfo?
     @State private var copiedValue: String?
     @State private var deviceManagementError: String?
+    @State private var peerToRevoke: TrustedPeer?
     @State private var framesPerSecond: Int?
-    @State private var lastFrameSampleCount: UInt64?
-    @State private var lastFrameSampleAt: Date?
     @State private var contentHeight: CGFloat = 0
     @AppStorage("vampSyncAppearance") private var appearance = VampSyncAppearance.system
     @AppStorage("host.remoteUnlock.enabled") private var remoteUnlockEnabled = false
@@ -626,7 +628,7 @@ private struct VampSyncCompanionPopover: View {
                         trustedPeers: trustedPeers,
                         revokedPeers: revokedPeers,
                         isRefreshing: isRefreshing,
-                        onRevoke: revoke,
+                        onRevoke: { peerToRevoke = $0 },
                         onPairAgain: pairAgain
                     )
                 }
@@ -666,6 +668,18 @@ private struct VampSyncCompanionPopover: View {
         }
         .onChange(of: environment.pendingTrustPrompt?.id) { _ in
             Task { await refreshPeers() }
+        }
+        .confirmationDialog(
+            "Revoke \(peerToRevoke?.displayName ?? "this device")?",
+            isPresented: Binding(get: { peerToRevoke != nil }, set: { if !$0 { peerToRevoke = nil } })
+        ) {
+            Button("Revoke", role: .destructive) {
+                if let peer = peerToRevoke { revoke(peer) }
+                peerToRevoke = nil
+            }
+            Button("Cancel", role: .cancel) { peerToRevoke = nil }
+        } message: {
+            Text("It is disconnected now and must be approved again before it can reconnect.")
         }
         .alert("Device update failed", isPresented: Binding(
             get: { deviceManagementError != nil },
@@ -800,17 +814,20 @@ private struct VampSyncCompanionPopover: View {
         }
     }
 
+    /// The previous sample lives in locals: as `@State` it rewrote two properties every second
+    /// and re-rendered the whole panel (QR code included) even with nothing streaming.
     private func sampleStreamingRate() async {
+        var previous: (count: UInt64, at: Date)?
         while !Task.isCancelled {
             let count = environment.streamingCoordinator.streamDiagnostics.framesSent
             let now = Date()
-            if let previousCount = lastFrameSampleCount, let previousDate = lastFrameSampleAt {
-                let elapsed = max(now.timeIntervalSince(previousDate), 0.1)
-                let delta = count >= previousCount ? count - previousCount : 0
-                framesPerSecond = max(0, Int((Double(delta) / elapsed).rounded()))
+            if let previous {
+                let elapsed = max(now.timeIntervalSince(previous.at), 0.1)
+                let delta = count >= previous.count ? count - previous.count : 0
+                let fps = max(0, Int((Double(delta) / elapsed).rounded()))
+                if fps != framesPerSecond { framesPerSecond = fps }
             }
-            lastFrameSampleCount = count
-            lastFrameSampleAt = now
+            previous = (count, now)
             try? await Task.sleep(for: .seconds(1))
         }
     }
@@ -1438,7 +1455,7 @@ private func vampSyncFormattedFingerprint(_ fingerprint: String) -> String {
     }.joined(separator: "\n")
 }
 
-/// First non-loopback IPv4 address, preferring Wi-Fi and Ethernet interfaces.
+/// First usable IPv4 address on an up interface, preferring Wi-Fi and Ethernet.
 private func localIPv4AddressForPairing() -> String? {
     var fallback: String?
     var ifaddr: UnsafeMutablePointer<ifaddrs>?
@@ -1448,8 +1465,9 @@ private func localIPv4AddressForPairing() -> String? {
     for ptr in sequence(first: firstAddr, next: { $0.pointee.ifa_next }) {
         guard let socketAddress = ptr.pointee.ifa_addr else { continue }
         guard socketAddress.pointee.sa_family == UInt8(AF_INET) else { continue }
+        let flags = Int32(ptr.pointee.ifa_flags)
+        guard flags & IFF_UP != 0, flags & IFF_RUNNING != 0, flags & IFF_LOOPBACK == 0 else { continue }
         let interfaceName = String(cString: ptr.pointee.ifa_name)
-        guard interfaceName != "lo0" else { continue }
 
         var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
         let length = socklen_t(socketAddress.pointee.sa_len)
@@ -1457,6 +1475,9 @@ private func localIPv4AddressForPairing() -> String? {
             continue
         }
         let address = String(cString: hostname)
+        // 169.254/16 is what an interface assigns itself with no network; a QR pointing there
+        // can never connect.
+        guard !address.hasPrefix("169.254.") else { continue }
         if interfaceName.hasPrefix("en") { return address }
         if fallback == nil { fallback = address }
     }

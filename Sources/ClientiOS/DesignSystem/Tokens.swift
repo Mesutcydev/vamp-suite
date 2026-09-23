@@ -342,12 +342,40 @@ private func prNativeGlass(isInteractive: Bool) -> Glass {
 }
 #endif
 
+extension View {
+    /// Live video is always framed in black, whatever the app's appearance, and its controls float
+    /// over the picture as glass rather than solid cards.
+    func vampStreamVideoSurface() -> some View {
+        environment(\.colorScheme, .dark)
+            .environment(\.prSolidSurfaces, false)
+    }
+}
+
+extension EnvironmentValues {
+    /// Set when there is no artwork behind the UI. Clear glass over a flat fill has nothing to
+    /// refract and reads as a missing card, so every glass surface becomes an opaque card instead.
+    @Entry var prSolidSurfaces = false
+}
+
 private struct PRGlassSurfaceModifier<S: InsettableShape>: ViewModifier {
     let shape: S
     let role: PRGlassRole
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.prSolidSurfaces) private var solidSurfaces
 
     func body(content: Content) -> some View {
+        if solidSurfaces {
+            content.background {
+                shape.fill(PR.card)
+                    .overlay { shape.strokeBorder(PR.border, lineWidth: 1) }
+            }
+        } else {
+            glass(content)
+        }
+    }
+
+    @ViewBuilder
+    private func glass(_ content: Content) -> some View {
 #if os(iOS) && compiler(>=6.2)
         if #available(iOS 26.0, *), !reduceTransparency {
             content.background {

@@ -28,6 +28,7 @@ struct AppStreamBrowserView: View {
     @State private var searchText = ""
     @State private var closeChoice: RemoteApplication?
     @State private var showsHelp = false
+    @State private var expiredSizingNotice: String?
     @State private var videoHealthCheckTime = ProcessInfo.processInfo.systemUptime
     @State private var videoStartedAt = ProcessInfo.processInfo.systemUptime
     @State private var keyboardActive = false
@@ -72,6 +73,7 @@ struct AppStreamBrowserView: View {
                     switch vm.status {
                     case .streaming(_, let name):
                         streamSurface(name: name)
+                            .vampStreamVideoSurface()
                     case .launching(let name):
                         launching(name: name)
                     default:
@@ -536,7 +538,7 @@ struct AppStreamBrowserView: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if let notice = vm.sizingNotice, !keyboardActive {
+                if let notice = vm.sizingNotice, notice != expiredSizingNotice, !keyboardActive {
                     Text(notice)
                         .font(.caption)
                         .multilineTextAlignment(.center)
@@ -553,7 +555,16 @@ struct AppStreamBrowserView: View {
                             .bottom,
                             AppStreamChromeBar.reservedBand(safeAreaBottom: 0) + AppSpacing.xs)
                         .allowsHitTesting(false)
+                        .transition(.opacity)
                 }
+            }
+            // The notice is informational and sits over the streamed app, so it fades on its own
+            // instead of covering the window's bottom row until the next resize result.
+            .task(id: vm.sizingNotice) {
+                guard let notice = vm.sizingNotice else { expiredSizingNotice = nil; return }
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.3)) { expiredSizingNotice = notice }
             }
             .overlay(alignment: .bottom) {
                 if controlsHidden {
@@ -778,6 +789,7 @@ struct AppStreamBrowserView: View {
                 streamOptionsMenu
             }
 
+        } trailing: {
             AppStreamChromeDivider()
 
             AppStreamChromeButton(
@@ -983,7 +995,7 @@ private struct AppStreamLockedStateView: View {
                 .disabled(password.isEmpty || isSubmitting)
                 .opacity(password.isEmpty || isSubmitting ? 0.4 : 1)
 
-                Text("Remote Unlock must be enabled in Vamp Sync or Vamp Host.")
+                Text("Turn on Remote Unlock in Vamp Sync on your Mac.")
                     .font(.caption)
                     .foregroundStyle(PR.dim)
 
@@ -1043,8 +1055,22 @@ private struct AppStreamApplicationRow: View {
     let application: RemoteApplication
     let isFavorite: Bool
     let onOpen: () -> Void
-    @State private var icon: UIImage?
     private static let icons = NSCache<NSString, UIImage>()
+
+    /// Resolve the image as the row appears. A task attached to a lazy row can be cancelled
+    /// while the list settles, leaving its placeholder in place until the row is recreated.
+    /// Include the payload in the cache key so a refreshed icon replaces the previous one.
+    private var icon: UIImage? {
+        guard let encoded = application.iconPNGBase64,
+              !encoded.isEmpty else { return nil }
+        let key = "\(application.id):\(encoded.count):\(encoded.hashValue)" as NSString
+        if let cached = Self.icons.object(forKey: key) { return cached }
+        guard let data = Data(base64Encoded: encoded),
+              let decoded = UIImage(data: data) else { return nil }
+        Self.icons.countLimit = 256
+        Self.icons.setObject(decoded, forKey: key)
+        return decoded
+    }
 
     /// A disclosure chevron belongs only where another selection level actually follows: an app
     /// with several windows offers the Windows menu. An installed app that simply launches, or a
@@ -1129,16 +1155,6 @@ private struct AppStreamApplicationRow: View {
             hasWindowChoices
                 ? "Opens the app. Long-press for more actions, including choosing a window."
                 : "Opens the app. Long-press for more actions.")
-        .task(id: application.iconPNGBase64) {
-            guard let encoded = application.iconPNGBase64 else { icon = nil; return }
-            let key = (application.id + String(encoded.hashValue)) as NSString
-            Self.icons.countLimit = 256
-            if let cached = Self.icons.object(forKey: key) { icon = cached; return }
-            guard let data = Data(base64Encoded: encoded),
-                  let decoded = UIImage(data: data, scale: 3) else { return }
-            Self.icons.setObject(decoded, forKey: key)
-            icon = decoded
-        }
     }
 }
 
@@ -1200,22 +1216,26 @@ struct AppStreamGestureHelpView: View {
             .navigationTitle("Stream controls")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                Button("Done") { dismiss() }
-                    .font(.headline)
-                    .foregroundStyle(PR.bg)
-                    .frame(maxWidth: 560, minHeight: AppHostMetrics.controlHeight)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        PR.fg,
-                        in: RoundedRectangle(cornerRadius: AppHostMetrics.controlRadius, style: .continuous))
-                    .padding(.horizontal, AppHostMetrics.screenInset)
-                    .padding(.vertical, AppSpacing.sm)
-                    .background(.regularMaterial)
+                // Styled inside the label with a plain style: styling the Button from outside let
+                // the system's default button treatment render the solid fill as a washed-out grey.
+                Button { dismiss() } label: {
+                    Text("Done")
+                        .font(.headline)
+                        .foregroundStyle(PR.bg)
+                        .frame(maxWidth: 560, minHeight: AppHostMetrics.controlHeight)
+                        .background(
+                            PR.fg,
+                            in: RoundedRectangle(cornerRadius: AppHostMetrics.controlRadius, style: .continuous))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, AppHostMetrics.screenInset)
+                .padding(.vertical, AppSpacing.sm)
+                .background(.regularMaterial)
             }
         }
-        // This sheet used to render in stock grouped-Settings colours on top of a black,
-        // custom-styled app. It now uses the same surfaces as everything around it.
-        .preferredColorScheme(.dark)
+        // Uses the app's own surfaces, so it follows the chosen appearance like everything else.
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }

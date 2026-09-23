@@ -47,9 +47,7 @@ struct VampPairingCard<Body: View>: View {
             }
         }
             // A stable reading surface keeps the bright portal from washing out labels.
-            .background {
-                surface.fill(StreamReading.surface)
-            }
+            .streamReadingSurface(in: surface)
         .prGlassSurface(
             in: surface,
             role: .card
