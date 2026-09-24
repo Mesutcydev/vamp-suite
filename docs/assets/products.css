@@ -294,8 +294,7 @@ html[data-theme="dark"] .download-card { background: var(--product-glass); }
   display: block;
   width: 40px;
   height: 40px;
-  object-fit: cover;
-  border-radius: 10px;
+  object-fit: contain;
 }
 .sync-destination strong { margin-top: auto; padding-top: 18px; font: 700 18px/1.1 "Space Grotesk", sans-serif; letter-spacing: -.04em; }
 .sync-destination > span:not(.sync-destination-arrow):not(.sync-destination-index) {
@@ -475,7 +474,7 @@ html[data-theme="dark"] body::before { opacity: .38; mix-blend-mode: normal; fil
 .suite-home .family-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 .client-card { padding: 28px; min-height: 0; }
 .client-card h3 { margin-top: 20px; font-size: 32px; line-height: 1.1; letter-spacing: -.045em; }
-.control-card-logo { display: block; width: 40px; height: 40px; flex: none; border-radius: 10px; }
+.control-card-logo { display: block; width: 40px; height: 40px; flex: none; object-fit: contain; }
 .client-card .card-number { width: 32px; height: 32px; }
 .client-card .card-tag { font-size: 10px; border: 0; padding: 8px 0; }
 .client-preview {
