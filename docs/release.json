@@ -26,12 +26,12 @@
       "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-2.3.0-build-71/VampSync-macOS-2.3.0-build-71-adhoc.dmg.sha256"
     },
     "vamp-control-macos": {
-      "name": "VampControl-macOS-2.3.0-build-54-adhoc.zip",
-      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-suite-2.3.0-build-68/VampControl-macOS-2.3.0-build-54-adhoc.zip",
-      "label": "2.3.0 \u00b7 build 54",
-      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-suite-2.3.0-build-68",
-      "tag": "vamp-suite-2.3.0-build-68",
-      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-suite-2.3.0-build-68/VampControl-macOS-2.3.0-build-54-adhoc.zip.sha256"
+      "name": "VampControl-macOS-2.3.0-build-55-adhoc.dmg",
+      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.3.0-build-55/VampControl-macOS-2.3.0-build-55-adhoc.dmg",
+      "label": "2.3.0 \u00b7 build 55",
+      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-control-macos-2.3.0-build-55",
+      "tag": "vamp-control-macos-2.3.0-build-55",
+      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.3.0-build-55/VampControl-macOS-2.3.0-build-55-adhoc.dmg.sha256"
     },
     "vamp-control-ios": {
       "name": "VampControl-iOS-2.3.0-build-47-altstore-unsigned.ipa",

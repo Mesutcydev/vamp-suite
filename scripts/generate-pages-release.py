@@ -15,7 +15,7 @@ ASSET_PATTERNS = {
     "vamp-terminal-ios": re.compile(r"^VampTerminal-iOS-.+-build-\d+-altstore-unsigned\.ipa$"),
     # Keep the existing metadata key for cached clients and compatibility links.
     "vamp-mini-host-dmg": re.compile(r"^(?:VampSync|VampMiniHost)-macOS-.+-build-\d+-adhoc\.dmg$"),
-    "vamp-control-macos": re.compile(r"^VampControl-macOS-.+-build-\d+-adhoc\.zip$"),
+    "vamp-control-macos": re.compile(r"^VampControl-macOS-.+-build-\d+-adhoc\.(?:zip|dmg)$"),
     "vamp-control-ios": re.compile(r"^VampControl-iOS-.+-build-\d+-altstore-unsigned(?:-r\d+)?\.ipa$"),
     "vamp-stream-ios": re.compile(r"^VampStream-iOS-.+-build-\d+-altstore-unsigned\.ipa$"),
 }
@@ -56,6 +56,7 @@ def asset_version(asset: dict) -> tuple:
         tuple(map(int, version.groups())) if version else (0, 0, 0),
         int(revision[1]) if revision else 0,
         name.startswith("VampSync-"),
+        name.endswith(".dmg"),
     )
 
 
