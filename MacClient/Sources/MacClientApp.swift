@@ -33,6 +33,12 @@ struct MacClientApp: App {
     @AppStorage(MacMenuBarPreference.storageKey)
     private var menuBarPreference = MacMenuBarPreference.disabledValue
 
+    init() {
+        // Migrate a previous file-transfer opt-out before SwiftUI constructs
+        // Settings views backed by the new shared preference key.
+        ClientFileTransferPreference.migrateLegacySettings()
+    }
+
     private static var versionString: String {
         "Version " + ((Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "")
     }

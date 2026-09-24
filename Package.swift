@@ -174,6 +174,7 @@ let package = Package(
                 "BonjourWakeService.swift",
                 "ClientAppEnvironment.swift",
                 "ClientAudioRenderer.swift",
+                "ClientFileTransferPreference.swift",
                 "ClientClipboardSyncManager.swift",
                 "ClientFileTransferManager.swift",
                 "ClientHostBlockedState.swift",

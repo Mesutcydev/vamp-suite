@@ -13,7 +13,7 @@ private func vsHex(_ hex: UInt32, _ a: Double = 1) -> Color {
 
 public struct VampSplashConfig {
     enum Layout { case iosFullScreen, macPanel }
-    enum VisualStyle { case classic, streamGlass }
+    enum VisualStyle { case classic, streamGlass, controlGlass }
 
     var layout: Layout
     var visualStyle: VisualStyle = .classic
@@ -33,7 +33,7 @@ public struct VampSplashConfig {
     var backgroundStops: [Color]        // 3-stop radial, top → bottom
     var auroraInner: Color
     var auroraMid: Color
-    var glowPeakAlpha: Double           // magenta glow behind the icon
+    var glowPeakAlpha: Double           // peak opacity of the icon glow
     var progressStops: [Color]          // 4-stop shimmer bar
 
     // per-target loop timings
@@ -77,16 +77,18 @@ public struct VampSplashConfig {
     }
 
     public static func macClient(version: String) -> VampSplashConfig {
-        VampSplashConfig(
-            layout: .macPanel, iconAssetName: "SplashIcon", iconSize: 92,
-            wordmarkLead: "Vamp", wordmarkAccent: " Remote Control", accentColor: vsHex(0x35C6D3),
+        var config = VampSplashConfig(
+            layout: .macPanel, iconAssetName: "SplashIcon", iconSize: 108,
+            wordmarkLead: "Vamp", wordmarkAccent: " Remote Control", accentColor: vsHex(0xC6D8F2),
             wordmarkSize: 26, taglineSize: 13.5,
             taglines: ["Your Mac, anywhere.", "Private by design."],
             statusText: nil, version: version, progressWidth: 150,
-            backgroundStops: [vsHex(0x191835), vsHex(0x0D0C1C), vsHex(0x08070F)],
-            auroraInner: vsHex(0x2E7BFF, 0.28), auroraMid: vsHex(0xF01E63, 0.14), glowPeakAlpha: 0.40,
-            progressStops: [vsHex(0x7FB0FF, 0.12), vsHex(0x7FB0FF, 0.9), vsHex(0xFF5A7D, 0.9), vsHex(0x7FB0FF, 0.12)],
+            backgroundStops: [vsHex(0x20242B), vsHex(0x14171B), vsHex(0x0D0F12)],
+            auroraInner: vsHex(0x91ABDA, 0.22), auroraMid: vsHex(0xDDE7F6, 0.06), glowPeakAlpha: 0.24,
+            progressStops: [vsHex(0xB7CBEC, 0.12), vsHex(0xDCE7F8, 0.95), vsHex(0x8EADDE, 0.9), vsHex(0xB7CBEC, 0.12)],
             floatPeriod: 4.6, winkPeriod: 6.0, gleamPeriod: 3.6, twinklePeriod: 3.6, taglinePeriod: 8.0)
+        config.visualStyle = .controlGlass
+        return config
     }
 
     public static func host(version: String, statusText: String) -> VampSplashConfig {
@@ -215,7 +217,8 @@ struct VampSplashView: View {
                     Text(version)
                         .font(.system(size: 11, weight: .regular))
                         .tracking(0.06 * 11)
-                        .foregroundColor(vsHex(0x5F5E78))
+                        .foregroundColor(config.visualStyle == .controlGlass
+                                         ? vsHex(0x929DAC) : vsHex(0x5F5E78))
                 }
             }
             .padding(.bottom, config.layout == .iosFullScreen ? 50 : 40)
@@ -232,6 +235,7 @@ struct VampSplashView: View {
     private func iconGroup(t: Double, motion: Bool) -> some View {
         let size = config.iconSize
         let radius = size * 0.225
+        let controlGlass = config.visualStyle == .controlGlass
 
         let floatY = motion ? wave(phase(t, config.floatPeriod), 0, -7) : 0
         let floatRot = motion ? wave(phase(t, config.floatPeriod), 0, 0.5) : 0
@@ -251,44 +255,55 @@ struct VampSplashView: View {
         let glowScale = motion ? wave(phase(t, 4.5), 0.9, 1.12) : 1.0
 
         return ZStack {
-            // magenta glow behind the icon
+            // Match the glow to each product's artwork.
             Circle()
                 .fill(RadialGradient(
-                    colors: [vsHex(0xF01E63, config.glowPeakAlpha), vsHex(0xF01E63, 0)],
+                    colors: controlGlass
+                        ? [vsHex(0xA8BFE7, config.glowPeakAlpha), vsHex(0xA8BFE7, 0)]
+                        : [vsHex(0xF01E63, config.glowPeakAlpha), vsHex(0xF01E63, 0)],
                     center: .center, startRadius: 0, endRadius: size * 1.25))
                 .frame(width: size * 2.5, height: size * 2.5)
                 .scaleEffect(glowScale)
                 .opacity(glowOpacity)
 
-            ZStack {
+            if controlGlass {
+                // The supplied artwork has its own rounded shape and glass highlights.
                 Image(config.iconAssetName)
                     .resizable()
                     .interpolation(.high)
                     .frame(width: size, height: size)
-                    .overlay(
-                        // diagonal gleam sweep, clipped to the squircle
-                        Rectangle()
-                            .fill(LinearGradient(
-                                colors: [.white.opacity(0), .white.opacity(0.6), .white.opacity(0)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: size * 0.4)
-                            .rotationEffect(.degrees(22))
-                            .offset(x: gleamX * size)
-                            .opacity(gleamOpacity))
-                    .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-                    .shadow(color: vsHex(0xF01E63, 0.6), radius: 19, x: 0, y: 15)
+                    .shadow(color: vsHex(0x94B0E0, 0.22), radius: 20, x: 0, y: 12)
+            } else {
+                ZStack {
+                    Image(config.iconAssetName)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: size, height: size)
+                        .overlay(
+                            // diagonal gleam sweep, clipped to the squircle
+                            Rectangle()
+                                .fill(LinearGradient(
+                                    colors: [.white.opacity(0), .white.opacity(0.6), .white.opacity(0)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .frame(width: size * 0.4)
+                                .rotationEffect(.degrees(22))
+                                .offset(x: gleamX * size)
+                                .opacity(gleamOpacity))
+                        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+                        .shadow(color: vsHex(0xF01E63, 0.6), radius: 19, x: 0, y: 15)
 
-                // sparkle at a fang tip (~76% x / 58% y of the icon box)
-                Text("✦")
-                    .font(.system(size: size * 0.14))
-                    .foregroundColor(.white)
-                    .shadow(color: .white.opacity(0.9), radius: 4)
-                    .scaleEffect(twinkleScale)
-                    .rotationEffect(.degrees(twinkleRot))
-                    .opacity(twinkleOpacity)
-                    .offset(x: size * (0.76 - 0.5), y: size * (0.58 - 0.5))
+                    // sparkle at a fang tip (~76% x / 58% y of the icon box)
+                    Text("✦")
+                        .font(.system(size: size * 0.14))
+                        .foregroundColor(.white)
+                        .shadow(color: .white.opacity(0.9), radius: 4)
+                        .scaleEffect(twinkleScale)
+                        .rotationEffect(.degrees(twinkleRot))
+                        .opacity(twinkleOpacity)
+                        .offset(x: size * (0.76 - 0.5), y: size * (0.58 - 0.5))
+                }
+                .rotationEffect(.degrees(winkRot), anchor: UnitPoint(x: 0.5, y: 0.6))
             }
-            .rotationEffect(.degrees(winkRot), anchor: UnitPoint(x: 0.5, y: 0.6))
         }
         .rotationEffect(.degrees(floatRot))
         .offset(y: floatY)
@@ -300,7 +315,8 @@ struct VampSplashView: View {
         if lines.count <= 1 {
             Text(lines.first ?? "")
                 .font(.system(size: config.taglineSize, weight: .medium))
-                .foregroundColor(vsHex(0x9EA6C6))
+                .foregroundColor(config.visualStyle == .controlGlass
+                                 ? vsHex(0xB7C2D0) : vsHex(0x9EA6C6))
                 .frame(height: 22)
         } else {
             let p = motion ? phase(t, config.taglinePeriod) : 0
@@ -310,7 +326,8 @@ struct VampSplashView: View {
                                                 : (index == 0 ? 1 : 0, 0)
                     Text(line)
                         .font(.system(size: config.taglineSize, weight: .medium))
-                        .foregroundColor(vsHex(0x9EA6C6))
+                        .foregroundColor(config.visualStyle == .controlGlass
+                                         ? vsHex(0xB7C2D0) : vsHex(0x9EA6C6))
                         .opacity(opacity)
                         .offset(y: dy)
                 }

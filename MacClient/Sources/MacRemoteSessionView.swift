@@ -56,7 +56,7 @@ struct MacRemoteSessionView: View {
     @State private var showsQualitySettings = false
 
     @AppStorage("client.clipboard.enabled") private var clipboardEnabled = true
-    @AppStorage("com.remotedesktop.client.filetransfer.enabled") private var fileTransferEnabled = true
+    @AppStorage(ClientFileTransferPreference.storageKey) private var fileTransferEnabled = true
     @State private var preferences = MacConnectionPreferences()
     @State private var loadedPreferenceKey: String?
     private var displayMode: DisplayMappingEngine.DisplayMode {

@@ -17,7 +17,7 @@ struct MacSettingsScreen: View {
 
     // Feature toggles share the same keys the iOS client uses, so a user's
     // preference is consistent across both apps' shared logic.
-    @AppStorage("com.remotedesktop.client.filetransfer.enabled") private var fileTransferEnabled = true
+    @AppStorage(ClientFileTransferPreference.storageKey) private var fileTransferEnabled = true
     @AppStorage("client.clipboard.enabled") private var clipboardEnabled = true
 
     init(environment: ClientAppEnvironment) {
@@ -170,7 +170,7 @@ struct MacSettingsScreen: View {
             } header: {
                 Text("Features")
             } footer: {
-                Text("Send files to the host and share text both ways. Turn off to hide these controls during a session.")
+                Text("File transfer sends files to and receives files from the connected Mac. Clipboard sharing is manual: use Send Clipboard or Fetch Clipboard in the session tools.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
