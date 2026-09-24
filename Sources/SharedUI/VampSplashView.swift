@@ -78,13 +78,13 @@ public struct VampSplashConfig {
 
     public static func macClient(version: String) -> VampSplashConfig {
         var config = VampSplashConfig(
-            layout: .macPanel, iconAssetName: "SplashIcon", iconSize: 108,
-            wordmarkLead: "Vamp", wordmarkAccent: " Remote Control", accentColor: vsHex(0xC6D8F2),
-            wordmarkSize: 26, taglineSize: 13.5,
-            taglines: ["Your Mac, anywhere.", "Private by design."],
+            layout: .macPanel, iconAssetName: "SplashIcon", iconSize: 152,
+            wordmarkLead: "Vamp", wordmarkAccent: " Control", accentColor: vsHex(0xDDE8F7),
+            wordmarkSize: 32, taglineSize: 14,
+            taglines: ["Your Mac, in reach."],
             statusText: nil, version: version, progressWidth: 150,
-            backgroundStops: [vsHex(0x20242B), vsHex(0x14171B), vsHex(0x0D0F12)],
-            auroraInner: vsHex(0x91ABDA, 0.22), auroraMid: vsHex(0xDDE7F6, 0.06), glowPeakAlpha: 0.24,
+            backgroundStops: [vsHex(0x252E3D), vsHex(0x17202C), vsHex(0x101720)],
+            auroraInner: vsHex(0x91ABDA, 0.14), auroraMid: vsHex(0xDDE7F6, 0.04), glowPeakAlpha: 0.12,
             progressStops: [vsHex(0xB7CBEC, 0.12), vsHex(0xDCE7F8, 0.95), vsHex(0x8EADDE, 0.9), vsHex(0xB7CBEC, 0.12)],
             floatPeriod: 4.6, winkPeriod: 6.0, gleamPeriod: 3.6, twinklePeriod: 3.6, taglinePeriod: 8.0)
         config.visualStyle = .controlGlass
@@ -142,7 +142,9 @@ struct VampSplashView: View {
 
     var body: some View {
         Group {
-            if reduceMotion {
+            if config.layout == .macPanel && config.visualStyle == .controlGlass {
+                controlSplashContent
+            } else if reduceMotion {
                 composition(t: 0, motion: false)
             } else {
                 TimelineView(.animation) { context in
@@ -150,6 +152,58 @@ struct VampSplashView: View {
                 }
             }
         }
+    }
+
+    /// Control's artwork already contains its glass treatment. Keep the launch
+    /// surface still and let the icon, title, and background carry the hierarchy.
+    private var controlSplashContent: some View {
+        ZStack {
+            LinearGradient(colors: config.backgroundStops,
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+
+            RadialGradient(colors: [vsHex(0x8FA9D2, 0.14), .clear],
+                           center: .center, startRadius: 0, endRadius: 350)
+                .frame(width: 700, height: 560)
+                .offset(y: -90)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 0) {
+                Spacer(minLength: 24)
+
+                Image(config.iconAssetName)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: config.iconSize, height: config.iconSize)
+                    .shadow(color: .black.opacity(0.24), radius: 24, x: 0, y: 14)
+                    .accessibilityHidden(true)
+
+                (Text(config.wordmarkLead).foregroundColor(.white)
+                    + Text(config.wordmarkAccent).foregroundColor(config.accentColor))
+                    .font(.system(size: config.wordmarkSize, weight: .semibold))
+                    .tracking(-0.025 * config.wordmarkSize)
+                    .padding(.top, 18)
+
+                Text(config.taglines.first ?? "")
+                    .font(.system(size: config.taglineSize, weight: .medium))
+                    .foregroundColor(vsHex(0xB9C6D8))
+                    .padding(.top, 8)
+
+                Spacer(minLength: 24)
+
+                HStack {
+                    Text("Private by design")
+                    Spacer()
+                    if let version = config.version { Text(version) }
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(vsHex(0x94A4BA))
+                .padding(.horizontal, 30)
+                .padding(.bottom, 24)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     @ViewBuilder

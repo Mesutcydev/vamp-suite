@@ -16,7 +16,7 @@ packages:
     path: .
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
-    exactVersion: 1.20.0
+    exactVersion: 1.18.0
 
 settings:
   base:

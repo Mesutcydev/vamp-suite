@@ -18,7 +18,7 @@ packages:
     path: .
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
-    from: 1.13.0
+    exactVersion: 1.18.0
 
 settings:
   base:
@@ -69,7 +69,7 @@ targets:
     settings:
       base:
         MARKETING_VERSION: 2.3.0
-        CURRENT_PROJECT_VERSION: 55
+        CURRENT_PROJECT_VERSION: 56
         PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.macclient
         PRODUCT_NAME: Vamp Control macOS
         INFOPLIST_FILE: MacClient/Resources/MacClient-Info.plist

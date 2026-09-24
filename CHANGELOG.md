@@ -9,6 +9,8 @@ their original product names. The format follows
 
 ### Vamp Control macOS
 
+- Remove the black canvas from the Control icon and make the artwork fill its
+  transparent icon frame. Simplify the launch splash around the corrected mark.
 - Replace the Mac app icon with the new glass conversation mark and match the
   launch splash to its charcoal and cool-blue palette.
 - Make the file-transfer switch use one shared preference, migrate existing
