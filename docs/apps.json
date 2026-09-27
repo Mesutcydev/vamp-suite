@@ -51,6 +51,36 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "0.10.48",
+          "buildVersion": "127",
+          "marketingVersion": "0.10.48 (127)",
+          "date": "2026-09-28",
+          "localizedDescription": "Companion for Mac build 127 with optional managed inference runtimes. Includes Photos and Files image attachments, saved image drafts, queued-message recovery and manual send, model unloading, and simpler new sessions.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.48/Vamp-Assistant-iOS-0.10.48-build-127-unsigned.ipa",
+          "size": 7501732,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.10.47",
+          "buildVersion": "126",
+          "marketingVersion": "0.10.47 (126)",
+          "date": "2026-09-27",
+          "localizedDescription": "Attach images from Photos or Files using the chat + menu. Images stay with saved drafts and queued follow-ups, and reach native vision models on Mac build 126. Includes the queued-message send button and recovery fixes.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.47/Vamp-Assistant-iOS-0.10.47-build-126-unsigned.ipa",
+          "size": 7501731,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.10.46",
+          "buildVersion": "125",
+          "marketingVersion": "0.10.46 (125)",
+          "date": "2026-09-27",
+          "localizedDescription": "Send a saved queued follow-up directly from its card, even with an empty composer. Paired with Mac build 125, follow-ups keep the current model running and drain automatically after interrupted turns. Retries preserve the saved message and do not enqueue duplicates.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.46/Vamp-Assistant-iOS-0.10.46-build-125-unsigned.ipa",
+          "size": 7453680,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "0.10.45",
           "buildVersion": "124",
           "marketingVersion": "0.10.45 (124)",
