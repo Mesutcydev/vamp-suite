@@ -51,6 +51,16 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "0.10.48",
+          "buildVersion": "127",
+          "marketingVersion": "0.10.48 (127)",
+          "date": "2026-09-28",
+          "localizedDescription": "Companion for Mac build 127 with optional managed inference runtimes. Includes Photos and Files image attachments, saved image drafts, queued-message recovery and manual send, model unloading, and simpler new sessions.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.48/Vamp-Assistant-iOS-0.10.48-build-127-unsigned.ipa",
+          "size": 7501732,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "0.10.47",
           "buildVersion": "126",
           "marketingVersion": "0.10.47 (126)",
