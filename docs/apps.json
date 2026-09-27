@@ -51,6 +51,16 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "0.10.45",
+          "buildVersion": "124",
+          "marketingVersion": "0.10.45 (124)",
+          "date": "2026-09-27",
+          "localizedDescription": "Start a new chat with a message and an available model. Advanced options are collapsed. Unload the active Mac model from the model picker without deleting its download. Pair with Mac build 124 for the Huihui GGUF loading fix.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.45/Vamp-Assistant-iOS-0.10.45-build-124-unsigned.ipa",
+          "size": 7438940,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "0.10.39",
           "buildVersion": "118",
           "marketingVersion": "0.10.39 (118)",
