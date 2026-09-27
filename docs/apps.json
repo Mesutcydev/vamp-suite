@@ -51,6 +51,16 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "0.10.47",
+          "buildVersion": "126",
+          "marketingVersion": "0.10.47 (126)",
+          "date": "2026-09-27",
+          "localizedDescription": "Attach images from Photos or Files using the chat + menu. Images stay with saved drafts and queued follow-ups, and reach native vision models on Mac build 126. Includes the queued-message send button and recovery fixes.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.47/Vamp-Assistant-iOS-0.10.47-build-126-unsigned.ipa",
+          "size": 7501731,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "0.10.46",
           "buildVersion": "125",
           "marketingVersion": "0.10.46 (125)",
