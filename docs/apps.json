@@ -51,6 +51,16 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "0.10.46",
+          "buildVersion": "125",
+          "marketingVersion": "0.10.46 (125)",
+          "date": "2026-09-27",
+          "localizedDescription": "Send a saved queued follow-up directly from its card, even with an empty composer. Paired with Mac build 125, follow-ups keep the current model running and drain automatically after interrupted turns. Retries preserve the saved message and do not enqueue duplicates.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.46/Vamp-Assistant-iOS-0.10.46-build-125-unsigned.ipa",
+          "size": 7453680,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "0.10.45",
           "buildVersion": "124",
           "marketingVersion": "0.10.45 (124)",
