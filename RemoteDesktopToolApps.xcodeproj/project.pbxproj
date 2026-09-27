@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		682E681ED5B44483A43AE001 /* ClientFileTransferPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 682E681ED5B44483A43AE002 /* ClientFileTransferPreference.swift */; };
 		A1B2C3D4E5F60718293A4B51 /* VampTerminalApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B61 /* VampTerminalApp.swift */; };
 		A1B2C3D4E5F60718293A4B52 /* VampTerminalHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B62 /* VampTerminalHomeView.swift */; };
 		A1B2C3D4E5F60718293A4B53 /* VampTerminalPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B63 /* VampTerminalPaneView.swift */; };
@@ -216,6 +217,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		682E681ED5B44483A43AE002 /* ClientFileTransferPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientFileTransferPreference.swift; sourceTree = "<group>"; };
 		0345A10097A893247ED19D06 /* AppShadows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShadows.swift; sourceTree = "<group>"; };
 		064171D9674F98769423CDCD /* ClientSettingsSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientSettingsSyncService.swift; sourceTree = "<group>"; };
 		079E1DC4FB7A753AC04D0A6D /* PRRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PRRow.swift; sourceTree = "<group>"; };
@@ -480,6 +482,7 @@
 				29C501666FFC1EB1008320D4 /* ClientAudioRenderer.swift */,
 				BAC12D9674133B1583C58E59 /* ClientClipboardSyncManager.swift */,
 				793096FA7CF9657B352099BC /* ClientFileTransferManager.swift */,
+				682E681ED5B44483A43AE002 /* ClientFileTransferPreference.swift */,
 				BED6A0E8BC0E4EAEEFBD4673 /* ClientHostBlockedState.swift */,
 				CBBE5CB889E4B1399F822B0B /* ClientiOSApp.swift */,
 				3D50F51A5242421995FA705F /* ClientReconnectCoordinator.swift */,
@@ -1136,6 +1139,7 @@
 				11E0E603F0591EFF5BA74C5A /* ClientAudioRenderer.swift in Sources */,
 				E60ED875BB6FF9498EF7A170 /* ClientClipboardSyncManager.swift in Sources */,
 				3A35470F99F872D8EC1D300D /* ClientFileTransferManager.swift in Sources */,
+				682E681ED5B44483A43AE001 /* ClientFileTransferPreference.swift in Sources */,
 				1F2AE0F18D955A8D8CDD77FE /* ClientHostBlockedState.swift in Sources */,
 				12C1ACF4FE7CB4E61DC0C6A2 /* ClientReconnectCoordinator.swift in Sources */,
 				05C6BBEFBD98F811F5050E17 /* ClientSessionCoordinator.swift in Sources */,
@@ -1218,6 +1222,7 @@
 				11E0E603F0591EFF5BA74C5A /* ClientAudioRenderer.swift in Sources */,
 				E60ED875BB6FF9498EF7A170 /* ClientClipboardSyncManager.swift in Sources */,
 				3A35470F99F872D8EC1D300D /* ClientFileTransferManager.swift in Sources */,
+				682E681ED5B44483A43AE001 /* ClientFileTransferPreference.swift in Sources */,
 				1F2AE0F18D955A8D8CDD77FE /* ClientHostBlockedState.swift in Sources */,
 				12C1ACF4FE7CB4E61DC0C6A2 /* ClientReconnectCoordinator.swift in Sources */,
 				05C6BBEFBD98F811F5050E17 /* ClientSessionCoordinator.swift in Sources */,
