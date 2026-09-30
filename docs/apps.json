@@ -51,6 +51,16 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "0.10.52",
+          "buildVersion": "131",
+          "marketingVersion": "0.10.52 (131)",
+          "date": "2026-09-30",
+          "localizedDescription": "Keeps Unlock Mac reachable above the keyboard and confirms that the Mac actually unlocked. Pair with Mac build 131, which wakes the sleeping display before password entry and keeps it awake during the attempt.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.52/Vamp-Assistant-iOS-0.10.52-build-131-unsigned.ipa",
+          "size": 7511477,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "0.10.45",
           "buildVersion": "124",
           "marketingVersion": "0.10.45 (124)",
