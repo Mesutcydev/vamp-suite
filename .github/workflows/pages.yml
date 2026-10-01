@@ -6,6 +6,19 @@ on:
   release:
     types: [published, edited, released, deleted]
   workflow_dispatch:
+    inputs:
+      product:
+        description: Product to refresh (all refreshes every product)
+        type: choice
+        default: all
+        options:
+          - all
+          - vamp-mini-host-dmg
+          - vamp-control-macos
+          - vamp-control-ios
+          - vamp-stream-ios
+          - vamp-assistant-macos
+          - vamp-assistant-ios
 
 permissions:
   contents: read
@@ -33,7 +46,17 @@ jobs:
       - name: Resolve latest release assets
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/generate-pages-release.py
+          PAGES_PRODUCT: ${{ inputs.product }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ "$RELEASE_TAG" == vamp-sync-* ]]; then
+            PAGES_PRODUCT=vamp-mini-host-dmg
+          fi
+          if [[ -n "$PAGES_PRODUCT" && "$PAGES_PRODUCT" != all ]]; then
+            python3 scripts/generate-pages-release.py --product "$PAGES_PRODUCT"
+          else
+            python3 scripts/generate-pages-release.py
+          fi
       - name: Validate site links and release selection
         run: |
           python3 -m unittest discover -s Tests -p test_generate_pages_release.py

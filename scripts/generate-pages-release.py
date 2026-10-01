@@ -2,6 +2,7 @@
 """Resolve each product's latest stable artifact and update static Pages links."""
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -87,10 +88,12 @@ def asset_label(name: str) -> str:
     return label + (f" · revision {revision[1]}" if revision else "")
 
 
-def resolve_assets(suite: list[dict], assistant: list[dict]) -> dict:
+def resolve_assets(suite: list[dict], assistant: list[dict], products: set[str] | None = None) -> dict:
     assets = {}
     for releases, patterns in ((suite, ASSET_PATTERNS), (assistant, ASSISTANT_ASSET_PATTERNS)):
         for key, pattern in patterns.items():
+            if products is not None and key not in products:
+                continue
             selected = choose_release_asset(releases, pattern)
             if not selected:
                 continue
@@ -101,7 +104,7 @@ def resolve_assets(suite: list[dict], assistant: list[dict]) -> dict:
             if sha := checksum_url(release.get("assets", []), asset):
                 entry["sha256Url"] = sha
             assets[key] = entry
-    missing = REQUIRED - assets.keys()
+    missing = (REQUIRED if products is None else products) - assets.keys()
     if missing:
         raise ValueError(f"Missing expected release assets: {', '.join(sorted(missing))}")
     return assets
@@ -127,20 +130,31 @@ def rewrite_static_links(path: Path, assets: dict, release_url: str = "") -> Non
     path.write_text(html, encoding="utf-8")
 
 
-def main() -> int:
-    suite, assistant = fetch_releases(REPOSITORY), fetch_releases(ASSISTANT_REPOSITORY)
-    assets = resolve_assets(suite, assistant)
-    # The footer describes the suite, never an unrelated app sharing this repository.
-    release = max((r for r in suite if not r.get("draft") and not r.get("prerelease")
-                   and r["tag_name"].startswith("vamp-suite-")), key=lambda r: r["published_at"])
-    payload = {"repository": REPOSITORY, "repositories": {"suite": REPOSITORY, "assistant": ASSISTANT_REPOSITORY},
-               "tag": release["tag_name"], "name": release.get("name", release["tag_name"]),
-               "url": release["html_url"], "published_at": release.get("published_at"), "assets": assets}
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--product", action="append", choices=sorted(REQUIRED),
+                        help="Refresh only this product, preserving other committed download metadata")
+    args = parser.parse_args(argv)
+    products = set(args.product) if args.product else None
+    suite = fetch_releases(REPOSITORY) if products is None or products & ASSET_PATTERNS.keys() else []
+    assistant = fetch_releases(ASSISTANT_REPOSITORY) if products is None or products & ASSISTANT_ASSET_PATTERNS.keys() else []
+    updates = resolve_assets(suite, assistant, products)
     docs = ROOT / "docs"
+    if products is not None:
+        payload = json.loads((docs / "release.json").read_text())
+        payload["assets"].update(updates)
+    else:
+        # The footer describes the suite, never an unrelated app sharing this repository.
+        release = max((r for r in suite if not r.get("draft") and not r.get("prerelease")
+                       and r["tag_name"].startswith("vamp-suite-")), key=lambda r: r["published_at"])
+        payload = {"repository": REPOSITORY, "repositories": {"suite": REPOSITORY, "assistant": ASSISTANT_REPOSITORY},
+                   "tag": release["tag_name"], "name": release.get("name", release["tag_name"]),
+                   "url": release["html_url"], "published_at": release.get("published_at"), "assets": updates}
+    assets = payload["assets"]
     for path in docs.rglob("*.html"):
         rewrite_static_links(path, assets)
     (docs / "release.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    for key, asset in assets.items():
+    for key, asset in updates.items():
         print(f"{key}: {asset['label']} ({asset['tag']})")
     return 0
 

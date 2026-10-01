@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import unittest
 import tempfile
 from unittest.mock import patch
@@ -84,6 +85,32 @@ class PagesReleaseSelectionTests(unittest.TestCase):
         releases = [{"published_at": "2026-09-03", "assets": []},
                     {"published_at": "2026-09-02", "assets": [desired]}]
         self.assertEqual(pages_release.choose_release_asset(releases, pages_release.ASSET_PATTERNS["vamp-stream-ios"])[1], desired)
+
+    def test_sync_only_refresh_preserves_other_products_when_ios_assets_are_missing(self):
+        key = "vamp-mini-host-dmg"
+        releases = [{"tag_name": "vamp-sync-2.3.1-build-72", "html_url": "https://example.test/release",
+                     "assets": [{"name": "VampSync-macOS-2.3.1-build-72-notarized.dmg",
+                                 "browser_download_url": "https://example.test/sync.dmg"}]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs = root / "docs"
+            docs.mkdir()
+            other = {"url": "https://example.test/control.ipa", "label": "existing", "tag": "existing"}
+            payload = {"tag": "existing-suite", "assets": {key: {}, "vamp-control-ios": other}}
+            (docs / "release.json").write_text(json.dumps(payload))
+            (docs / "index.html").write_text(f'<a data-release-link="{key}" href="old">Sync</a>')
+            with patch.object(pages_release, "ROOT", root), patch.object(pages_release, "fetch_releases", return_value=releases) as fetch:
+                self.assertEqual(pages_release.main(["--product", key]), 0)
+            fetch.assert_called_once_with(pages_release.REPOSITORY)
+            result = json.loads((docs / "release.json").read_text())
+            self.assertEqual(result["assets"]["vamp-control-ios"], other)
+            self.assertEqual(result["tag"], payload["tag"])
+            self.assertEqual(result["assets"][key]["label"], "2.3.1 · build 72")
+            self.assertIn('href="https://example.test/sync.dmg"', (docs / "index.html").read_text())
+
+    def test_product_refresh_still_requires_its_requested_asset(self):
+        with self.assertRaisesRegex(ValueError, "vamp-mini-host-dmg"):
+            pages_release.resolve_assets([], [], {"vamp-mini-host-dmg"})
 
     def test_pagination_reads_beyond_first_hundred_releases(self):
         with patch.object(pages_release, "fetch_json", side_effect=[[{}] * 100, [{"tag_name": "older"}]]):
