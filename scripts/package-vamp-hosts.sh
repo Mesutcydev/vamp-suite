@@ -3,6 +3,7 @@
 # Build Vamp Sync, the only maintained macOS host in this repository.
 # The apps are ad-hoc signed with Apple's local '-' identity, never notarized,
 # and are intended for user-controlled open-source testing and distribution.
+# Use release-vamp-sync.sh for Developer ID signing and Apple notarization.
 
 set -euo pipefail
 

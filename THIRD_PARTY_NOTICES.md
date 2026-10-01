@@ -1,6 +1,15 @@
 # Third-party notices
 
-Vamp Terminal includes or links the following open-source components. Their licenses remain in effect in source and binary distributions.
+Vamp apps include or link the following open-source components. Their licenses remain in effect in source and binary distributions.
+
+## Sparkle (Vamp Sync)
+
+- Project: <https://github.com/sparkle-project/Sparkle>
+- Version: 2.10.0
+- License: MIT; Sparkle also includes separately licensed third-party components.
+
+Sparkle's complete copyright and license notices are retained in the bundled
+`ThirdPartyLicenses/Sparkle-LICENSE.txt`.
 
 ## SwiftTerm
 

@@ -246,7 +246,7 @@
   "ux.separate": "İsteğe bağlı · bağımsız uygulama",
   "ux.assistant": "Mac’inde yerel modellerle veya kendi AI sağlayıcınla sohbet et, kod üzerinde çalış ve uzman araçları kullan. Kendi iOS ve tarayıcı istemcileriyle bu oturumlara uzaktan devam et. Assistant için Sync gerekmez.",
   "ux.assistantMore": "Assistant’ı keşfet →",
-  "ux.syncNote": "Apple Silicon · macOS 13+ · menü çubuğunda çalışır.",
+  "ux.syncNote": "Intel + Apple Silicon · macOS 13+ · menü çubuğunda çalışır.",
   "ux.streamHero": "Bir Mac uygulamasını iPhone veya iPad’inde kullan. Mac’e Vamp Sync kur, Stream’i eşleştir ve kullanmak istediğin uygulamayı seç.",
   "ux.alreadyAssistant": "Zaten Vamp Assistant mı kullanıyorsun?",
   "ux.assistantCompat": "Stream, uygulama penceresi veya tam ekran için Assistant’ın Remote Sessions özelliğiyle doğrudan eşleşebilir. Assistant’ta Remote Sessions’ı etkinleştir ve onun QR koduyla eşleştir. Bu isteğe bağlıdır; uygulama penceresi paylaşmak için Sync yeterli.",

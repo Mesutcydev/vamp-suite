@@ -72,6 +72,13 @@ class PagesReleaseSelectionTests(unittest.TestCase):
         dmg = "VampControl-macOS-2.3.0-build-55-adhoc.dmg"
         self.assertEqual(self.select([dmg.replace(".dmg", ".zip"), dmg], "vamp-control-macos"), dmg)
 
+    def test_sync_selects_notarized_release_and_prefers_it_for_same_build(self):
+        signed = "VampSync-macOS-2.3.1-build-72-notarized.dmg"
+        old = "VampSync-macOS-2.3.0-build-71-adhoc.dmg"
+        adhoc = signed.replace("-notarized", "-adhoc")
+        self.assertEqual(self.select([signed, old], "vamp-mini-host-dmg"), signed)
+        self.assertEqual(self.select([signed, adhoc], "vamp-mini-host-dmg"), signed)
+
     def test_product_need_not_be_in_latest_release(self):
         desired = {"name": "VampStream-iOS-0.1.6-build-20-altstore-unsigned.ipa"}
         releases = [{"published_at": "2026-09-03", "assets": []},

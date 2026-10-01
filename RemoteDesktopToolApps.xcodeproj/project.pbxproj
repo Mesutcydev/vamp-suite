@@ -189,6 +189,12 @@
 		FAEC64DE943584A70705BC6F /* Tokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87472874EEE152AE98853C22 /* Tokens.swift */; };
 		FBD295D4A0A25B99769C961B /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5305B98CFE48ACA3D8F4C2E6 /* RootTabView.swift */; };
 		FDF1374247B50D1C1BDE6929 /* InputControl in Frameworks */ = {isa = PBXBuildFile; productRef = F5036702DCBFF58EE06AFA8E /* InputControl */; };
+		AA72AA000000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AA72AA000000000000000002 /* Sparkle */; };
+		AA72AA000000000000000005 /* VampSyncUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA72AA000000000000000004; };
+		AA72AA000000000000000007 /* ThirdPartyLicenses in Resources */ = {isa = PBXBuildFile; fileRef = AA72AA000000000000000006; };
+		AA72AA000000000000000009 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = AA72AA000000000000000008; };
+		AA72AA00000000000000000B /* NOTICE in Resources */ = {isa = PBXBuildFile; fileRef = AA72AA00000000000000000A; };
+		AA72AA00000000000000000D /* THIRD_PARTY_NOTICES.md in Resources */ = {isa = PBXBuildFile; fileRef = AA72AA00000000000000000C; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -373,6 +379,11 @@
 		E1AA00000000000000000010 /* HostApplicationRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostApplicationRegistry.swift; sourceTree = "<group>"; };
 		E1AA00000000000000000011 /* HostAppStreamingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostAppStreamingSupport.swift; sourceTree = "<group>"; };
 		E1AA00000000000000000020 /* VampMiniHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VampMiniHostApp.swift; sourceTree = "<group>"; };
+		AA72AA000000000000000004 /* VampSyncUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VampSyncUpdater.swift; sourceTree = "<group>"; };
+		AA72AA000000000000000006 /* ThirdPartyLicenses */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "Resources/VampSync/ThirdPartyLicenses"; sourceTree = "<group>"; };
+		AA72AA000000000000000008 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = "LICENSE"; sourceTree = "<group>"; };
+		AA72AA00000000000000000A /* NOTICE */ = {isa = PBXFileReference; lastKnownFileType = text; path = "NOTICE"; sourceTree = "<group>"; };
+		AA72AA00000000000000000C /* THIRD_PARTY_NOTICES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "THIRD_PARTY_NOTICES.md"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -400,6 +411,7 @@
 				AD4DFE5D7E42F9AC92ED2E86 /* Diagnostics in Frameworks */,
 				A1B2C3D4E5F60718293A4B7E /* HostWidgetShared in Frameworks */,
 				A1B2C3D4E5F60718293A4B80 /* SharedUI in Frameworks */,
+				AA72AA000000000000000003,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -610,6 +622,10 @@
 				BA7136113EDDD66FE60BE421 /* Packages */,
 				7BF1F1194906FB023C7E8BB5 /* Sources */,
 				68E902F964DA3A5DB39511E2 /* Products */,
+				AA72AA000000000000000006,
+				AA72AA000000000000000008,
+				AA72AA00000000000000000A,
+				AA72AA00000000000000000C,
 			);
 			sourceTree = "<group>";
 		};
@@ -706,6 +722,7 @@
 				E1AA00000000000000000001 /* VampTerminalHostApp.swift */,
 				E1AA00000000000000000002 /* VampTerminalHostShellView.swift */,
 				E1AA00000000000000000020 /* VampMiniHostApp.swift */,
+				AA72AA000000000000000004 /* VampSyncUpdater.swift */,
 			);
 			path = HostApp;
 			sourceTree = "<group>";
@@ -870,6 +887,7 @@
 				9D63D80560EB98263A2DE968 /* Diagnostics */,
 				A1B2C3D4E5F60718293A4B7D /* HostWidgetShared */,
 				A1B2C3D4E5F60718293A4B7F /* SharedUI */,
+				AA72AA000000000000000002 /* Sparkle */,
 			);
 			productName = "Vamp Sync";
 			productReference = E1AA00000000000000000005 /* Vamp Sync.app */;
@@ -955,6 +973,7 @@
 			packageReferences = (
 				FBA77412380158F97124BBF2 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 				471BBDDFFC754B70B21F11A9 /* XCLocalSwiftPackageReference "." */,
+				AA72AA000000000000000001 /* Sparkle */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 68E902F964DA3A5DB39511E2 /* Products */;
@@ -1036,6 +1055,10 @@
 				1E9EBC086CF57908D407F04D /* Assets.xcassets in Resources */,
 				98C5EBE7AA6BC505B71B46ED /* Localizable.xcstrings in Resources */,
 				F890157205EF1759F94A8116 /* PrivacyInfo.xcprivacy in Resources */,
+				AA72AA000000000000000007,
+				AA72AA000000000000000009,
+				AA72AA00000000000000000B,
+				AA72AA00000000000000000D,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1111,6 +1134,7 @@
 				E1BB00000000000000000002 /* VampTerminalHostApp.swift in Sources */,
 				E1BB00000000000000000003 /* VampTerminalHostShellView.swift in Sources */,
 				E1BB00000000000000000020 /* VampMiniHostApp.swift in Sources */,
+				AA72AA000000000000000005,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1649,11 +1673,12 @@
 		E1DD00000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ENABLE_HARDENED_RUNTIME = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "Configuration/VampMiniHost.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 65;
+				CURRENT_PROJECT_VERSION = 72;
 				ENABLE_APP_INTENTS_METADATA_GENERATION = NO;
 				ENABLE_POINTER_AUTHENTICATION = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1663,7 +1688,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 2.3.0;
+				MARKETING_VERSION = 2.3.1;
 				OTHER_LDFLAGS = "$(inherited) -framework AppIntents";
 				PRODUCT_BUNDLE_IDENTIFIER = com.mesutcy.remotedesktop.minhost;
 				PRODUCT_NAME = "Vamp Sync";
@@ -1675,11 +1700,12 @@
 		E1DD00000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ENABLE_HARDENED_RUNTIME = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "Configuration/VampMiniHost.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 65;
+				CURRENT_PROJECT_VERSION = 72;
 				ENABLE_APP_INTENTS_METADATA_GENERATION = NO;
 				ENABLE_POINTER_AUTHENTICATION = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1689,7 +1715,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 2.3.0;
+				MARKETING_VERSION = 2.3.1;
 				OTHER_LDFLAGS = "$(inherited) -framework AppIntents";
 				PRODUCT_BUNDLE_IDENTIFIER = com.mesutcy.remotedesktop.minhost;
 				PRODUCT_NAME = "Vamp Sync";
@@ -1780,10 +1806,11 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.2.0;
+				kind = exactVersion;
+				version = 1.18.0;
 			};
 		};
+		AA72AA000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */ = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/sparkle-project/Sparkle"; requirement = {kind = exactVersion; version = 2.10.0; }; };
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1872,6 +1899,7 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = SharedProtocol;
 		};
+		AA72AA000000000000000002 /* Sparkle */ = {isa = XCSwiftPackageProductDependency; package = AA72AA000000000000000001; productName = Sparkle; };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 05B06496F9FDF2508DDFB1EF /* Project object */;

@@ -116,6 +116,29 @@ Artifacts are written below `dist/`. Building an unsigned IPA does not require
 an Apple account or provisioning profile; installing it on a device does
 require re-signing by AltStore or another compatible tool.
 
+For Developer ID distribution of Vamp Sync, create a signed universal archive:
+
+```bash
+scripts/release-vamp-sync.sh --archive-only \
+  --identity "$VAMP_SYNC_SIGN_IDENTITY" --team "$VAMP_SYNC_TEAM_ID"
+```
+
+Open `.packaging-vamp-hosts/Vamp Sync.xcarchive` in Xcode Organizer and choose
+**Distribute App → Direct Distribution**. Once Apple accepts it, export the
+notarized app and package it with `scripts/release-vamp-sync.sh --exported-app
+"/path/to/Vamp Sync.app" --identity "$VAMP_SYNC_SIGN_IDENTITY"`. The script
+validates the stapled ticket, creates checksums and manifests, and signs Sparkle
+updates using the `vamp-sync` Keychain account. Initialize that account once with
+Sparkle's `generate_keys --account vamp-sync`; its public key must match
+`SUPublicEDKey` in `Configuration/VampMiniHost-Info.plist`.
+
+Publish the matching GitHub release archives before copying
+`dist/VampStreamHost/sparkle/appcast.xml` to `docs/sync/appcast.xml` and deploying
+Pages. The Xcode flow packages a stapled, notarized app; its outer DMG is unsigned.
+For a separately signed and notarized DMG, supply a `--notary-profile` stored with
+`xcrun notarytool store-credentials`. Keep signing identities and credentials out
+of the public project. Local builds can use `--allow-dirty`.
+
 ## Repository layout
 
 | Path | What belongs there |

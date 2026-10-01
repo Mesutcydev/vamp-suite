@@ -48,17 +48,19 @@ struct VampMiniHostApp: App {
 }
 
 @MainActor
-private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSMenuItemValidation {
     private var environment: HostAppEnvironment?
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var phaseObserver: AnyCancellable?
     private var trustPromptObserver: AnyCancellable?
     private var permissionObserver: AnyCancellable?
+    private let updater = VampSyncUpdater()
     private weak var statusDotView: VampSyncMenuBarStatusDotView?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        updater.start()
         startRuntimeWhenReady(attempt: 0)
     }
 
@@ -117,6 +119,7 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
         let controller = NSHostingController(
             rootView: VampSyncCompanionPopover(
                 environment: environment,
+                updater: updater,
                 onClose: { [weak self] in self?.closePopover() }
             )
         )
@@ -257,6 +260,11 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
         addMenuItem("Accessibility Settings…", action: #selector(openAccessibilitySettings), to: menu)
         menu.addItem(.separator())
 
+        let checkForUpdates = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdatesFromMenu), keyEquivalent: "")
+        checkForUpdates.target = self
+        menu.addItem(checkForUpdates)
+        menu.addItem(.separator())
+
         addMenuItem("Quit Vamp Sync", action: #selector(quitApp), keyEquivalent: "q", to: menu)
         return menu
     }
@@ -348,6 +356,18 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
 
     @objc private func quitApp() {
         NSApp.terminate(nil)
+    }
+
+    @objc private func checkForUpdatesFromMenu() {
+        closePopover()
+        updater.checkForUpdates()
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(checkForUpdatesFromMenu) {
+            return updater.canCheckForUpdates
+        }
+        return true
     }
 
     private func closePopover() {
@@ -537,6 +557,7 @@ private enum VampSyncCompanionState: Equatable {
 
 private struct VampSyncCompanionPopover: View {
     @ObservedObject var environment: HostAppEnvironment
+    let updater: VampSyncUpdater
     @ObservedObject private var permissionsViewModel: HostPermissionsViewModel
     @ObservedObject private var sessionCoordinator: HostSessionCoordinator
     let onClose: () -> Void
@@ -562,8 +583,9 @@ private struct VampSyncCompanionPopover: View {
         )
     }
 
-    init(environment: HostAppEnvironment, onClose: @escaping () -> Void) {
+    init(environment: HostAppEnvironment, updater: VampSyncUpdater, onClose: @escaping () -> Void) {
         self.environment = environment
+        self.updater = updater
         self.onClose = onClose
         _permissionsViewModel = ObservedObject(wrappedValue: environment.permissionsViewModel)
         _sessionCoordinator = ObservedObject(wrappedValue: environment.sessionCoordinator)
@@ -649,6 +671,7 @@ private struct VampSyncCompanionPopover: View {
             VampSyncCompanionFooter(
                 trustedCount: trustedPeers.count,
                 isRuntimeActive: isRuntimeActive,
+                updater: updater,
                 appearance: $appearance,
                 onRefresh: { Task { await refresh() } },
                 onRestart: restart,
@@ -1319,6 +1342,7 @@ private struct VampSyncCompanionDeviceRow: View {
 private struct VampSyncCompanionFooter: View {
     let trustedCount: Int
     let isRuntimeActive: Bool
+    @ObservedObject var updater: VampSyncUpdater
     @Binding var appearance: VampSyncAppearance
     let onRefresh: () -> Void
     let onRestart: () -> Void
@@ -1339,6 +1363,13 @@ private struct VampSyncCompanionFooter: View {
             Menu {
                 Button("Refresh status", action: onRefresh)
                 Button("Restart host", action: onRestart)
+                Divider()
+                Button("Check for Updates…", action: updater.checkForUpdates)
+                    .disabled(!updater.canCheckForUpdates)
+                Toggle("Check for updates automatically", isOn: Binding(
+                    get: { updater.automaticallyChecksForUpdates },
+                    set: updater.setAutomaticallyChecksForUpdates
+                ))
                 Divider()
                 ForEach(VampSyncAppearance.allCases) { option in
                     Button { appearance = option } label: {

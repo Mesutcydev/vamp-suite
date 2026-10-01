@@ -13,6 +13,11 @@
   <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>com.mesutcy.remotedesktop.minhost</string><key>CFBundleURLSchemes</key><array><string>vampminihost</string></array></dict></array>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>LSUIElement</key><true/>
+  <key>SUFeedURL</key><string>https://thevamp.app/sync/appcast.xml</string>
+  <key>SUPublicEDKey</key><string>f/g5Jkw3otjwnLmVD5ojbQgsX8oMTJT6nGPhYVxXM08=</string>
+  <key>SUScheduledCheckInterval</key><integer>86400</integer>
+  <key>SUAutomaticallyUpdate</key><false/>
+  <key>SUVerifyUpdateBeforeExtraction</key><true/>
   <key>NSBonjourServices</key><array><string>_screenharbor._tcp</string><string>_screenharbor._tcp.</string></array>
   <key>NSLocalNetworkUsageDescription</key><string>Vamp Sync advertises privately so Vamp Control and Vamp Stream can discover and connect to this Mac.</string>
   <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Vamp contributors.</string>

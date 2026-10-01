@@ -121,6 +121,7 @@ Sources/ClientiOS/StreamingPaywallView.swift
 appstore-screenshots/
 screenshots/
 project.yml
+!project.yml
 macclient-project.yml
 macclient-appstore-project.yml
 machost-appstore-project.yml
@@ -142,6 +143,13 @@ scripts/*
 !RemoteDesktopToolApps.xcodeproj/
 RemoteDesktopToolApps.xcodeproj/*
 !RemoteDesktopToolApps.xcodeproj/project.pbxproj
+!RemoteDesktopToolApps.xcodeproj/project.xcworkspace/
+RemoteDesktopToolApps.xcodeproj/project.xcworkspace/*
+!RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/
+RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/*
+!RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 !RemoteDesktopToolApps.xcodeproj/xcshareddata/
 RemoteDesktopToolApps.xcodeproj/xcshareddata/*
 !RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/
@@ -183,6 +191,7 @@ Sources/HostApp/Assets.xcassets/.DS_Store
 !scripts/package-vamp-stream-ios.sh
 !scripts/verify-vamp-stream-ipa.py
 !scripts/package-vamp-mini-host.sh
+!scripts/release-vamp-sync.sh
 !scripts/install-vamp-cli.command
 !scripts/vamp
 !scripts/vamp-linux-host

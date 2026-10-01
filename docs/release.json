@@ -18,12 +18,12 @@
       "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-suite-2.3.0-build-55/VampTerminal-iOS-2.3.0-build-50-altstore-unsigned.ipa.sha256"
     },
     "vamp-mini-host-dmg": {
-      "name": "VampSync-macOS-2.3.0-build-71-adhoc.dmg",
-      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-2.3.0-build-71/VampSync-macOS-2.3.0-build-71-adhoc.dmg",
-      "label": "2.3.0 \u00b7 build 71",
-      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-sync-2.3.0-build-71",
-      "tag": "vamp-sync-2.3.0-build-71",
-      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-2.3.0-build-71/VampSync-macOS-2.3.0-build-71-adhoc.dmg.sha256"
+      "name": "VampSync-macOS-2.3.1-build-72-notarized.dmg",
+      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-2.3.1-build-72/VampSync-macOS-2.3.1-build-72-notarized.dmg",
+      "label": "2.3.1 \u00b7 build 72",
+      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-sync-2.3.1-build-72",
+      "tag": "vamp-sync-2.3.1-build-72",
+      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-2.3.1-build-72/VampSync-macOS-2.3.1-build-72-notarized.dmg.sha256"
     },
     "vamp-control-macos": {
       "name": "VampControl-macOS-2.3.0-build-57-adhoc.dmg",

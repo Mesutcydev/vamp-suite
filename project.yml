@@ -1,0 +1,404 @@
+# Active distribution target: VampMiniHost (Vamp Sync).
+# Historical host/terminal targets are retained for shared-source verification.
+# SwiftTerm 1.18.0 avoids the iOS-incompatible build-tool plugin in 1.19.0.
+---
+name: RemoteDesktopToolApps
+options:
+  minimumXcodeGenVersion: 2.45.0
+  deploymentTarget:
+    iOS: '18.0'
+    macOS: '13.0'
+  createIntermediateGroups: true
+  groupSortPosition: top
+packages:
+  RemoteDesktopTool:
+    path: "."
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    exactVersion: 1.18.0
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    CURRENT_PROJECT_VERSION: 52
+targets:
+  iOSRemoteApp:
+    type: application
+    platform: iOS
+    deploymentTarget: '18.0'
+    sources:
+    - path: Sources/ClientiOS
+      excludes:
+      - TerminalWorkspaceViewModel.swift
+      - VampTerminalGuideView.swift
+      - VampTerminalHomeView.swift
+      - VampTerminalPaneView.swift
+      - VampTerminalWorkspaceView.swift
+      - StreamingPaywallView.swift
+      - AppStreamBrowserView.swift
+    info:
+      path: Configuration/ClientiOS-Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleDisplayName: Vamp Control
+        NSHumanReadableCopyright: Copyright © 2026 Mesut Cy. All rights reserved.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+        UISupportedInterfaceOrientations:
+        - UIInterfaceOrientationPortrait
+        - UIInterfaceOrientationLandscapeLeft
+        - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+        - UIInterfaceOrientationPortrait
+        - UIInterfaceOrientationPortraitUpsideDown
+        - UIInterfaceOrientationLandscapeLeft
+        - UIInterfaceOrientationLandscapeRight
+        NSLocalNetworkUsageDescription: This app uses your local network to discover
+          and connect to Vamp Host Macs.
+        NSSpeechRecognitionUsageDescription: Transcribes your voice on-device so you
+          can dictate text into the remote Mac.
+        NSMicrophoneUsageDescription: Captures your voice for on-device dictation
+          into the remote Mac.
+        NSBonjourServices:
+        - _screenharbor._tcp
+        - _screenharbor._tcp.
+        UIBackgroundModes:
+        - audio
+    settings:
+      base:
+        MARKETING_VERSION: 2.3.0
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.ios
+        PRODUCT_NAME: Vamp Control iOS
+        INFOPLIST_FILE: Configuration/ClientiOS-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Configuration/ClientiOS.entitlements
+        GENERATE_INFOPLIST_FILE: false
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: false
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        LAUNCH_SCREEN_IN_BUNDLE: true
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+    - package: RemoteDesktopTool
+      product: SharedModels
+    - package: RemoteDesktopTool
+      product: SharedProtocol
+    - package: RemoteDesktopTool
+      product: SharedUtilities
+    - package: RemoteDesktopTool
+      product: TransportWebRTC
+    - package: RemoteDesktopTool
+      product: Discovery
+    - package: RemoteDesktopTool
+      product: Diagnostics
+    - package: RemoteDesktopTool
+      product: Permissions
+    - package: RemoteDesktopTool
+      product: SharedUI
+    - package: SwiftTerm
+    - target: iOSRemoteLiveActivityExtension
+      embed: true
+  iOSRemoteLiveActivityExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: '16.1'
+    sources:
+    - path: Sources/ClientiOSLiveActivity
+    info:
+      path: Configuration/ClientiOSLiveActivity-Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleDisplayName: Remote Session
+        NSHumanReadableCopyright: Copyright © 2026 Mesut Cy. All rights reserved.
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        MARKETING_VERSION: 2.3.0
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.ios.liveactivity
+        PRODUCT_NAME: iOSRemoteLiveActivity
+        INFOPLIST_FILE: Configuration/ClientiOSLiveActivity-Info.plist
+        GENERATE_INFOPLIST_FILE: false
+        SKIP_INSTALL: true
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+    - package: RemoteDesktopTool
+      product: SharedModels
+  MacHostApp:
+    type: application
+    platform: macOS
+    deploymentTarget: '13.0'
+    sources:
+    - path: Sources/HostApp
+    - path: Sources/ClientiOS
+      includes:
+      - VampSplashView.swift
+    info:
+      path: Configuration/MacHost-Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHumanReadableCopyright: Copyright © 2026 Mesut Cy. All rights reserved.
+        NSLocalNetworkUsageDescription: This app advertises on your local network
+          so iOS remote clients can discover and connect to it.
+        NSBonjourServices:
+        - _screenharbor._tcp
+        - _screenharbor._tcp.
+        CFBundleURLTypes:
+        - CFBundleURLName: com.mesutcy.remotedesktop.host
+          CFBundleURLSchemes:
+          - vamphost
+    entitlements:
+      path: Configuration/MacHost-AppStore.entitlements
+      properties:
+        com.apple.security.hardened-process: true
+        com.apple.security.hardened-process.enhanced-security-version-string: '2'
+        com.apple.security.hardened-process.hardened-heap: true
+        com.apple.security.hardened-process.dyld-ro: true
+        com.apple.security.hardened-process.platform-restrictions-string: '2'
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+        - "$(DEVELOPMENT_TEAM).com.mesutcy.remotedesktop"
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
+        com.apple.security.device.audio-input: true
+    settings:
+      base:
+        MARKETING_VERSION: 2.3.0
+        CURRENT_PROJECT_VERSION: '53'
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.host
+        PRODUCT_NAME: Vamp Host
+        INFOPLIST_FILE: Configuration/MacHost-Info.plist
+        GENERATE_INFOPLIST_FILE: false
+        CODE_SIGN_ENTITLEMENTS: Configuration/MacHost-AppStore.entitlements
+        ENABLE_APP_INTENTS_METADATA_GENERATION: false
+        OTHER_LDFLAGS: "$(inherited) -framework AppIntents"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+      configs:
+        Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: MACHOST_APPSTORE
+    dependencies:
+    - package: RemoteDesktopTool
+      product: SharedModels
+    - package: RemoteDesktopTool
+      product: SharedProtocol
+    - package: RemoteDesktopTool
+      product: SharedUtilities
+    - package: RemoteDesktopTool
+      product: CaptureEngine
+    - package: RemoteDesktopTool
+      product: EncodeEngine
+    - package: RemoteDesktopTool
+      product: TransportWebRTC
+    - package: RemoteDesktopTool
+      product: InputControl
+    - package: RemoteDesktopTool
+      product: Permissions
+    - package: RemoteDesktopTool
+      product: Discovery
+    - package: RemoteDesktopTool
+      product: Diagnostics
+    - package: RemoteDesktopTool
+      product: HostWidgetShared
+    - package: RemoteDesktopTool
+      product: SharedUI
+  VampMiniHost:
+    type: application
+    platform: macOS
+    deploymentTarget: '13.0'
+    sources:
+    - path: Sources/HostApp
+    - path: Sources/ClientiOS
+      includes:
+      - VampSplashView.swift
+    - path: Resources/VampSync/ThirdPartyLicenses
+      type: folder
+      buildPhase: resources
+    - path: LICENSE
+      buildPhase: resources
+    - path: NOTICE
+      buildPhase: resources
+    - path: THIRD_PARTY_NOTICES.md
+      buildPhase: resources
+    settings:
+      base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: VAMP_MINI_HOST
+        MARKETING_VERSION: 2.3.1
+        CURRENT_PROJECT_VERSION: '72'
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.minhost
+        PRODUCT_NAME: Vamp Sync
+        INFOPLIST_FILE: Configuration/VampMiniHost-Info.plist
+        GENERATE_INFOPLIST_FILE: false
+        CODE_SIGN_ENTITLEMENTS: Configuration/VampMiniHost.entitlements
+        ENABLE_APP_INTENTS_METADATA_GENERATION: false
+        OTHER_LDFLAGS: "$(inherited) -framework AppIntents"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: true
+    dependencies:
+    - package: Sparkle
+      product: Sparkle
+    - package: RemoteDesktopTool
+      product: SharedModels
+    - package: RemoteDesktopTool
+      product: SharedProtocol
+    - package: RemoteDesktopTool
+      product: SharedUtilities
+    - package: RemoteDesktopTool
+      product: CaptureEngine
+    - package: RemoteDesktopTool
+      product: EncodeEngine
+    - package: RemoteDesktopTool
+      product: TransportWebRTC
+    - package: RemoteDesktopTool
+      product: InputControl
+    - package: RemoteDesktopTool
+      product: Permissions
+    - package: RemoteDesktopTool
+      product: Discovery
+    - package: RemoteDesktopTool
+      product: Diagnostics
+    - package: RemoteDesktopTool
+      product: HostWidgetShared
+    - package: RemoteDesktopTool
+      product: SharedUI
+  VampTerminalHost:
+    type: application
+    platform: macOS
+    deploymentTarget: '13.0'
+    sources:
+    - path: Sources/HostApp
+    - path: Sources/ClientiOS
+      includes:
+      - VampSplashView.swift
+    settings:
+      base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: VAMP_TERMINAL_HOST
+        MARKETING_VERSION: 2.3.0
+        CURRENT_PROJECT_VERSION: '50'
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.terminalhost
+        PRODUCT_NAME: Vamp Terminal Host
+        INFOPLIST_FILE: Configuration/VampTerminalHost-Info.plist
+        GENERATE_INFOPLIST_FILE: false
+        CODE_SIGN_ENTITLEMENTS: Configuration/VampTerminalHost.entitlements
+        ENABLE_APP_INTENTS_METADATA_GENERATION: false
+        OTHER_LDFLAGS: "$(inherited) -framework AppIntents"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+    - package: RemoteDesktopTool
+      product: SharedModels
+    - package: RemoteDesktopTool
+      product: SharedProtocol
+    - package: RemoteDesktopTool
+      product: SharedUtilities
+    - package: RemoteDesktopTool
+      product: CaptureEngine
+    - package: RemoteDesktopTool
+      product: EncodeEngine
+    - package: RemoteDesktopTool
+      product: TransportWebRTC
+    - package: RemoteDesktopTool
+      product: InputControl
+    - package: RemoteDesktopTool
+      product: Permissions
+    - package: RemoteDesktopTool
+      product: Discovery
+    - package: RemoteDesktopTool
+      product: Diagnostics
+    - package: RemoteDesktopTool
+      product: HostWidgetShared
+    - package: RemoteDesktopTool
+      product: SharedUI
+  VampTerminalApp:
+    type: application
+    platform: iOS
+    deploymentTarget: '18.0'
+    sources:
+    - path: Sources/VampTerminal
+    - path: Sources/ClientiOS
+      excludes:
+      - ClientiOSApp.swift
+      - Views
+      - Onboarding
+      - AppStreamBrowserView.swift
+      - StreamingPaywallView.swift
+      - PrivacyInfo.xcprivacy
+    settings:
+      base:
+        MARKETING_VERSION: 2.3.0
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.terminal
+        PRODUCT_NAME: Vamp Terminal
+        INFOPLIST_FILE: Configuration/VampTerminal-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Configuration/VampTerminal.entitlements
+        GENERATE_INFOPLIST_FILE: false
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: false
+        CODE_SIGN_STYLE: Automatic
+        CURRENT_PROJECT_VERSION: '50'
+    dependencies:
+    - package: RemoteDesktopTool
+      product: SharedModels
+    - package: RemoteDesktopTool
+      product: SharedProtocol
+    - package: RemoteDesktopTool
+      product: SharedUtilities
+    - package: RemoteDesktopTool
+      product: TransportWebRTC
+    - package: RemoteDesktopTool
+      product: Discovery
+    - package: RemoteDesktopTool
+      product: Diagnostics
+    - package: RemoteDesktopTool
+      product: Permissions
+    - package: RemoteDesktopTool
+      product: SharedUI
+    - package: SwiftTerm
+schemes:
+  iOSRemote:
+    build:
+      targets:
+        iOSRemoteApp: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  MacHost:
+    build:
+      targets:
+        MacHostApp: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  VampMiniHost:
+    build:
+      targets:
+        VampMiniHost: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  VampTerminalHost:
+    build:
+      targets:
+        VampTerminalHost: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  VampTerminalApp:
+    build:
+      targets:
+        VampTerminalApp: all
+    run:
+      config: Debug
+    archive:
+      config: Release
