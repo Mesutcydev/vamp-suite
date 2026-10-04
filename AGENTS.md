@@ -169,3 +169,33 @@ changes. Verify the IPA checksum and manifest before sideloading.
 
 Never weaken pairing approval, replay protection, session-ID validation, or
 terminal-ID validation for convenience.
+
+## Cursor Cloud specific instructions
+
+The Cloud Agent VM is **Linux with no Xcode and no Swift toolchain**. The Apple
+products cannot be built or tested here: `Package.swift` declares only
+`.macOS`/`.iOS` platforms and the sources depend pervasively on Apple frameworks
+(AppKit/UIKit/ScreenCaptureKit/…). Therefore `swift test`, all three
+`xcodebuild` schemes (`MacHost`, `VampTerminalHost`, `VampTerminalApp`),
+`MacClient`, and `scripts/package-vamp-terminal-ios.sh` only run on the macOS CI
+runners (see `.github/workflows/ci.yml`). Do not attempt them on the Cloud VM.
+
+The Linux-runnable scope is the **Vamp Terminal Linux Host** (`linux-host/`) and
+its two test suites. These use only the Python 3 and Node standard libraries
+(both preinstalled); there is nothing to `pip`/`npm install`.
+
+- Linux host unit tests: `python3 -m unittest discover -s Tests -p 'test_*.py' -v`
+- Browser VT regression: `node Tests/BrowserTerminalVTTests.mjs`
+- Run the host: `python3 linux-host/vamp_terminal_host.py` (serves loopback
+  `http://127.0.0.1:9475/`). These are the same Linux checks CI runs in its
+  `host-scripts` job.
+
+Non-obvious runtime notes for the Linux host:
+- The six-digit **pairing code is printed only to the host process stdout** at
+  startup; read it from that terminal to connect a browser. It is a one-time
+  approval and **rotates after each successful pairing**, so re-read stdout if
+  you pair again.
+- The browser sends the bearer token in the `Sec-WebSocket-Protocol` handshake
+  header (`vamp-auth`), never in the URL.
+- The host binds loopback only by design; for off-box access use
+  `tailscale serve` rather than a public bind.
