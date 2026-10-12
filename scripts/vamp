@@ -1,0 +1,828 @@
+#!/usr/bin/env bash
+# vamp — Terminal control for the Vamp Host macOS app.
+#
+# Usage:
+#   vamp start|stop|restart|open|status|ensure|path|version|pending|wait-pending|terminal|browser
+#        approve-pairing|approve-connection|reject-pairing|reject-connection [--json]
+#        approve-pairing|approve-connection [--fingerprint <hex>]
+#        wait-pending [--timeout <seconds>]
+#
+# Exit codes:
+#   0  success / host ready
+#   1  app not installed
+#   2  installed but not advertising
+#   3  permissions or setup required
+#   4  unknown command / bad usage
+#   5  no pending pairing/connection request
+#   6  approval action did not clear the pending request
+#   7  pending fingerprint does not match --fingerprint
+#   8  wait-pending timed out
+
+set -euo pipefail
+
+CLI_NAME="${VAMP_CLI_NAME:-vamp}"
+FULL_BUNDLE_ID="com.mesutcy.remotedesktop.host"
+LIGHT_BUNDLE_ID="com.mesutcy.remotedesktop.terminalhost"
+HOST_BUNDLE_ID_OVERRIDE="${VAMP_HOST_BUNDLE_ID:-}"
+HOST_DISPLAY_OVERRIDE="${VAMP_HOST_DISPLAY_NAME:-}"
+URL_SCHEME_OVERRIDE="${VAMP_HOST_URL_SCHEME:-}"
+BUNDLE_ID="${HOST_BUNDLE_ID_OVERRIDE:-$FULL_BUNDLE_ID}"
+URL_SCHEME="${URL_SCHEME_OVERRIDE:-vamphost}"
+if [[ -n "${VAMP_HOST_SNAPSHOT_FILE:-}" ]]; then
+  SNAPSHOT_FILE="$VAMP_HOST_SNAPSHOT_FILE"
+elif [[ "$HOST_BUNDLE_ID_OVERRIDE" == "$LIGHT_BUNDLE_ID" || "$0" == *"/Vamp Terminal Host.app/Contents/Resources/vamp" ]]; then
+  SNAPSHOT_FILE="${HOME}/Library/Application Support/Vamp Terminal Host/host.widget.snapshot.json"
+else
+  SNAPSHOT_FILE="${HOME}/Library/Application Support/Vamp Host/host.widget.snapshot.json"
+fi
+APP_DISPLAY_NAME="${HOST_DISPLAY_OVERRIDE:-Vamp Host}"
+SIGNALING_PORT=9471
+JSON=0
+WAIT_PENDING_TIMEOUT=60
+APPROVE_FINGERPRINT=""
+
+usage() {
+  sed -n '3,19p' "$0" | sed 's/^# \{0,1\}//'
+  echo ""
+  echo "Commands:"
+  echo "  start                Launch app (if needed) and start the host runtime"
+  echo "  stop                 Stop the host runtime"
+  echo "  restart              Restart the host runtime"
+  echo "  open                 Launch the app without sending a runtime action"
+  echo "  status               Print host phase and connect address"
+  echo "  ensure               Start host if needed; exit 0 only when ready"
+  echo "  path                 Print resolved .app bundle path"
+  echo "  version              Print installed app version and build number"
+  echo "  pending              Print the pending trust request (name, fingerprint, deadline)"
+  echo "  wait-pending         Block until a pending request appears"
+  echo "  approve-pairing      Approve a pending request (requires --fingerprint)"
+  echo "  approve-connection   Approve a pending request (requires --fingerprint)"
+  echo "  reject-pairing       Reject the pending device pairing request"
+  echo "  reject-connection    Reject the pending client connection request"
+  echo "  terminal list         List tmux/screen sessions that Vamp Terminal can resume"
+  echo "  terminal start        Create or attach a persistent tmux shell"
+  echo "  terminal attach       Attach a named tmux session"
+  echo "  terminal agent        Start or resume a tmux-backed coding agent"
+  echo "  browser command       Print the private Tailscale Serve command"
+  echo "  browser serve         Expose the loopback Safari terminal through Tailscale"
+  echo "  browser status        Show the current Tailscale Serve configuration"
+  echo ""
+  echo "Options:"
+  echo "  --json               Machine-readable output for status/ensure/approval commands"
+  echo "  --fingerprint <hex>  Approve only when the pending fingerprint matches"
+  echo "  --timeout <seconds>  Timeout for wait-pending (default: 60)"
+}
+
+log() { [[ "$JSON" -eq 1 ]] || printf '%s\n' "$*"; }
+err() { printf '%s\n' "$*" >&2; }
+
+resolve_app_path() {
+  local candidate candidate_bundle
+
+  # When both products are installed, an explicit bundle selection must win
+  # over the conventional-path order. The old implementation always returned
+  # Vamp Host first, so `VAMP_HOST_BUNDLE_ID=...terminalhost vamp pending`
+  # silently inspected the wrong app and could never approve the light host.
+  if [[ -n "$HOST_BUNDLE_ID_OVERRIDE" ]]; then
+    for candidate in "/Applications/Vamp Host.app" "/Applications/Vamp Terminal Host.app" "/Applications/MacPair Host.app" "/Applications/ScreenHarbor Host.app"; do
+      if [[ -d "$candidate" ]]; then
+        candidate_bundle=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$candidate/Contents/Info.plist" 2>/dev/null || true)
+        if [[ "$candidate_bundle" == "$HOST_BUNDLE_ID_OVERRIDE" ]]; then
+          printf '%s' "$candidate"
+          return 0
+        fi
+      fi
+    done
+  fi
+
+  # A CLI launched from inside the light app should address that app even when
+  # the full Vamp Host is installed alongside it. This keeps the shipped
+  # terminal-only host self-contained while preserving the full-host default
+  # for a standalone `/usr/local/bin/vamp` install.
+  if [[ "$0" == *"/Vamp Terminal Host.app/Contents/Resources/vamp" && -d "/Applications/Vamp Terminal Host.app" ]]; then
+    BUNDLE_ID="$LIGHT_BUNDLE_ID"
+    [[ -n "$URL_SCHEME_OVERRIDE" ]] || URL_SCHEME="vampterminalhost"
+    [[ -n "$HOST_DISPLAY_OVERRIDE" ]] || APP_DISPLAY_NAME="Vamp Terminal Host"
+    printf '%s' "/Applications/Vamp Terminal Host.app"
+    return 0
+  fi
+
+  # Direct-download installs are often not indexed by Spotlight yet. Prefer the
+  # conventional app locations before falling back to metadata search.
+  for candidate in "/Applications/Vamp Host.app" "/Applications/Vamp Terminal Host.app" "/Applications/MacPair Host.app" "/Applications/ScreenHarbor Host.app"; do
+    if [[ -d "$candidate" ]]; then
+      if [[ "$candidate" == "/Applications/Vamp Terminal Host.app" && -z "$HOST_BUNDLE_ID_OVERRIDE" ]]; then
+        BUNDLE_ID="$LIGHT_BUNDLE_ID"
+        [[ -n "$URL_SCHEME_OVERRIDE" ]] || URL_SCHEME="vampterminalhost"
+        [[ -n "$HOST_DISPLAY_OVERRIDE" ]] || APP_DISPLAY_NAME="Vamp Terminal Host"
+      fi
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  candidate=$(mdfind "kMDItemCFBundleIdentifier == '$BUNDLE_ID'" 2>/dev/null | head -1 || true)
+  if [[ -n "$candidate" && -d "$candidate" ]]; then
+    printf '%s' "$candidate"
+    return 0
+  fi
+
+  # Prefer the full Vamp Host when both products are installed, but let the
+  # same `vamp` CLI work with the light terminal-only host on a small machine.
+  if [[ -z "$HOST_BUNDLE_ID_OVERRIDE" && "$BUNDLE_ID" == "$FULL_BUNDLE_ID" ]]; then
+    candidate=$(mdfind "kMDItemCFBundleIdentifier == '$LIGHT_BUNDLE_ID'" 2>/dev/null | head -1 || true)
+    if [[ -n "$candidate" && -d "$candidate" ]]; then
+      BUNDLE_ID="$LIGHT_BUNDLE_ID"
+      [[ -n "$URL_SCHEME_OVERRIDE" ]] || URL_SCHEME="vampterminalhost"
+      [[ -n "$HOST_DISPLAY_OVERRIDE" ]] || APP_DISPLAY_NAME="Vamp Terminal Host"
+      printf '%s' "$candidate"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+# Command substitution runs resolve_app_path in a subshell, so identity
+# changes made while selecting the light app do not reach the caller. Reapply
+# the selected app's identity after every resolved path so status, actions,
+# and the snapshot file all address the same installed host.
+apply_resolved_app_identity() {
+  local app_path="$1"
+  if [[ "$app_path" == *"/Vamp Terminal Host.app" ]]; then
+    BUNDLE_ID="$LIGHT_BUNDLE_ID"
+    [[ -n "$URL_SCHEME_OVERRIDE" ]] || URL_SCHEME="vampterminalhost"
+    [[ -n "$HOST_DISPLAY_OVERRIDE" ]] || APP_DISPLAY_NAME="Vamp Terminal Host"
+    if [[ -z "${VAMP_HOST_SNAPSHOT_FILE:-}" ]]; then
+      SNAPSHOT_FILE="${HOME}/Library/Application Support/Vamp Terminal Host/host.widget.snapshot.json"
+    fi
+  else
+    BUNDLE_ID="$FULL_BUNDLE_ID"
+    [[ -n "$URL_SCHEME_OVERRIDE" ]] || URL_SCHEME="vamphost"
+    [[ -n "$HOST_DISPLAY_OVERRIDE" ]] || APP_DISPLAY_NAME="Vamp Host"
+    if [[ -z "${VAMP_HOST_SNAPSHOT_FILE:-}" ]]; then
+      SNAPSHOT_FILE="${HOME}/Library/Application Support/Vamp Host/host.widget.snapshot.json"
+    fi
+  fi
+}
+
+is_running() {
+  pgrep -x "$APP_DISPLAY_NAME" >/dev/null 2>&1 && return 0
+  local app_path
+  app_path=$(resolve_app_path 2>/dev/null || true)
+  [[ -n "$app_path" ]] && apply_resolved_app_identity "$app_path"
+  [[ -n "$app_path" ]] && pgrep -f "$app_path" >/dev/null 2>&1
+}
+
+open_app() {
+  local app_path
+  app_path=$(resolve_app_path) || { err "$APP_DISPLAY_NAME is not installed (bundle: $BUNDLE_ID)"; exit 1; }
+  apply_resolved_app_identity "$app_path"
+  open -a "$app_path"
+}
+
+open_action() {
+  local action="$1" fingerprint="${2:-}"
+  open_app
+  if [[ "$action" == approve-pairing || "$action" == approve-connection ]]; then
+    if [[ -n "$fingerprint" ]]; then
+      write_trust_approval "$fingerprint"
+    fi
+    open "${URL_SCHEME}://action/${action}"
+    return
+  fi
+  if [[ -n "$fingerprint" ]]; then
+    open "${URL_SCHEME}://action/${action}?fingerprint=${fingerprint}"
+  else
+    open "${URL_SCHEME}://action/${action}"
+  fi
+}
+
+write_trust_approval() {
+  local fingerprint="$1"
+  local trust_file
+  trust_file="$(dirname "$SNAPSHOT_FILE")/host.widget.pendingTrust.json"
+  mkdir -p "$(dirname "$trust_file")"
+  python3 - "$trust_file" "$fingerprint" <<'PY'
+import json, os, sys, time
+path, fingerprint = sys.argv[1], sys.argv[2].strip().lower()
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump({"fingerprint": fingerprint, "createdAt": time.time()}, handle)
+os.chmod(path, 0o600)
+PY
+}
+
+read_snapshot_field() {
+  local field="$1"
+  [[ -f "$SNAPSHOT_FILE" ]] || return 1
+  python3 - "$SNAPSHOT_FILE" "$field" <<'PY'
+import json, sys
+path, field = sys.argv[1], sys.argv[2]
+with open(path, encoding="utf-8") as f:
+    data = json.load(f)
+value = data.get(field)
+if value is None:
+    sys.exit(1)
+if isinstance(value, str):
+    print(value)
+else:
+    print(json.dumps(value))
+PY
+}
+
+read_pending_json() {
+  read_snapshot_field pendingPairingRequest 2>/dev/null || true
+}
+
+has_pending_pairing_request() {
+  [[ -f "$SNAPSHOT_FILE" ]] || return 1
+  python3 - "$SNAPSHOT_FILE" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    data = json.load(f)
+pending = data.get("pendingPairingRequest")
+sys.exit(0 if isinstance(pending, dict) else 1)
+PY
+}
+
+fingerprint_matches() {
+  local actual="$1" expected="$2"
+  python3 - "$actual" "$expected" <<'PY'
+import sys
+actual = sys.argv[1].strip().lower()
+expected = sys.argv[2].strip().lower()
+sys.exit(0 if actual == expected else 1)
+PY
+}
+
+print_pending_request() {
+  local pending_json="$1"
+  python3 - "$pending_json" "$JSON" <<'PY'
+import json, sys
+pending = json.loads(sys.argv[1])
+as_json = sys.argv[2] == "1"
+payload = {
+    "displayName": pending.get("displayName"),
+    "fingerprint": pending.get("fingerprint"),
+    "deadline": pending.get("deadline"),
+}
+if as_json:
+    print(json.dumps(payload, indent=2))
+else:
+    print(f"displayName: {payload['displayName']}")
+    print(f"fingerprint: {payload['fingerprint']}")
+    print(f"deadline: {payload['deadline']}")
+PY
+}
+
+port_listening() {
+  lsof -nP -iTCP:"$SIGNALING_PORT" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+bonjour_advertising() {
+  local tmp pid
+  tmp=$(mktemp)
+  dns-sd -B _screenharbor._tcp local >"$tmp" 2>&1 &
+  pid=$!
+  sleep 2
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  grep -q "_screenharbor._tcp" "$tmp"
+  local rc=$?
+  rm -f "$tmp"
+  return $rc
+}
+
+collect_status() {
+  local app_path="" installed=0 running=0 phase="unknown" status_title="" host_name="" primary_address="" address_label=""
+  local pending_pairing_json=""
+  if app_path=$(resolve_app_path 2>/dev/null); then
+    installed=1
+    apply_resolved_app_identity "$app_path"
+  fi
+  if is_running; then
+    running=1
+  fi
+  if [[ -f "$SNAPSHOT_FILE" ]]; then
+    phase=$(read_snapshot_field phase 2>/dev/null || echo "unknown")
+    status_title=$(read_snapshot_field statusTitle 2>/dev/null || true)
+    host_name=$(read_snapshot_field hostName 2>/dev/null || true)
+    primary_address=$(read_snapshot_field primaryAddress 2>/dev/null || true)
+    address_label=$(read_snapshot_field addressLabel 2>/dev/null || true)
+    pending_pairing_json=$(read_pending_json)
+  fi
+  local advertising=0
+  if port_listening || bonjour_advertising; then
+    advertising=1
+  fi
+  if [[ "$phase" == "ready" || "$phase" == "connecting" || "$phase" == "live" ]]; then
+    advertising=1
+  fi
+
+  if [[ "$JSON" -eq 1 ]]; then
+    python3 - "$installed" "$running" "$phase" "$status_title" "$host_name" "$primary_address" "$address_label" "$advertising" "$app_path" "$pending_pairing_json" "$BUNDLE_ID" <<'PY'
+import json, sys
+installed, running, phase, status_title, host_name, primary_address, address_label, advertising, app_path, pending_pairing_json, bundle_id = sys.argv[1:]
+pending_pairing_request = None
+if pending_pairing_json:
+    try:
+        pending_pairing_request = json.loads(pending_pairing_json)
+    except json.JSONDecodeError:
+        pending_pairing_request = None
+print(json.dumps({
+    "bundleId": bundle_id,
+    "installed": installed == "1",
+    "running": running == "1",
+    "phase": phase,
+    "statusTitle": status_title or None,
+    "hostName": host_name or None,
+    "primaryAddress": primary_address or None,
+    "addressLabel": address_label or None,
+    "advertising": advertising == "1",
+    "appPath": app_path or None,
+    "pendingPairingRequest": pending_pairing_request,
+}, indent=2))
+PY
+  else
+    if [[ "$installed" -eq 0 ]]; then
+      log "$APP_DISPLAY_NAME: not installed"
+      return 1
+    fi
+    log "$APP_DISPLAY_NAME: installed at $app_path"
+    log "Running: $([[ "$running" -eq 1 ]] && echo yes || echo no)"
+    log "Phase: $phase"
+    [[ -n "$status_title" ]] && log "Status: $status_title"
+    [[ -n "$host_name" ]] && log "Host name: $host_name"
+    [[ -n "$primary_address" ]] && log "Address: $primary_address ($address_label)"
+    log "Advertising: $([[ "$advertising" -eq 1 ]] && echo yes || echo no)"
+    if [[ -n "$pending_pairing_json" ]]; then
+      log "Pending pairing/connection:"
+      print_pending_request "$pending_pairing_json" | sed 's/^/  /'
+    fi
+  fi
+
+  [[ "$installed" -eq 1 ]] || return 1
+  if [[ "$phase" == "setup" ]]; then
+    return 3
+  fi
+  if [[ "$advertising" -eq 1 || "$phase" == "ready" || "$phase" == "connecting" || "$phase" == "live" ]]; then
+    return 0
+  fi
+  if [[ "$running" -eq 1 ]]; then
+    return 2
+  fi
+  return 2
+}
+
+cmd_status() {
+  collect_status
+}
+
+cmd_ensure() {
+  local rc=0
+  collect_status || rc=$?
+  if [[ "$rc" -eq 1 ]]; then
+    exit 1
+  fi
+  if [[ "$rc" -eq 0 ]]; then
+    exit 0
+  fi
+  if [[ "$rc" -eq 3 ]]; then
+    open_app
+    exit 3
+  fi
+  open_action start
+  local attempt
+  for attempt in $(seq 1 15); do
+    sleep 1
+    collect_status && exit 0
+    rc=$?
+    [[ "$rc" -eq 3 ]] && exit 3
+  done
+  exit 2
+}
+
+cmd_version() {
+  local app_path version build
+  app_path=$(resolve_app_path) || { err "$APP_DISPLAY_NAME is not installed (bundle: $BUNDLE_ID)"; exit 1; }
+  apply_resolved_app_identity "$app_path"
+  version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app_path/Contents/Info.plist" 2>/dev/null || true)
+  build=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$app_path/Contents/Info.plist" 2>/dev/null || true)
+  if [[ -z "$version" || -z "$build" ]]; then
+    err "Could not read version from $app_path/Contents/Info.plist"
+    exit 1
+  fi
+  if [[ "$JSON" -eq 1 ]]; then
+    python3 - "$version" "$build" "$app_path" <<'PY'
+import json, sys
+print(json.dumps({
+    "version": sys.argv[1],
+    "build": sys.argv[2],
+    "appPath": sys.argv[3],
+}, indent=2))
+PY
+  else
+    log "$APP_DISPLAY_NAME $version ($build)"
+    log "$app_path"
+  fi
+}
+
+cmd_pending() {
+  local pending_json
+  pending_json=$(read_pending_json)
+  if [[ -z "$pending_json" ]]; then
+    if [[ "$JSON" -eq 1 ]]; then
+      python3 - <<'PY'
+import json
+print(json.dumps({"ok": False, "error": "No pending pairing/connection request"}, indent=2))
+PY
+    else
+      err "No pending pairing/connection request"
+    fi
+    exit 5
+  fi
+  print_pending_request "$pending_json"
+}
+
+cmd_wait_pending() {
+  local timeout="$1" elapsed=0 pending_json=""
+  while [[ "$elapsed" -lt "$timeout" ]]; do
+    pending_json=$(read_pending_json)
+    if [[ -n "$pending_json" ]]; then
+      if [[ "$JSON" -eq 1 ]]; then
+        python3 - "$pending_json" "$elapsed" <<'PY'
+import json, sys
+pending = json.loads(sys.argv[1])
+elapsed = int(sys.argv[2])
+print(json.dumps({
+    "ok": True,
+    "waitedSeconds": elapsed,
+    "pendingPairingRequest": pending,
+}, indent=2))
+PY
+      else
+        print_pending_request "$pending_json"
+      fi
+      exit 0
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
+  if [[ "$JSON" -eq 1 ]]; then
+    python3 - "$timeout" <<'PY'
+import json, sys
+print(json.dumps({
+    "ok": False,
+    "error": f"No pending request within {sys.argv[1]}s",
+    "timeoutSeconds": int(sys.argv[1]),
+}, indent=2))
+PY
+  else
+    err "No pending request within ${timeout}s"
+  fi
+  exit 8
+}
+
+cmd_resolve_request() {
+  local action="$1" label="$2" expected_fingerprint="${3:-}"
+  local pending_json actual_fingerprint=""
+
+  if ! has_pending_pairing_request; then
+    if [[ "$JSON" -eq 1 ]]; then
+      python3 - "$label" <<'PY'
+import json, sys
+print(json.dumps({"ok": False, "error": f"No pending {sys.argv[1]} request"}, indent=2))
+PY
+    else
+      err "No pending $label request"
+    fi
+    exit 5
+  fi
+
+  # Approving a peer without checking its fingerprint defeats the trust model:
+  # a bare `vamp approve-pairing` blindly approves whatever request is pending,
+  # including one an attacker raced in. Require --fingerprint for every approve
+  # action so approval is always bound to a fingerprint the operator verified.
+  case "$action" in
+    approve-*)
+      if [[ -z "$expected_fingerprint" ]]; then
+        if [[ "$JSON" -eq 1 ]]; then
+          python3 - <<'PY'
+import json
+print(json.dumps({
+    "ok": False,
+    "error": "--fingerprint is required to approve. Run 'vamp pending' to read the fingerprint, then approve only when it matches.",
+}, indent=2))
+PY
+        else
+          err "--fingerprint is required to approve. Run 'vamp pending' to read the fingerprint, then approve only when it matches."
+        fi
+        exit 2
+      fi
+      ;;
+  esac
+
+  if [[ -n "$expected_fingerprint" ]]; then
+    pending_json=$(read_pending_json)
+    actual_fingerprint=$(python3 - "$pending_json" <<'PY'
+import json, sys
+pending = json.loads(sys.argv[1])
+print(pending.get("fingerprint", ""))
+PY
+)
+    if ! fingerprint_matches "$actual_fingerprint" "$expected_fingerprint"; then
+      if [[ "$JSON" -eq 1 ]]; then
+        python3 - "$expected_fingerprint" "$actual_fingerprint" <<'PY'
+import json, sys
+print(json.dumps({
+    "ok": False,
+    "error": "Pending fingerprint does not match --fingerprint",
+    "expected": sys.argv[1],
+    "actual": sys.argv[2] or None,
+}, indent=2))
+PY
+      else
+        err "Pending fingerprint does not match --fingerprint"
+        err "  expected: $expected_fingerprint"
+        err "  actual:   ${actual_fingerprint:-<missing>}"
+      fi
+      exit 7
+    fi
+  fi
+
+  open_action "$action" "$expected_fingerprint"
+
+  local attempt
+  for attempt in $(seq 1 10); do
+    sleep 0.5
+    if ! has_pending_pairing_request; then
+      if [[ "$JSON" -eq 1 ]]; then
+        python3 - "$label" "$action" <<'PY'
+import json, sys
+print(json.dumps({"ok": True, "action": sys.argv[2], "request": sys.argv[1]}, indent=2))
+PY
+      else
+        log "Resolved pending $label request"
+      fi
+      exit 0
+    fi
+  done
+
+  if [[ "$JSON" -eq 1 ]]; then
+    python3 - "$label" "$action" <<'PY'
+import json, sys
+print(json.dumps({"ok": False, "error": f"Pending {sys.argv[1]} request still active after {sys.argv[2]}", "action": sys.argv[2]}, indent=2))
+PY
+  else
+    err "Pending $label request is still active"
+  fi
+  exit 6
+}
+
+terminal_usage() {
+  cat <<'EOF' | sed "s/\${CLI_NAME}/$CLI_NAME/g"
+Usage: ${CLI_NAME} terminal <command> [options]
+
+Commands:
+  list                                  List tmux and GNU screen sessions
+  start [--session <name>]              Create or attach a persistent tmux shell
+  attach <name>                         Attach an existing tmux session
+  agent <name> [--session <name>]       Start/resume one of the supported CLI agents
+
+Examples:
+  ${CLI_NAME} terminal start --session work
+  ${CLI_NAME} terminal agent claude --session claude
+  ${CLI_NAME} terminal agent opencode --session opencode
+  ${CLI_NAME} terminal agent qwen --session qwen
+  ${CLI_NAME} terminal agent gemini --session gemini
+  ${CLI_NAME} terminal attach work
+
+Start a session once on the Mac, then use Vamp Terminal → + → Attach / create
+tmux to resume it from an iPhone or iPad. tmux keeps the process alive while
+the mobile tab disconnects or changes network path.
+EOF
+}
+
+cmd_terminal() {
+  local action="${1:-help}"
+  shift || true
+
+  case "$action" in
+    help|-h|--help)
+      terminal_usage
+      ;;
+    list)
+      if command -v tmux >/dev/null 2>&1; then
+        echo "tmux sessions:"
+        tmux list-sessions 2>/dev/null || echo "  (none)"
+      else
+        echo "tmux: not installed"
+      fi
+      if command -v screen >/dev/null 2>&1; then
+        echo "screen sessions:"
+        screen -ls 2>/dev/null || true
+      else
+        echo "screen: not installed"
+      fi
+      ;;
+    start)
+      local session="vamp"
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --session)
+            shift || { err "--session requires a value"; exit 4; }
+            session="$1"
+            ;;
+          -h|--help) terminal_usage; return 0 ;;
+          *) err "Unknown terminal start option: $1"; terminal_usage; exit 4 ;;
+        esac
+        shift || true
+      done
+      command -v tmux >/dev/null 2>&1 || { err "tmux is required for persistent sessions"; exit 3; }
+      exec tmux new-session -A -s "$session"
+      ;;
+    attach)
+      local session="${1:-}"
+      [[ -n "$session" ]] || { err "terminal attach requires a session name"; terminal_usage; exit 4; }
+      command -v tmux >/dev/null 2>&1 || { err "tmux is required for persistent sessions"; exit 3; }
+      exec tmux attach-session -t "$session"
+      ;;
+    agent)
+      local agent="${1:-}"
+      shift || true
+      local session="$agent"
+      case "$agent" in
+        opencode|pi|commandcode|chatgpt|claude|kimi|qwen|codex|aider|grok|gemini) ;;
+        -h|--help|"") terminal_usage; return 0 ;;
+        *) err "Unsupported agent: $agent (use opencode, pi, commandcode, chatgpt, claude, kimi, qwen, codex, aider, grok, or gemini)"; exit 4 ;;
+      esac
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --session)
+            shift || { err "--session requires a value"; exit 4; }
+            session="$1"
+            ;;
+          -h|--help) terminal_usage; return 0 ;;
+          *) err "Unknown terminal agent option: $1"; terminal_usage; exit 4 ;;
+        esac
+        shift || true
+      done
+      command -v tmux >/dev/null 2>&1 || { err "tmux is required for persistent agent sessions"; exit 3; }
+      local launcher="$agent"
+      case "$agent" in
+        commandcode) launcher="cmd" ;;
+        chatgpt) launcher="codex" ;;
+      esac
+      exec tmux new-session -A -s "$session" -- "$launcher"
+      ;;
+    *)
+      err "Unknown terminal command: $action"
+      terminal_usage
+      exit 4
+      ;;
+  esac
+}
+
+browser_usage() {
+  cat <<'EOF' | sed "s/\${CLI_NAME}/$CLI_NAME/g"
+Usage: ${CLI_NAME} browser <command>
+
+Commands:
+  command                               Print the loopback-only Serve command
+  serve                                 Start Tailscale Serve for Safari control
+  status                                Show Tailscale Serve status
+
+The Mac host binds the browser terminal to 127.0.0.1:9475. Tailscale Serve
+keeps the HTTPS endpoint inside the tailnet; do not replace it with a public
+reverse proxy or port forward.
+EOF
+}
+
+cmd_browser() {
+  local action="${1:-command}"
+  shift || true
+  local tailscale=""
+  if command -v tailscale >/dev/null 2>&1; then
+    tailscale="$(command -v tailscale)"
+  elif [[ -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ]]; then
+    tailscale="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+  fi
+
+  case "$action" in
+    command)
+      [[ $# -eq 0 ]] || { err "browser command takes no options"; browser_usage; exit 4; }
+      echo "tailscale serve --bg http://127.0.0.1:9475"
+      ;;
+    serve)
+      [[ -n "$tailscale" ]] || { err "Tailscale CLI is not installed"; exit 3; }
+      exec "$tailscale" serve --bg "http://127.0.0.1:9475"
+      ;;
+    status)
+      [[ -n "$tailscale" ]] || { err "Tailscale CLI is not installed"; exit 3; }
+      exec "$tailscale" serve status
+      ;;
+    help|-h|--help)
+      browser_usage
+      ;;
+    *)
+      err "Unknown browser command: $action"
+      browser_usage
+      exit 4
+      ;;
+  esac
+}
+
+parse_common_options() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) JSON=1 ;;
+      -h|--help) usage; exit 0 ;;
+      *) return 1 ;;
+    esac
+    shift || true
+  done
+  return 0
+}
+
+parse_approve_options() {
+  APPROVE_FINGERPRINT=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) JSON=1 ;;
+      --fingerprint)
+        shift || { err "--fingerprint requires a value"; exit 4; }
+        APPROVE_FINGERPRINT="$1"
+        ;;
+      -h|--help) usage; exit 0 ;;
+      *) err "Unknown option: $1"; usage; exit 4 ;;
+    esac
+    shift || true
+  done
+}
+
+parse_wait_pending_options() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) JSON=1 ;;
+      --timeout)
+        shift || { err "--timeout requires a value"; exit 4; }
+        WAIT_PENDING_TIMEOUT="$1"
+        ;;
+      -h|--help) usage; exit 0 ;;
+      *) err "Unknown option: $1"; usage; exit 4 ;;
+    esac
+    shift || true
+  done
+}
+
+main() {
+  local cmd="${1:-}"
+  shift || true
+
+  local approve_fingerprint=""
+
+  case "$cmd" in
+    approve-pairing|approve-connection)
+      parse_approve_options "$@"
+      approve_fingerprint="$APPROVE_FINGERPRINT"
+      if [[ -z "$approve_fingerprint" ]]; then
+        err "Approval requires --fingerprint <64-character SHA-256 fingerprint>."
+        exit 7
+      fi
+      case "$cmd" in
+        approve-pairing) cmd_resolve_request approve-pairing "pairing" "$approve_fingerprint" ;;
+        approve-connection) cmd_resolve_request approve-connection "connection" "$approve_fingerprint" ;;
+      esac
+      ;;
+    reject-pairing|reject-connection)
+      parse_common_options "$@" || { err "Unknown option: $1"; usage; exit 4; }
+      case "$cmd" in
+        reject-pairing) cmd_resolve_request reject-pairing "pairing" ;;
+        reject-connection) cmd_resolve_request reject-connection "connection" ;;
+      esac
+      ;;
+    wait-pending)
+      parse_wait_pending_options "$@"
+      cmd_wait_pending "$WAIT_PENDING_TIMEOUT"
+      ;;
+    start)              parse_common_options "$@" || { err "Unknown option: $1"; usage; exit 4; }; open_action start ;;
+    stop)               parse_common_options "$@" || { err "Unknown option: $1"; usage; exit 4; }; open_action stop ;;
+    restart)            parse_common_options "$@" || { err "Unknown option: $1"; usage; exit 4; }; open_action restart ;;
+    open)               parse_common_options "$@" || { err "Unknown option: $1"; usage; exit 4; }; open_app ;;
+    path)
+      parse_common_options "$@" || { err "Unknown option: $1"; usage; exit 4; }
+      resolve_app_path || { err "$APP_DISPLAY_NAME is not installed"; exit 1; }
+      ;;
+    status)             parse_common_options "$@" || { err "Unknown option: $1"; usage; exit 4; }; cmd_status ;;
+    ensure)             parse_common_options "$@" || { err "Unknown option: $1"; usage; exit 4; }; cmd_ensure ;;
+    version)            parse_common_options "$@" || { err "Unknown option: $1"; usage; exit 4; }; cmd_version ;;
+    pending)            parse_common_options "$@" || { err "Unknown option: $1"; usage; exit 4; }; cmd_pending ;;
+    terminal)            cmd_terminal "$@" ;;
+    browser)             cmd_browser "$@" ;;
+    ""|-h|--help)       usage ;;
+    *) err "Unknown command: $cmd"; usage; exit 4 ;;
+  esac
+}
+
+main "$@"

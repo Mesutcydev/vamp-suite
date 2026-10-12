@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_BUNDLE_ID="com.mesutcy.remotedesktop.terminalhost"
+APP_NAME="Vamp Terminal Host"
+
+resolve_app() {
+  local path
+  path=$(mdfind "kMDItemCFBundleIdentifier == '$APP_BUNDLE_ID'" 2>/dev/null | head -1 || true)
+  if [[ -n "$path" && -d "$path" ]]; then
+    printf '%s' "$path"
+    return 0
+  fi
+  [[ -d "/Applications/$APP_NAME.app" ]] && printf '%s' "/Applications/$APP_NAME.app"
+}
+
+usage() {
+  cat <<'EOF'
+Usage: vamp-terminal-host <start|stop|restart|open|status|path|version>
+
+This launcher controls the terminal-only Vamp host. Terminal sessions and
+agent handoff use the same `vamp terminal ...` commands as Vamp Host.
+EOF
+}
+
+app_path=$(resolve_app || true)
+command_name="${1:-status}"
+case "$command_name" in
+  start|open)
+    [[ -n "$app_path" ]] || { echo "$APP_NAME is not installed" >&2; exit 1; }
+    open -a "$app_path"
+    ;;
+  restart)
+    pgrep -x "$APP_NAME" >/dev/null 2>&1 && pkill -x "$APP_NAME" || true
+    [[ -n "$app_path" ]] || { echo "$APP_NAME is not installed" >&2; exit 1; }
+    open -a "$app_path"
+    ;;
+  stop)
+    pgrep -x "$APP_NAME" >/dev/null 2>&1 && pkill -x "$APP_NAME" || true
+    ;;
+  path)
+    [[ -n "$app_path" ]] || { echo "$APP_NAME is not installed" >&2; exit 1; }
+    printf '%s\n' "$app_path"
+    ;;
+  version)
+    [[ -n "$app_path" ]] || { echo "$APP_NAME is not installed" >&2; exit 1; }
+    /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app_path/Contents/Info.plist"
+    ;;
+  status)
+    if [[ -z "$app_path" ]]; then echo "$APP_NAME: not installed"; exit 1; fi
+    if pgrep -x "$APP_NAME" >/dev/null 2>&1; then echo "$APP_NAME: running"; else echo "$APP_NAME: installed, stopped"; fi
+    ;;
+  -h|--help) usage ;;
+  *) echo "Unknown command: $command_name" >&2; usage; exit 4 ;;
+esac

@@ -1,0 +1,218 @@
+# Build outputs
+.build/
+.build-*/
+.swiftpm/
+DerivedData/
+ScreenHarbor.xcodeproj/
+MacPair.xcodeproj/
+VampStream.xcodeproj/
+build/
+Build/
+.packaging-machost/
+.packaging-vamp-terminal-ios/
+.packaging-macclient/
+.packaging-macclient-appstore/
+.packaging-ios/
+.packaging-vamp-control-ios/
+.packaging-vamp-control-macos/
+.packaging-vamp-stream-ios/
+.packaging-vamp-mini-host/
+.packaging-vamp-hosts/
+.derived-*/
+.*-test-derived/
+.argent/
+.screenharbor-packaging/
+.dmg-staging/
+.pkg-verify/
+.local-host-install/
+.qa-*/
+.release-control-ios/
+.release-control-macos/
+dist/
+exports/
+*_pkg_extract/
+
+# Xcode user data
+*.xcuserdata/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Archives
+*.xcarchive
+
+# Distributable binaries (rebuildable from source)
+*.pkg
+*.ipa
+*.dmg
+*.zip
+
+# Logs
+*.log
+build_full_output.txt
+build_output.txt
+coordinator_test_results.txt
+task_progress.log
+sample_output.txt
+test_output.txt
+output.log
+
+# macOS
+.DS_Store
+
+# Swift Package Manager
+# Application dependency locks are committed for reproducible releases.
+__pycache__/
+*.pyc
+fix_ios_view.py
+fix_placeholder.py
+generate_buu_appstore_screenshots.swift
+tokenFromHex.swift
+/Icon*
+
+# Backups / Finder duplicates
+*.bak
+*.orig
+* 2.*
+* 3.*
+* 4.*
+* 5.*
+
+# Private release keys
+*.priv
+
+# Credentials and developer identity
+.env
+.env.*
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+
+# Local agent/editor state
+.claude/
+.cursor/
+.cursorignore
+.vscode/
+.wrangler/
+
+# Legacy local release state and generated applications
+.release-asc/
+*Publisher.app/
+ScreenHarborPublisher.app/
+
+# Legacy App Store / terminated-team projects retained only in this working copy
+Configuration/
+MacHost/
+MacHost.xcodeproj/
+MacHost-AppStore.xcodeproj/
+MacClient.xcodeproj/
+MacClient-AppStore.xcodeproj/
+RemoteDesktopToolApps/
+RemoteDesktopToolApps.xcodeproj/
+iOSRemote/
+Sources/HostWidget/
+Sources/ClientiOSLiveActivity/
+Sources/HostApp/Assets.xcassets/
+
+# The old StoreKit paywall is intentionally excluded from direct/open-source builds.
+Sources/ClientiOS/StreamingPaywallView.swift
+appstore-screenshots/
+screenshots/
+project.yml
+!project.yml
+macclient-project.yml
+macclient-appstore-project.yml
+machost-appstore-project.yml
+AppStore-Metadata-MacClient.md
+/RELEASE_PROCESS.md
+
+# The public repository exposes only current account-independent release tools.
+scripts/*
+!scripts/generate-vamp-sbom.sh
+!scripts/generate-pages-release.py
+!scripts/package-vamp-control-macos.sh
+!scripts/package-vamp-control-ios.sh
+!scripts/archive-vamp-app-store.sh
+!scripts/verify-vamp-store-bundle.py
+!scripts/vamp-host-watchdog
+!scripts/install-vamp-host-watchdog.sh
+
+# Vamp Terminal is the account-independent open-source sideload target. Keep
+# only the active hand-maintained project inputs visible; stale project copies
+# and local Xcode state remain ignored.
+!RemoteDesktopToolApps.xcodeproj/
+RemoteDesktopToolApps.xcodeproj/*
+!RemoteDesktopToolApps.xcodeproj/project.pbxproj
+!RemoteDesktopToolApps.xcodeproj/project.xcworkspace/
+RemoteDesktopToolApps.xcodeproj/project.xcworkspace/*
+!RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/
+RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/*
+!RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+!RemoteDesktopToolApps.xcodeproj/xcshareddata/
+RemoteDesktopToolApps.xcodeproj/xcshareddata/*
+!RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/
+RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/*
+!RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/VampTerminalApp.xcscheme
+!RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/VampTerminalHost.xcscheme
+!RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/MacHost.xcscheme
+!RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/iOSRemote.xcscheme
+!RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/VampMiniHost.xcscheme
+!RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/VampSyncAppStore.xcscheme
+
+!Configuration/
+Configuration/*
+!Configuration/VampSync-AppStore-Info.plist
+!Configuration/VampSync-AppStore.entitlements
+!Configuration/VampStream-AppStore.entitlements
+!Configuration/VampTerminal-Info.plist
+!Configuration/VampTerminal.entitlements
+!Configuration/VampTerminalHost-Info.plist
+!Configuration/VampTerminalHost.entitlements
+!Configuration/MacHost-Info.plist
+!Configuration/MacHost-AppStore.entitlements
+!Configuration/ClientiOS-Info.plist
+!Configuration/ClientiOS.entitlements
+!Configuration/ClientiOSLiveActivity-Info.plist
+!Configuration/VampStream.entitlements
+!Configuration/VampMiniHost.entitlements
+!Configuration/VampMiniHost-Info.plist
+
+!Sources/ClientiOSLiveActivity/
+!Sources/ClientiOSLiveActivity/RemoteSessionLiveActivityWidget.swift
+
+# The active project still references the shared Mac host/client asset and
+# configuration inputs. Keep those build inputs while excluding stale copies.
+!Sources/HostApp/Assets.xcassets/
+!Sources/HostApp/Assets.xcassets/**
+Sources/HostApp/Assets.xcassets/.DS_Store
+
+!Sources/VampTerminal/Assets.xcassets/
+!Sources/VampTerminal/Assets.xcassets/**
+!scripts/package-vamp-terminal-ios.sh
+!scripts/package-vamp-hosts.sh
+!scripts/package-vamp-stream-ios.sh
+!scripts/verify-vamp-stream-ipa.py
+!scripts/package-vamp-mini-host.sh
+!scripts/release-vamp-sync.sh
+!scripts/install-vamp-cli.command
+!scripts/vamp
+!scripts/vamp-linux-host
+!scripts/vamp-terminal-host
+
+# Legacy client signing files are not used by the current Control build.
+MacClient/Resources/Assets.xcassets/
+MacClient/Resources/MacClient-Info.plist
+MacClient/Resources/MacClient.entitlements
+MacClient/Resources/MacClient-Release.entitlements
+
+# Account-independent inputs for the public Vamp Control macOS build. The
+# generated Xcode project remains ignored; release packaging regenerates it.
+!macclient-project.yml
+!MacClient/Resources/Assets.xcassets/
+!MacClient/Resources/Assets.xcassets/**
+!MacClient/Resources/MacClient-Info.plist
+!MacClient/Resources/MacClient-Release.entitlements

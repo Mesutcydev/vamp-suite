@@ -1,0 +1,176 @@
+name: VampStream
+
+# Standalone "Vamp Stream" iOS client. Reuses the shared Vamp client stack (Sources/ClientiOS)
+# and connects to the SAME Vamp Sync as Vamp Control — no second host, no duplicated transport.
+# Generated with: xcodegen generate --spec vampstream-project.yml
+
+options:
+  minimumXcodeGenVersion: 2.45.0
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+configs:
+  Debug: debug
+  Release: release
+  AppStore: release
+
+packages:
+  VampStreamCore:
+    path: .
+
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  VampStream:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Sources/VampStream
+      - path: Sources/ClientiOS
+        excludes:
+          # Vamp Control's @main — Vamp Stream provides its own (VampStreamApp).
+          - ClientiOSApp.swift
+          # Vamp Terminal-only views (belong to the separate Vamp Terminal app; they depend on
+          # VampTerminal-module symbols not linked here). Matches the iOSRemoteApp file set.
+          - TerminalWorkspaceViewModel.swift
+          - VampTerminalGuideView.swift
+          - VampTerminalHomeView.swift
+          - VampTerminalPaneView.swift
+          - VampTerminalWorkspaceView.swift
+          # Legacy paywall source is intentionally not part of the open-source
+          # Stream target and may exist in older local working copies.
+          - StreamingPaywallView.swift
+          # Vamp Control's own tab UI and its first-run flow. Vamp Stream has its own
+          # root (VampStreamRootView) and its own onboarding
+          # (VampStreamHostSourceOnboarding) and never mounts either of these, so they
+          # were ~6k lines of unreachable code compiled into every build.
+          - Views
+          - Onboarding
+          # Terminal Mode is reachable only from Vamp Control's MirrorScreen (above).
+          # It is also the sole importer of SwiftTerm in this target — excluding it is
+          # what lets Vamp Stream drop that package, whose prebuild plugin cannot run
+          # for an iOS destination ("SwiftTermBuildInfoGenerator" is a macOS host tool
+          # that is never produced in Debug-iphonesimulator).
+          - TerminalModeView.swift
+    info:
+      path: Sources/VampStream/VampStream-Info.plist
+      properties:
+        VampDistributionChannel: "$(VAMP_DISTRIBUTION_CHANNEL)"
+        CFBundleDisplayName: "$(VAMP_DISPLAY_NAME)"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        ITSAppUsesNonExemptEncryption: false
+        NSHumanReadableCopyright: "Copyright © 2026 Vamp contributors."
+        NSCameraUsageDescription: "Vamp Stream uses the camera to scan private Vamp Sync or Vamp Assistant pairing QR codes."
+        NSLocalNetworkUsageDescription: "Vamp Stream uses your local network to discover and connect to Macs running Vamp Sync or Vamp Assistant."
+        NSAppTransportSecurity:
+          # Vamp Assistant is intentionally a private-network HTTP peer on
+          # port 9575. The client enforces the LAN/Tailscale-only address
+          # policy in BeetCodeRemoteEndpoint before any request is made. Do not
+          # combine this with NSAllowsLocalNetworking: on current iOS the
+          # fine-grained key causes the global dynamic-IP allowance to be ignored.
+          NSAllowsArbitraryLoads: true
+        NSBonjourServices:
+          - _screenharbor._tcp
+        UIRequiresFullScreen: true
+        UILaunchStoryboardName: VampStreamRedWaveLaunchScreen
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        VAMP_DISTRIBUTION_CHANNEL: website
+        VAMP_DISPLAY_NAME: Vamp Stream
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: 7
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.stream
+        PRODUCT_NAME: Vamp Stream
+        CODE_SIGN_ENTITLEMENTS: Configuration/VampStream.entitlements
+        INFOPLIST_FILE: Sources/VampStream/VampStream-Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: 1,2
+        SUPPORTS_MACCATALYST: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: VampStreamIcon
+        ENABLE_APP_INTENTS_METADATA_GENERATION: NO
+      configs:
+        AppStore:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: Apple Development
+          DEVELOPMENT_TEAM: ""
+          CODE_SIGN_ENTITLEMENTS: Configuration/VampStream-AppStore.entitlements
+          VAMP_DISTRIBUTION_CHANNEL: app-store
+          VAMP_DISPLAY_NAME: App Stream
+          PRODUCT_NAME: App Stream
+    dependencies:
+      - package: VampStreamCore
+        product: SharedModels
+      - package: VampStreamCore
+        product: SharedProtocol
+      - package: VampStreamCore
+        product: SharedUtilities
+      - package: VampStreamCore
+        product: TransportWebRTC
+      - package: VampStreamCore
+        product: Discovery
+      - package: VampStreamCore
+        product: Diagnostics
+      - package: VampStreamCore
+        product: Permissions
+      - package: VampStreamCore
+        product: SharedUI
+
+  VampStreamTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Sources/VampStreamTests
+    dependencies:
+      - target: VampStream
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.stream.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Vamp Stream.app/Vamp Stream"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  VampStream:
+    build:
+      targets:
+        VampStream: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+    test:
+      config: Debug
+      targets:
+        - VampStreamTests
+
+  VampStreamSplashPreview:
+    build:
+      targets:
+        VampStream: [run]
+    run:
+      config: Debug
+      commandLineArguments:
+        "--vamp-stream-splash-reference": true
+
+  VampStreamAppStore:
+    build:
+      targets:
+        VampStream: all
+    run:
+      config: AppStore
+    archive:
+      config: AppStore

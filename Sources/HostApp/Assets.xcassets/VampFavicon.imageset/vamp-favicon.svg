@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Vamp">
+  <circle cx="16" cy="16" r="16" fill="#f0f0eb"/>
+  <circle cx="16" cy="16" r="14.6" fill="none" stroke="#1a1a18" stroke-width="1.4"/>
+  <circle cx="16" cy="16" r="12.2" fill="none" stroke="#1a1a18" stroke-width=".55" opacity=".4"/>
+  <path fill="#1a1a18" d="M8.05 8.4h5.2L16 19.4l2.75-11h5.2L17.4 26.3h-2.8L8.05 8.4z"/>
+</svg>

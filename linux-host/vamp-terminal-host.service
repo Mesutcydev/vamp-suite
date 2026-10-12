@@ -1,0 +1,12 @@
+[Unit]
+Description=Vamp Terminal Linux Host
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=@BIN_PATH@
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

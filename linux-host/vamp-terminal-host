@@ -1,0 +1,2 @@
+#!/bin/sh
+exec python3 "@INSTALL_DIR@/vamp_terminal_host.py" "$@"

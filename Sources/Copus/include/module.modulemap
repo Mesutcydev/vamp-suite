@@ -1,0 +1,6 @@
+module Copus {
+    header "opus.h"
+    header "opus_multistream.h"
+    header "copus_helpers.h"
+    export *
+}

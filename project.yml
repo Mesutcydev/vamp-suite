@@ -1,0 +1,535 @@
+name: RemoteDesktopToolApps
+
+options:
+  minimumXcodeGenVersion: 2.45.0
+  deploymentTarget:
+    iOS: "18.0"
+    macOS: "13.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  RemoteDesktopTool:
+    path: .
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    exactVersion: 1.18.0
+    # Pinned below 1.19.0 on purpose. 1.19.0 added a SwiftPM build-tool plugin whose
+    # SwiftTermBuildInfoGenerator is a macOS host executable; for an iOS destination Xcode
+    # looks for it in Build/Products/Debug while only Debug-iphonesimulator is produced, so
+    # every iOS build fails with "Build input file cannot be found". 1.18.0 is the last
+    # release without that plugin.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
+
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    CURRENT_PROJECT_VERSION: 37
+
+targetTemplates:
+  VampSyncBase:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Sources/HostApp
+      - path: Sources/ClientiOS
+        includes:
+          - "VampSplashView.swift"
+      - path: Resources/VampSync/ThirdPartyLicenses
+        type: folder
+        buildPhase: resources
+      - path: LICENSE
+        buildPhase: resources
+      - path: NOTICE
+        buildPhase: resources
+      - path: THIRD_PARTY_NOTICES.md
+        buildPhase: resources
+    settings:
+      base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: VAMP_MINI_HOST
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: 1
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.minhost
+        PRODUCT_NAME: Vamp Sync
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_APP_INTENTS_METADATA_GENERATION: NO
+        OTHER_LDFLAGS: "$(inherited) -framework AppIntents"
+        ASSETCATALOG_COMPILER_APPICON_NAME: VampSyncIcon
+        ENABLE_HARDENED_RUNTIME: YES
+    info:
+      path: Configuration/VampMiniHost-Info.plist
+      properties:
+        CFBundleDisplayName: Vamp Sync
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.utilities
+        LSUIElement: true
+        NSHumanReadableCopyright: "Copyright © 2026 Vamp contributors."
+        NSLocalNetworkUsageDescription: "Vamp Sync advertises privately so Vamp Control and Vamp Stream can discover and connect to this Mac."
+        NSBonjourServices: [_screenharbor._tcp, _screenharbor._tcp.]
+        VampDistributionChannel: "$(VAMP_DISTRIBUTION_CHANNEL)"
+        CFBundleURLTypes:
+          - CFBundleURLName: com.mesutcy.remotedesktop.minhost
+            CFBundleURLSchemes: [vampminihost]
+    dependencies:
+      - package: RemoteDesktopTool
+        product: SharedModels
+      - package: RemoteDesktopTool
+        product: SharedProtocol
+      - package: RemoteDesktopTool
+        product: SharedUtilities
+      - package: RemoteDesktopTool
+        product: CaptureEngine
+      - package: RemoteDesktopTool
+        product: EncodeEngine
+      - package: RemoteDesktopTool
+        product: TransportWebRTC
+      - package: RemoteDesktopTool
+        product: InputControl
+      - package: RemoteDesktopTool
+        product: Permissions
+      - package: RemoteDesktopTool
+        product: Discovery
+      - package: RemoteDesktopTool
+        product: Diagnostics
+      # Sources/HostApp imports both of these (HostApp.swift), but neither was declared —
+      # so `xcodebuild -scheme MacHost` failed at dependency scanning too.
+      - package: RemoteDesktopTool
+        product: HostWidgetShared
+      - package: RemoteDesktopTool
+        product: SharedUI
+
+targets:
+  iOSRemoteApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Sources/ClientiOS
+        excludes:
+          # Vamp Terminal-only views. They reference VampTerminalDesign / VampGlassPalette
+          # from Sources/VampTerminal, which this target does not link, so compiling them
+          # here fails. vampstream-project.yml already excluded exactly this set and its
+          # comment claimed to "match the iOSRemoteApp file set" — iOSRemoteApp had no such
+          # list, which is why this target could not build.
+          - TerminalWorkspaceViewModel.swift
+          - VampTerminalGuideView.swift
+          - VampTerminalHomeView.swift
+          - VampTerminalPaneView.swift
+          - VampTerminalWorkspaceView.swift
+          # Needs DailyStreamingUsage, which is not part of this target.
+          - StreamingPaywallView.swift
+          # Vamp Stream's app browser. It lives in the shared folder but is referenced by
+          # nothing else in ClientiOS and depends on Sources/VampStream's input controller.
+          - AppStreamBrowserView.swift
+    info:
+      path: Configuration/ClientiOS-Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleDisplayName: Vamp Control
+        NSHumanReadableCopyright: "Copyright © 2026 Mesut Cy. All rights reserved."
+        # Match VampSplashView's darkest stop so the system launch screen doesn't
+        # flash white before the animated splash overlay appears.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSLocalNetworkUsageDescription: "This app uses your local network to discover and connect to Vamp Host Macs."
+        NSSpeechRecognitionUsageDescription: "Transcribes your voice on-device so you can dictate text into the remote Mac."
+        NSMicrophoneUsageDescription: "Captures your voice for on-device dictation into the remote Mac."
+        # The wire-compatibility contract is `_screenharbor._tcp` (AGENTS.md). This spec said
+        # `_macremote._tcp`, so regenerating the project rewrote the committed plist to a
+        # service name no host advertises — silent discovery failure.
+        NSBonjourServices:
+          - _screenharbor._tcp
+          - _screenharbor._tcp.
+        # Background audio for remote sessions. It was only ever in the plist, so the next
+        # xcodegen run dropped it.
+        UIBackgroundModes:
+          - audio
+    settings:
+      base:
+        MARKETING_VERSION: 3.7.3
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.ios
+        PRODUCT_NAME: Vamp Control iOS
+        INFOPLIST_FILE: Configuration/ClientiOS-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Configuration/ClientiOS.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: 1,2
+        SUPPORTS_MACCATALYST: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        LAUNCH_SCREEN_IN_BUNDLE: YES
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - package: RemoteDesktopTool
+        product: SharedModels
+      - package: RemoteDesktopTool
+        product: SharedProtocol
+      - package: RemoteDesktopTool
+        product: SharedUtilities
+      - package: RemoteDesktopTool
+        product: TransportWebRTC
+      - package: RemoteDesktopTool
+        product: Discovery
+      - package: RemoteDesktopTool
+        product: Diagnostics
+      - package: RemoteDesktopTool
+        product: Permissions
+      # ClientiOSApp.swift imports SharedUI, but the product was never declared here —
+      # the build only ever failed earlier, in SwiftTerm, so the missing dependency
+      # stayed hidden.
+      - package: RemoteDesktopTool
+        product: SharedUI
+      - package: SwiftTerm
+      - target: iOSRemoteLiveActivityExtension
+        embed: true
+
+  iOSRemoteLiveActivityExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.1"
+    sources:
+      - path: Sources/ClientiOSLiveActivity
+    info:
+      path: Configuration/ClientiOSLiveActivity-Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleDisplayName: Remote Session
+        NSHumanReadableCopyright: "Copyright © 2026 Mesut Cy. All rights reserved."
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        MARKETING_VERSION: 3.7.3
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.ios.liveactivity
+        PRODUCT_NAME: iOSRemoteLiveActivity
+        INFOPLIST_FILE: Configuration/ClientiOSLiveActivity-Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - package: RemoteDesktopTool
+        product: SharedModels
+
+  MacHostApp:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Sources/HostApp
+      # Shared "Fang Gleam" splash view, reused unmodified from the client sources
+      # so all three apps render the same composition. See VampSplashView.swift.
+      - path: Sources/ClientiOS
+        includes:
+          - "VampSplashView.swift"
+    info:
+      path: Configuration/MacHost-Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # Sparkle in-app updater. MUST live here: xcodegen regenerates MacHost-Info.plist from
+        # these properties, so keys added only to the plist get wiped on the next xcodegen run
+        # (this silently shipped a broken updater 3×). Public key must match the appcast signing
+        # key (`generate_keys -p`). See host-sparkle-updates.
+        SUFeedURL: https://mesut.uk/appcast.xml
+        SUPublicEDKey: "jyN/42y+0M/G26dx2UbQg1MNZq8lKyX2vvzUu26pcZo="
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHumanReadableCopyright: "Copyright © 2026 Mesut Cy. All rights reserved."
+        NSLocalNetworkUsageDescription: "This app advertises on your local network so iOS remote clients can discover and connect to it."
+        # See the client target: `_screenharbor._tcp` is the wire-compatibility contract.
+        NSBonjourServices:
+          - _screenharbor._tcp
+          - _screenharbor._tcp.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.mesutcy.remotedesktop.host
+            CFBundleURLSchemes:
+              - vamphost
+    entitlements:
+      path: Configuration/MacHost-AppStore.entitlements
+      properties:
+        # The hardened-process keys were only ever in the entitlements file, so regenerating
+        # the project stripped them. Same class of bug as the Sparkle keys above.
+        com.apple.security.hardened-process: true
+        com.apple.security.hardened-process.enhanced-security-version-string: "2"
+        com.apple.security.hardened-process.hardened-heap: true
+        com.apple.security.hardened-process.dyld-ro: true
+        com.apple.security.hardened-process.platform-restrictions-string: "2"
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - $(DEVELOPMENT_TEAM).com.mesutcy.remotedesktop
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
+        com.apple.security.device.audio-input: true
+    settings:
+      base:
+        MARKETING_VERSION: 3.2.0
+        CURRENT_PROJECT_VERSION: 2
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.host
+        PRODUCT_NAME: Vamp Host
+        INFOPLIST_FILE: Configuration/MacHost-Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Configuration/MacHost-AppStore.entitlements
+        ENABLE_APP_INTENTS_METADATA_GENERATION: NO
+        OTHER_LDFLAGS: "$(inherited) -framework AppIntents"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+      configs:
+        Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: MACHOST_APPSTORE
+    dependencies:
+      - package: RemoteDesktopTool
+        product: SharedModels
+      - package: RemoteDesktopTool
+        product: SharedProtocol
+      - package: RemoteDesktopTool
+        product: SharedUtilities
+      - package: RemoteDesktopTool
+        product: CaptureEngine
+      - package: RemoteDesktopTool
+        product: EncodeEngine
+      - package: RemoteDesktopTool
+        product: TransportWebRTC
+      - package: RemoteDesktopTool
+        product: InputControl
+      - package: RemoteDesktopTool
+        product: Permissions
+      - package: RemoteDesktopTool
+        product: Discovery
+      - package: RemoteDesktopTool
+        product: Diagnostics
+      # Sources/HostApp imports both of these (HostApp.swift), but neither was declared —
+      # so `xcodebuild -scheme MacHost` failed at dependency scanning too.
+      - package: RemoteDesktopTool
+        product: HostWidgetShared
+      - package: RemoteDesktopTool
+        product: SharedUI
+
+  # Vamp Sync — the active Mac host for Vamp Control and Vamp Stream.
+  #
+  # Its whole implementation lives behind `#if VAMP_MINI_HOST` in Sources/HostApp, and no
+  # spec defined that flag, so the product was compiled out of every target in the
+  # repository: `xcodebuild -scheme VampMiniHost` (AGENTS.md, and .github/workflows/ci.yml)
+  # failed with "does not contain a scheme named VampMiniHost". The Info.plist and
+  # entitlements were still in Configuration/ — only the target was missing.
+  #
+  # It shares Sources/HostApp with MacHostApp; the compilation condition is what selects
+  # which `@main` is active (HostApp.swift is guarded by `!VAMP_TERMINAL_HOST && !VAMP_MINI_HOST`).
+  VampMiniHostApp:
+    templates: [VampSyncBase]
+    settings:
+      base:
+        INFOPLIST_FILE: Configuration/VampMiniHost-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Configuration/VampMiniHost.entitlements
+        CODE_SIGN_STYLE: Automatic
+        VAMP_DISTRIBUTION_CHANNEL: website
+    info:
+      path: Configuration/VampMiniHost-Info.plist
+      properties:
+        SUFeedURL: https://thevamp.app/sync/appcast.xml
+        SUPublicEDKey: f/g5Jkw3otjwnLmVD5ojbQgsX8oMTJT6nGPhYVxXM08=
+        SUScheduledCheckInterval: 86400
+        SUAutomaticallyUpdate: false
+        SUVerifyUpdateBeforeExtraction: true
+    dependencies:
+      - package: Sparkle
+        product: Sparkle
+
+  VampSyncAppStore:
+    templates: [VampSyncBase]
+    deploymentTarget: "14.0"
+    info:
+      path: Configuration/VampSync-AppStore-Info.plist
+      properties:
+        CFBundleDisplayName: App Sync
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        INFOPLIST_FILE: Configuration/VampSync-AppStore-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Configuration/VampSync-AppStore.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) VAMP_MINI_HOST VAMP_APP_STORE"
+        VAMP_DISTRIBUTION_CHANNEL: app-store
+        PRODUCT_NAME: App Sync
+
+  # Vamp Terminal Host — discontinued as a product, but AGENTS.md and CI both build it as a
+  # shared-source verification target. Same shape as VampMiniHostApp: one compilation
+  # condition selects which `@main` in Sources/HostApp is active.
+  VampTerminalHostApp:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Sources/HostApp
+      - path: Sources/ClientiOS
+        includes:
+          - "VampSplashView.swift"
+    settings:
+      base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: VAMP_TERMINAL_HOST
+        MARKETING_VERSION: 3.2.0
+        CURRENT_PROJECT_VERSION: 2
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.terminalhost
+        PRODUCT_NAME: Vamp Terminal Host
+        INFOPLIST_FILE: Configuration/VampTerminalHost-Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Configuration/VampTerminalHost.entitlements
+        ENABLE_APP_INTENTS_METADATA_GENERATION: NO
+        OTHER_LDFLAGS: "$(inherited) -framework AppIntents"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - package: RemoteDesktopTool
+        product: SharedModels
+      - package: RemoteDesktopTool
+        product: SharedProtocol
+      - package: RemoteDesktopTool
+        product: SharedUtilities
+      - package: RemoteDesktopTool
+        product: CaptureEngine
+      - package: RemoteDesktopTool
+        product: EncodeEngine
+      - package: RemoteDesktopTool
+        product: TransportWebRTC
+      - package: RemoteDesktopTool
+        product: InputControl
+      - package: RemoteDesktopTool
+        product: Permissions
+      - package: RemoteDesktopTool
+        product: Discovery
+      - package: RemoteDesktopTool
+        product: Diagnostics
+      - package: RemoteDesktopTool
+        product: HostWidgetShared
+      - package: RemoteDesktopTool
+        product: SharedUI
+
+  # Vamp Terminal — the active iOS terminal client. Its @main is in Sources/VampTerminal and
+  # its views are the VampTerminal*.swift files in Sources/ClientiOS, which is why those are
+  # excluded from every other iOS target.
+  VampTerminalAppTarget:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Sources/VampTerminal
+      - path: Sources/ClientiOS
+        excludes:
+          # Vamp Control's @main; this target has its own.
+          - ClientiOSApp.swift
+          # Vamp Control's tab UI and first-run flow.
+          - Views
+          - Onboarding
+          # Vamp Stream's app browser, and the paywall source that needs DailyStreamingUsage.
+          - AppStreamBrowserView.swift
+          - StreamingPaywallView.swift
+          # Sources/VampTerminal ships this target's own privacy manifest; two copies in one
+          # bundle is a "Multiple commands produce" build failure.
+          - PrivacyInfo.xcprivacy
+    # Deliberately no `info:` block. Configuration/VampTerminal-Info.plist is hand-maintained
+    # and complete; declaring `info.properties` here would make xcodegen rewrite the file from
+    # this spec and silently drop every key not repeated in it — display name, Bonjour services,
+    # the usage descriptions, the launch screen and the orientations. INFOPLIST_FILE below is
+    # enough to point the target at it.
+    settings:
+      base:
+        MARKETING_VERSION: 1.0.0
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.terminal
+        PRODUCT_NAME: Vamp Terminal
+        INFOPLIST_FILE: Configuration/VampTerminal-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Configuration/VampTerminal.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: 1,2
+        SUPPORTS_MACCATALYST: NO
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - package: RemoteDesktopTool
+        product: SharedModels
+      - package: RemoteDesktopTool
+        product: SharedProtocol
+      - package: RemoteDesktopTool
+        product: SharedUtilities
+      - package: RemoteDesktopTool
+        product: TransportWebRTC
+      - package: RemoteDesktopTool
+        product: Discovery
+      - package: RemoteDesktopTool
+        product: Diagnostics
+      - package: RemoteDesktopTool
+        product: Permissions
+      - package: RemoteDesktopTool
+        product: SharedUI
+      - package: SwiftTerm
+
+schemes:
+  iOSRemote:
+    build:
+      targets:
+        iOSRemoteApp: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+  MacHost:
+    build:
+      targets:
+        MacHostApp: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+  # The scheme AGENTS.md and CI already build. It did not exist.
+  VampMiniHost:
+    build:
+      targets:
+        VampMiniHostApp: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+  VampTerminalHost:
+    build:
+      targets:
+        VampTerminalHostApp: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+  VampTerminalApp:
+    build:
+      targets:
+        VampTerminalAppTarget: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+  VampSyncAppStore:
+    build:
+      targets:
+        VampSyncAppStore: all
+    run:
+      config: Debug
+    archive:
+      config: Release

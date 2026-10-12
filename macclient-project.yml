@@ -1,0 +1,145 @@
+# Separate XcodeGen spec for the native macOS client app.
+# Generates MacClient.xcodeproj — intentionally independent from
+# RemoteDesktopToolApps.xcodeproj / MacHost.xcodeproj so the existing
+# iOS client and Mac host projects are never modified.
+#
+# Regenerate with: xcodegen generate --spec macclient-project.yml
+name: MacClient
+
+options:
+  minimumXcodeGenVersion: 2.45.0
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  RemoteDesktopTool:
+    path: .
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    exactVersion: 1.18.0
+    # Pinned below 1.19.0 on purpose. 1.19.0 added a SwiftPM build-tool plugin whose
+    # SwiftTermBuildInfoGenerator is a macOS host executable; for an iOS destination Xcode
+    # looks for it in Build/Products/Debug while only Debug-iphonesimulator is produced, so
+    # every iOS build fails with "Build input file cannot be found". 1.18.0 is the last
+    # release without that plugin.
+
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+
+targets:
+  MacClientApp:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: MacClient/Sources
+      - path: MacClient/Resources/Assets.xcassets
+      - path: MacClient/Resources/PrivacyInfo.xcprivacy
+      # Platform-independent client logic reused (unmodified) from the iOS app.
+      - path: Sources/ClientiOS
+        includes:
+          - "AppHaptics.swift"
+          - "AppStreamViewModel.swift"
+          - "BonjourWakeService.swift"
+          - "BeetCodeRemoteClient.swift"
+          - "ClientAppEnvironment.swift"
+          - "ClientAudioRenderer.swift"
+          - "ClientFileTransferPreference.swift"
+          - "ClientClipboardSyncManager.swift"
+          - "ClientFileTransferManager.swift"
+          - "ClientHostBlockedState.swift"
+          - "ClientReconnectCoordinator.swift"
+          - "ClientSessionCoordinator.swift"
+          - "ClientSettingsSyncService.swift"
+          - "ClientTerminalSessionManager.swift"
+          - "ClientTrustedHostsViewModel.swift"
+          - "CrashSafeStartupDiagnostics.swift"
+          - "DisplayLayoutViewModel.swift"
+          - "HostsListViewModel.swift"
+          - "Models/Display.swift"
+          - "Models/Host.swift"
+          - "Models/Session.swift"
+          - "RemoteDisplayViewModel.swift"
+          - "SessionStatsViewModel.swift"
+          - "VideoFrameDecoderView.swift"
+          - "WakeCoordinator.swift"
+          - "WakeOnLANService.swift"
+      - path: Sources/SharedUI
+        includes:
+          - "VampSplashView.swift"
+      - path: Sources/ClientiOS/Localizable.xcstrings
+    settings:
+      base:
+        MARKETING_VERSION: 2.3.0
+        CURRENT_PROJECT_VERSION: 57
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.macclient
+        PRODUCT_NAME: Vamp Control macOS
+        INFOPLIST_FILE: MacClient/Resources/MacClient-Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        # Non-sandboxed direct-distribution entitlements (mirrors the host website build).
+        # The sandboxed MacClient.entitlements is kept for the manual MAS build.
+        CODE_SIGN_ENTITLEMENTS: MacClient/Resources/MacClient-Release.entitlements
+        CODE_SIGN_STYLE: Manual
+        ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: ControlGlassIcon
+    dependencies:
+      - package: RemoteDesktopTool
+        product: SharedModels
+      - package: RemoteDesktopTool
+        product: SharedProtocol
+      - package: RemoteDesktopTool
+        product: SharedUtilities
+      - package: RemoteDesktopTool
+        product: TransportWebRTC
+      - package: RemoteDesktopTool
+        product: Discovery
+      - package: RemoteDesktopTool
+        product: Diagnostics
+      - package: RemoteDesktopTool
+        product: Permissions
+      - package: SwiftTerm
+        product: SwiftTerm
+
+  MacClientTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    sources:
+      - path: MacClient/Tests
+      - path: MacClient/Sources/MacMenuBarSemanticState.swift
+      - path: MacClient/Sources/MacStreamingQualityPolicy.swift
+      - path: MacClient/Sources/MacHostNicknameStore.swift
+      - path: MacClient/Sources/MacAssistantKeyMapping.swift
+      - path: Sources/ClientiOS/ClientFileTransferPreference.swift
+      - path: MacClient/Sources/MacConnectionPreferences.swift
+      - path: MacClient/Sources/RemoteInputPolicy.swift
+      - path: MacClient/Sources/MacRemoteInputSendQueue.swift
+    dependencies:
+      - package: RemoteDesktopTool
+        product: SharedModels
+      - package: RemoteDesktopTool
+        product: SharedUtilities
+      - package: RemoteDesktopTool
+        product: SharedProtocol
+      - package: RemoteDesktopTool
+        product: Discovery
+
+schemes:
+  MacClient:
+    build:
+      targets:
+        MacClientApp: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+    test:
+      config: Debug
+      targets:
+        - MacClientTests

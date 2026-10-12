@@ -1,0 +1,81 @@
+#!/bin/sh
+
+# Per-user liveness monitor for Vamp Host. Installed and managed by
+# install-vamp-host-watchdog.sh; do not run as root.
+
+set -u
+
+watchdog_bundle_id="com.mesutcy.remotedesktop.host"
+watchdog_process_name="Vamp Host"
+watchdog_support_dir="$HOME/Library/Application Support/Vamp Host"
+watchdog_heartbeat="$watchdog_support_dir/watchdog-heartbeat"
+watchdog_pause="$watchdog_support_dir/watchdog-paused"
+watchdog_recovering="$watchdog_support_dir/watchdog-recovering"
+watchdog_log="$watchdog_support_dir/watchdog.log"
+watchdog_last_restart=0
+watchdog_pause_seconds=60
+
+mkdir -p "$watchdog_support_dir"
+
+log_event() {
+  printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$watchdog_log"
+}
+
+restart_host() {
+  watchdog_now="$(date +%s)"
+  if [ $((watchdog_now - watchdog_last_restart)) -lt 20 ]; then
+    return
+  fi
+  watchdog_last_restart="$watchdog_now"
+  log_event "relaunching $watchdog_process_name"
+  /usr/bin/open -gj -b "$watchdog_bundle_id" || log_event "relaunch request failed"
+}
+
+while :; do
+  if [ -e "$watchdog_pause" ]; then
+    watchdog_now="$(date +%s)"
+    watchdog_pause_timestamp="0"
+    read -r watchdog_pause_timestamp _ < "$watchdog_pause" || true
+    case "$watchdog_pause_timestamp" in (*[!0-9]*|'') watchdog_pause_timestamp="0" ;; esac
+    if [ "$watchdog_pause_timestamp" -gt 0 ] && [ $((watchdog_now - watchdog_pause_timestamp)) -le "$watchdog_pause_seconds" ]; then
+      sleep 5
+      continue
+    fi
+    rm -f "$watchdog_pause"
+    log_event "expired intentional-quit pause; recovery resumed"
+  fi
+
+  watchdog_now="$(date +%s)"
+  watchdog_pid=""
+  watchdog_timestamp="0"
+  if [ -r "$watchdog_heartbeat" ]; then
+    read -r watchdog_pid watchdog_timestamp < "$watchdog_heartbeat" || true
+  fi
+
+  case "$watchdog_pid" in (*[!0-9]*|'') watchdog_pid="" ;; esac
+  case "$watchdog_timestamp" in (*[!0-9]*|'') watchdog_timestamp="0" ;; esac
+
+  if [ -n "$watchdog_pid" ] && kill -0 "$watchdog_pid" 2>/dev/null; then
+    watchdog_command="$(ps -p "$watchdog_pid" -o comm= 2>/dev/null || true)"
+    if [ $((watchdog_now - watchdog_timestamp)) -gt 20 ]; then
+      case "$watchdog_command" in
+        *"/Vamp Host")
+          log_event "heartbeat stale; terminating pid $watchdog_pid"
+          printf '%s\n' "$watchdog_now" > "$watchdog_recovering"
+          kill -TERM "$watchdog_pid" 2>/dev/null || true
+          sleep 5
+          if kill -0 "$watchdog_pid" 2>/dev/null; then
+            log_event "pid $watchdog_pid did not terminate; forcing exit"
+            kill -KILL "$watchdog_pid" 2>/dev/null || true
+          fi
+          restart_host
+          ;;
+        *) log_event "ignored stale heartbeat for unexpected process $watchdog_pid" ;;
+      esac
+    fi
+  elif [ $((watchdog_now - watchdog_timestamp)) -gt 20 ]; then
+    restart_host
+  fi
+
+  sleep 5
+done
