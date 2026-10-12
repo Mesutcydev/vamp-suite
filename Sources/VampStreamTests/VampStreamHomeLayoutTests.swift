@@ -246,14 +246,14 @@ final class VampStreamHomeLayoutTests: XCTestCase {
     func testPrimaryScanCopyNamesVampSync() {
         XCTAssertEqual(VampStreamHomeCopy.syncTitle, "Vamp Sync")
         XCTAssertEqual(VampStreamHomeCopy.scanSync, "Scan Vamp Sync")
-        XCTAssertEqual(VampStreamHomeCopy.assistantTitle, "Vamp Assistant")
+        XCTAssertEqual(VampStreamHomeCopy.assistantTitle, "Assistant / Companion")
         XCTAssertEqual(
             VampStreamHomeCopy.pairAssistantTitle(hasSavedAssistants: false),
-            "Pair Vamp Assistant"
+            "Pair Assistant or Companion"
         )
         XCTAssertEqual(
             VampStreamHomeCopy.pairAssistantTitle(hasSavedAssistants: true),
-            "Pair another Assistant"
+            "Pair another Mac"
         )
     }
 
@@ -301,11 +301,11 @@ final class VampStreamHomeLayoutTests: XCTestCase {
     func testPairingCardCopyDescribesCollapseAndExpand() {
         XCTAssertEqual(VampStreamHomeCopy.syncConnectCollapse, "Minimize Vamp Sync connection")
         XCTAssertEqual(VampStreamHomeCopy.syncConnectExpand, "Show Vamp Sync connection")
-        XCTAssertEqual(VampStreamHomeCopy.assistantConnectCollapse, "Minimize Vamp Assistant pairing")
-        XCTAssertEqual(VampStreamHomeCopy.assistantConnectExpand, "Show Vamp Assistant pairing")
+        XCTAssertEqual(VampStreamHomeCopy.assistantConnectCollapse, "Minimize Assistant or Companion pairing")
+        XCTAssertEqual(VampStreamHomeCopy.assistantConnectExpand, "Show Assistant or Companion pairing")
         XCTAssertEqual(VampStreamHomeCopy.syncConnectCollapsedDetail, "Scan QR or connect by address")
         XCTAssertEqual(
-            VampStreamHomeCopy.assistantConnectCollapsedDetail, "Connect an Assistant workspace")
+            VampStreamHomeCopy.assistantConnectCollapsedDetail, "Connect an Assistant or Companion Mac")
     }
 
     /// An explicit saved preference always wins over any computed default, for both providers

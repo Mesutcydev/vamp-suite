@@ -1,4 +1,5 @@
 import SwiftUI
+import SharedModels
 
 struct BeetCodePairingView: View {
     private enum PairingField: Hashable {
@@ -64,7 +65,7 @@ struct BeetCodePairingView: View {
                 .toolbarColorScheme(.dark, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
-                        Text("Vamp Assistant")
+                        Text("Assistant / Companion")
                             .font(.headline)
                             .foregroundStyle(PR.fg)
                     }
@@ -125,7 +126,7 @@ struct BeetCodePairingView: View {
         HStack(spacing: AppSpacing.sm) {
             LinkBadge()
 
-            Text("Pair Vamp Assistant")
+            Text("Pair Assistant or Companion")
                 .font(.title2.weight(.semibold))
                 .tracking(-0.4)
                 .foregroundStyle(PR.fg)
@@ -179,7 +180,7 @@ struct BeetCodePairingView: View {
             }
             .buttonStyle(PRGlassPressButtonStyle())
             .accessibilityLabel("Scan pairing QR code")
-            .accessibilityHint("Scan the private Vamp Assistant QR code to fill the address and pairing code")
+            .accessibilityHint("Scan the private Assistant or Companion QR code to fill the address and pairing code")
         }
     }
 
@@ -229,11 +230,11 @@ struct BeetCodePairingView: View {
                         shape.strokeBorder(Color.white.opacity(0.09), lineWidth: 1)
                     }
                 }
-                .accessibilityLabel("Vamp Assistant private address")
-                .accessibilityHint("Enter the local or Tailscale address of Vamp Assistant")
+                .accessibilityLabel("Assistant or Companion private address")
+                .accessibilityHint(VampProductIdentity.isStoreDistribution ? "Enter the local address of Assistant or Companion on your own Mac" : "Enter the local or Tailscale address of Assistant or Companion")
 
             VStack(alignment: .leading, spacing: AppSpacing.xxs) {
-                Text("Vamp Assistant uses port 9575.")
+                Text("Assistant uses port 9575; Companion uses port 9675.")
                 Button("Local/private network connections only.") {
                     showSecurityDetails = true
                 }
@@ -279,7 +280,7 @@ struct BeetCodePairingView: View {
                     }
                 }
                 .accessibilityLabel("Six-digit pairing code")
-                .accessibilityHint("Enter the one-time code shown by Vamp Assistant")
+                .accessibilityHint("Enter the one-time code shown by Assistant or Companion")
         }
         .padding(.bottom, AppSpacing.md)
     }
@@ -364,7 +365,9 @@ struct BeetCodePairingView: View {
         .accessibilityElement(children: .combine)
 
         if showSecurityDetails {
-            Text("Keep Vamp Assistant on your LAN or private Tailscale network; never expose port 9575 to the public internet.")
+            Text(VampProductIdentity.isStoreDistribution
+                ? "Connect to Assistant or Companion on your own Mac using the same Wi-Fi or Ethernet network. Never expose a host port to the public internet."
+                : "Keep Assistant or Companion on your LAN or private Tailscale network; never expose a host port to the public internet.")
                 .font(.footnote)
                 .foregroundStyle(StreamReading.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -375,10 +378,7 @@ struct BeetCodePairingView: View {
 
     private func applyScannedPayload(_ payload: String) {
         do {
-            let endpoint = try BeetCodeRemoteEndpoint.parse(address: payload)
-            guard endpoint.url.port == BeetCodeRemoteEndpoint.defaultPort else {
-                throw BeetCodeRemoteError.invalidAddress
-            }
+            let endpoint = try BeetCodeRemoteEndpoint.parsePairingLink(payload)
 
             address = endpoint.url.absoluteString
             if let pairingCode = endpoint.pairingCode {
@@ -388,7 +388,7 @@ struct BeetCodePairingView: View {
             showScanner = false
         } catch {
             showScanner = false
-            scanError = "That QR code is not a Vamp Assistant pairing link. Scan the code shown by Vamp Assistant on your Mac."
+            scanError = "That QR code is not an Assistant or Companion pairing link. Scan the code shown by Assistant or Companion on your Mac."
         }
     }
 }

@@ -10,7 +10,7 @@ struct BeetCodeQRScannerView: UIViewControllerRepresentable {
         case assistant, sync
         var instructions: String {
             switch self {
-            case .assistant: return "Enter the address and six-digit pairing code shown by Vamp Assistant manually."
+            case .assistant: return "Enter the address and six-digit pairing code shown by Assistant or Companion manually."
             case .sync: return "Close the scanner and enter the private address shown by \(VampProductIdentity.syncName)."
             }
         }

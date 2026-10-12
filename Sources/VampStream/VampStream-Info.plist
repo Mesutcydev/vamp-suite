@@ -32,11 +32,11 @@
 		<string>_screenharbor._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Vamp Stream uses the camera to scan private Vamp Sync or Vamp Assistant pairing QR codes.</string>
+	<string>$(VAMP_DISPLAY_NAME) uses the camera to scan private Sync, Assistant, or Companion pairing QR codes.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Vamp contributors.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Vamp Stream uses your local network to discover and connect to Macs running Vamp Sync or Vamp Assistant.</string>
+	<string>$(VAMP_DISPLAY_NAME) uses your local network to discover and connect to Macs running Sync, Assistant, or Companion.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>VampStreamRedWaveLaunchScreen</string>
 	<key>UIRequiresFullScreen</key>

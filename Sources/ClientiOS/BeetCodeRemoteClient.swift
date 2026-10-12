@@ -20,6 +20,20 @@ struct BeetCodeRemoteEndpoint: Equatable, Hashable, Sendable {
 
     static let defaultPort = 9575
 
+    /// QR links keep Assistant/Companion separate from Sync's WebRTC pairing.
+    /// Both HTTP hosts can fall back when their preferred listener is occupied.
+    static func parsePairingLink(_ payload: String) throws -> Self {
+        let endpoint = try parse(address: payload)
+        guard let port = endpoint.url.port,
+              (9575...9583).contains(port) || (9675...9683).contains(port) else {
+            throw BeetCodeRemoteError.invalidAddress
+        }
+        guard endpoint.pairingCode != nil else {
+            throw BeetCodeRemoteError.invalidPairingCode
+        }
+        return endpoint
+    }
+
     static func parse(address: String, pairingCode: String? = nil) throws -> Self {
         let candidate = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !candidate.isEmpty else { throw BeetCodeRemoteError.invalidAddress }

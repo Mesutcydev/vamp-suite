@@ -276,9 +276,9 @@ enum VampStreamHomeCopy {
     static let hostOnboardingNearbyTitle = "\(VampProductIdentity.syncName) Macs found nearby"
     static let hostOnboardingNearbyDetail = "Approve new devices on your Mac."
     static let hostSourceSyncDetail = "App windows from \(VampProductIdentity.syncName) on your Mac."
-    static let hostSourceAssistantDetail = "App streams from a Vamp Assistant workspace."
+    static let hostSourceAssistantDetail = "App streams from Vamp Assistant or Vamp Companion on your Mac."
     static let hostSourceBothTitle = "Both"
-    static let hostSourceBothDetail = "Show \(VampProductIdentity.syncName) and Vamp Assistant on the home screen."
+    static let hostSourceBothDetail = "Show \(VampProductIdentity.syncName) and Assistant or Companion on the home screen."
 
     static let syncTitle = "\(VampProductIdentity.syncName)"
     static let syncDetail = "Scan the pairing QR on your Mac, or enter the private address shown by \(VampProductIdentity.syncName)."
@@ -312,16 +312,16 @@ enum VampStreamHomeCopy {
     static let syncConnectExpand = "Show \(VampProductIdentity.syncName) connection"
     static let syncConnectCollapsedDetail = "Scan QR or connect by address"
 
-    static let assistantConnectCollapse = "Minimize Vamp Assistant pairing"
-    static let assistantConnectExpand = "Show Vamp Assistant pairing"
-    static let assistantConnectCollapsedDetail = "Connect an Assistant workspace"
+    static let assistantConnectCollapse = "Minimize Assistant or Companion pairing"
+    static let assistantConnectExpand = "Show Assistant or Companion pairing"
+    static let assistantConnectCollapsedDetail = "Connect an Assistant or Companion Mac"
 
-    static let assistantTitle = "Vamp Assistant"
-    static let assistantDetail = "Pair your Mac to browse and stream its apps."
-    static let pairAssistant = "Pair Vamp Assistant"
-    static let pairAnotherAssistant = "Pair another Assistant"
-    static let pairAssistantHint = "Enter the private address and one-time pairing code shown by Vamp Assistant"
-    static let assistantMacsHeading = "Assistant Macs"
+    static let assistantTitle = "Assistant / Companion"
+    static let assistantDetail = "Pair Assistant or Companion to browse and stream your Mac apps."
+    static let pairAssistant = "Pair Assistant or Companion"
+    static let pairAnotherAssistant = "Pair another Mac"
+    static let pairAssistantHint = "Enter the private address and one-time pairing code shown by Assistant or Companion"
+    static let assistantMacsHeading = "Assistant / Companion Macs"
 
     static func pairAssistantTitle(hasSavedAssistants: Bool) -> String {
         hasSavedAssistants ? pairAnotherAssistant : pairAssistant
