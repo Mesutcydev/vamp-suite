@@ -32,6 +32,37 @@ final class BeetCodeRemoteClientTests: XCTestCase {
         }
     }
 
+    func testQRPairingPreservesAssistantAndCompanionListenerRanges() throws {
+        for port in Array(9575...9583) + Array(9675...9683) {
+            let endpoint = try BeetCodeRemoteEndpoint.parsePairingLink("http://192.168.1.20:\(port)/?pair=123456")
+            XCTAssertEqual(endpoint.url.absoluteString, "http://192.168.1.20:\(port)")
+            XCTAssertEqual(endpoint.pairingCode, "123456")
+        }
+    }
+
+    func testCompanionQRAllowsTailscaleWithoutChangingDefaultAssistantPort() throws {
+        let endpoint = try BeetCodeRemoteEndpoint.parsePairingLink("http://100.90.80.70:9675/?pair=123456")
+        XCTAssertEqual(endpoint.url.port, 9675)
+        XCTAssertEqual(try BeetCodeRemoteEndpoint.parse(address: "192.168.1.20").url.port, 9575)
+    }
+
+    func testQRPairingRejectsSyncPortsAndMissingCodes() {
+        for port in [9471, 9473, 9574, 9584, 9674, 9684] {
+            XCTAssertThrowsError(try BeetCodeRemoteEndpoint.parsePairingLink("http://192.168.1.20:\(port)/?pair=123456")) { error in
+                XCTAssertEqual(error as? BeetCodeRemoteError, .invalidAddress)
+            }
+        }
+        XCTAssertThrowsError(try BeetCodeRemoteEndpoint.parsePairingLink("http://192.168.1.20:9675/")) { error in
+            XCTAssertEqual(error as? BeetCodeRemoteError, .invalidPairingCode)
+        }
+    }
+
+    func testCompanionQRStillRejectsUnencryptedPublicHosts() {
+        XCTAssertThrowsError(try BeetCodeRemoteEndpoint.parsePairingLink("http://example.com:9675/?pair=123456")) { error in
+            XCTAssertEqual(error as? BeetCodeRemoteError, .insecurePublicAddress)
+        }
+    }
+
     func testEndpointAcceptsSecurePublicAddressAndRejectsBadCode() throws {
         let endpoint = try BeetCodeRemoteEndpoint.parse(address: "https://example.com:9575", pairingCode: "123456")
         XCTAssertEqual(endpoint.url.host, "example.com")

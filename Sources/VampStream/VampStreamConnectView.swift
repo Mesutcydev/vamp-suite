@@ -184,7 +184,7 @@ private struct VampStreamConnectHeader: View {
                             .prGlassSurface(in: Capsule(style: .continuous), isInteractive: true)
                     }
                     .buttonStyle(PRGlassPressButtonStyle())
-                    .accessibilityHint("Choose Vamp Sync, Vamp Assistant, or both")
+                    .accessibilityHint("Choose Sync, Assistant or Companion, or both host groups")
                 }
                 VampStreamVersionBadge()
             }

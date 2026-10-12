@@ -54,11 +54,11 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: "Copyright © 2026 Vamp contributors."
-        NSCameraUsageDescription: "Vamp Stream uses the camera to scan private Vamp Sync or Vamp Assistant pairing QR codes."
-        NSLocalNetworkUsageDescription: "Vamp Stream uses your local network to discover and connect to Macs running Vamp Sync or Vamp Assistant."
+        NSCameraUsageDescription: "Vamp Stream uses the camera to scan private Vamp Sync, Vamp Assistant, or Vamp Companion pairing QR codes."
+        NSLocalNetworkUsageDescription: "Vamp Stream uses your local network to discover and connect to Macs running Vamp Sync, Vamp Assistant, or Vamp Companion."
         NSAppTransportSecurity:
           # Vamp Assistant is intentionally a private-network HTTP peer on
-          # port 9575. The client enforces the LAN/Tailscale-only address
+          # its own port (9575 for Assistant, 9675 for Companion). The client enforces the LAN/Tailscale-only address
           # policy in BeetCodeRemoteEndpoint before any request is made. Do not
           # combine this with NSAllowsLocalNetworking: on current iOS the
           # fine-grained key causes the global dynamic-IP allowance to be ignored.
@@ -75,8 +75,8 @@ targets:
           - UIInterfaceOrientationPortrait
     settings:
       base:
-        MARKETING_VERSION: 0.1.18
-        CURRENT_PROJECT_VERSION: 32
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: 8
         PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.stream
         PRODUCT_NAME: Vamp Stream
         CODE_SIGN_ENTITLEMENTS: Configuration/VampStream.entitlements

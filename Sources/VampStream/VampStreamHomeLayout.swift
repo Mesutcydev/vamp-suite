@@ -146,7 +146,7 @@ enum VampStreamHomeCopy {
     static let headerTitleTrail = "from your Mac"
     static let headerDetail = "Choose a trusted Mac, then open and control one app at a time."
     static let headerDetailSync = "Connect with Vamp Sync, then open and control one app at a time."
-    static let headerDetailAssistant = "Pair Vamp Assistant, then open and control one app at a time."
+    static let headerDetailAssistant = "Pair Assistant or Companion, then open and control one app at a time."
     static let changeHost = "Change host"
     static let showGrid = "Show rectangular cards"
     static let showList = "Show list cards"
@@ -155,9 +155,9 @@ enum VampStreamHomeCopy {
     static let hostOnboardingDetail = "Pick the Mac host you use. You can change this later."
     static let hostOnboardingContinue = "Continue"
     static let hostSourceSyncDetail = "App windows from Vamp Sync on your Mac."
-    static let hostSourceAssistantDetail = "App streams from a Vamp Assistant workspace."
+    static let hostSourceAssistantDetail = "App streams from Vamp Assistant or Vamp Companion on your Mac."
     static let hostSourceBothTitle = "Both"
-    static let hostSourceBothDetail = "Show Vamp Sync and Vamp Assistant on the home screen."
+    static let hostSourceBothDetail = "Show Sync, Assistant, and Companion hosts on the home screen."
 
     static let syncTitle = "Vamp Sync"
     static let syncDetail = "Scan the pairing QR on your Mac, or enter the private address shown by Vamp Sync."
@@ -187,11 +187,11 @@ enum VampStreamHomeCopy {
     static let syncConnectExpand = "Show Vamp Sync connection"
     static let syncConnectCollapsedDetail = "Scan QR or connect by address"
 
-    static let assistantTitle = "Vamp Assistant"
-    static let assistantDetail = "Pair a workspace when you want app streams from Vamp Assistant."
-    static let pairAssistant = "Pair Vamp Assistant"
-    static let pairAnotherAssistant = "Pair another Assistant"
-    static let pairAssistantHint = "Enter the private address and one-time pairing code shown by Vamp Assistant"
+    static let assistantTitle = "Assistant / Companion"
+    static let assistantDetail = "Pair Vamp Assistant or Vamp Companion to stream apps from your Mac."
+    static let pairAssistant = "Pair Assistant or Companion"
+    static let pairAnotherAssistant = "Pair another Mac"
+    static let pairAssistantHint = "Enter the private address and one-time code shown by Assistant or Companion"
     static let assistantMacsHeading = "ASSISTANT APP STREAMS"
 
     static func headerDetail(for source: VampStreamHostSource) -> String {
