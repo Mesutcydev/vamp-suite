@@ -29,9 +29,11 @@ hosted relay.
 | **Vamp Control** | Mac, iPhone, or iPad | Mac-to-Mac access or the Control interface on mobile |
 | **Vamp Stream** | iPhone or iPad | A focused app-window experience on your phone or tablet |
 
-Both clients connect to Sync and control a selected Mac app window. Vamp Stream
-1.0 build 8 also accepts Vamp Companion pairing QR codes on port 9675 and its
-fallback ports; Assistant pairing on 9575 and its fallback ports remains supported. Use a trusted
+Both clients connect to Sync and control a selected Mac app window. App Stream
+1.0 build 9 also accepts Vamp Companion pairing QR codes on port 9675 and its
+fallback ports; Assistant pairing on 9575 and its fallback ports remains supported.
+This build is available to the existing Internal Testers group through TestFlight;
+there is no public TestFlight invitation or public iOS download yet. Use a trusted
 LAN or private Tailscale network, scan Sync’s QR, compare the complete device
 fingerprint, and approve the verified device on the Mac.
 

@@ -438,6 +438,17 @@
     "companion.alternative": "iPhone merkezli bir kurulum",
     "companion.assistantCopy": "Asistan arayüzünü iPhone veya iPad’de mi istiyorsun? Aynı iOS uygulamasını Vamp Companion ile eşle: yerel modeller, API sağlayıcıları, cihazlar ve ayarlar için küçük bir Mac host’u. Mevcut Assistant kurulumun ayrı kalır."
 });
+  Object.assign(translations.tr, {
+    "stream.betaDetails": "TestFlight beta",
+    "stream.betaAccess": "Davetli TestFlight test kullanıcıları için hazır. Herkese açık iOS indirmesi daha sonra eklenecek.",
+    "stream.betaShort": "TestFlight · davetli test kullanıcıları",
+    "stream.betaInstall": "Vamp Stream’i TestFlight davetinden kur veya mevcut elle yüklenen derlemeni kullan. Uygulama penceresi yayını için Mac’ine Vamp Sync kur.",
+    "stream.assistantCompanionTitle": "Vamp Assistant veya Companion mı kullanıyorsun?",
+    "stream.assistantCompanionCopy": "App Stream 1.0 derleme 9, hem Vamp Assistant hem de Vamp Companion eşleştirme QR kodlarını kabul eder. Assistant’ta Remote Sessions’ı veya Companion’ın Cihazlar sekmesinde iPhone erişimini aç, ardından Mac’in QR kodunu Stream’de tarat. Kullanmak istediğin host’ta paylaşımı ve Mac kontrolünü etkinleştir. App Stream kendi Mac’ine aynı Wi-Fi veya Ethernet ağında bağlanır; web sitesi sürümü özel Tailscale ağını destekler.",
+    "stream.betaLead": "En yeni App Stream betası davetli test kullanıcıları için TestFlight’ta. Uygulama penceresi yayını için Sync’i seç veya mevcut Assistant ya da Companion host’unu eşleştir.",
+    "stream.betaCopy": "En yeni derlemeyi iPhone veya iPad’e kurmak için mevcut TestFlight davetini aç. Bu beta, Assistant bağlantılarını ayrı tutarak Companion QR eşleştirmesini destekler.",
+    "companion.streamCompatibility": "App Stream mi kullanıyorsun? 1.0 derleme 9, aynı Wi-Fi veya Ethernet ağında uzaktan erişim ve izin verilen Mac kontrolü için Companion eşleştirme QR kodlarını da tarar. Davetli test kullanıcıları için TestFlight’ta kullanılabilir."
+  });
   let currentLanguage = localStorage.getItem('vamp-lang') === 'tr' ? 'tr' : 'en';
   const originalText = new Map();
   document.querySelectorAll('[data-i18n]').forEach((element) => originalText.set(element, element.innerHTML));

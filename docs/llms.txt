@@ -24,7 +24,8 @@ License: Apache-2.0
 - Vamp Control: Mac, iPhone and iPad client. Connect to Sync to select and control
   a Mac app window. Assistant has a separate authenticated connection path.
 - Vamp Stream: focused iPhone/iPad client. Stream an app window through Sync,
-  or connect to Assistant through its private Remote Sessions endpoint.
+  or connect to Assistant or Companion through their private Remote Sessions endpoints.
+  App Stream 1.0 build 9 supports Companion QR pairing and is in TestFlight for invited testers.
 - Vamp Assistant: native macOS AI chat, local/BYOK models, Code workspaces,
   specialist bots, and approval-gated automation. Includes its own iOS and
   browser remote access. Runs independently; Sync is not required.
