@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 
 REPOSITORY = "Mesutcydev/vamp-suite"
 ASSISTANT_REPOSITORY = "Mesutcydev/vamp-assistant"
+COMPANION_REPOSITORY = "Mesutcydev/vamp-companion"
 ROOT = Path(__file__).resolve().parents[1]
 ASSET_PATTERNS = {
     "vamp-terminal-ios": re.compile(r"^VampTerminal-iOS-.+-build-\d+-altstore-unsigned\.ipa$"),
@@ -24,7 +25,10 @@ ASSISTANT_ASSET_PATTERNS = {
     "vamp-assistant-macos": re.compile(r"^Vamp-Assistant-(?:.+\.dmg|\d+\.\d+\.\d+-build-\d+-public\.zip)$"),
     "vamp-assistant-ios": re.compile(r"^Vamp-Assistant-iOS-.+-unsigned\.ipa$"),
 }
-REQUIRED = {"vamp-mini-host-dmg", "vamp-control-macos", "vamp-control-ios", "vamp-stream-ios", *ASSISTANT_ASSET_PATTERNS}
+COMPANION_ASSET_PATTERNS = {
+    "vamp-companion-macos": re.compile(r"^Vamp-Companion-\d+\.\d+\.\d+-build-\d+-public\.zip$"),
+}
+REQUIRED = {"vamp-mini-host-dmg", "vamp-control-macos", "vamp-control-ios", "vamp-stream-ios", *ASSISTANT_ASSET_PATTERNS, *COMPANION_ASSET_PATTERNS}
 
 
 def fetch_json(url: str):
@@ -88,9 +92,11 @@ def asset_label(name: str) -> str:
     return label + (f" · revision {revision[1]}" if revision else "")
 
 
-def resolve_assets(suite: list[dict], assistant: list[dict], products: set[str] | None = None) -> dict:
+def resolve_assets(suite: list[dict], assistant: list[dict], products: set[str] | None = None,
+                   companion: list[dict] | None = None) -> dict:
     assets = {}
-    for releases, patterns in ((suite, ASSET_PATTERNS), (assistant, ASSISTANT_ASSET_PATTERNS)):
+    for releases, patterns in ((suite, ASSET_PATTERNS), (assistant, ASSISTANT_ASSET_PATTERNS),
+                              (companion or [], COMPANION_ASSET_PATTERNS)):
         for key, pattern in patterns.items():
             if products is not None and key not in products:
                 continue
@@ -138,16 +144,19 @@ def main(argv: list[str] | None = None) -> int:
     products = set(args.product) if args.product else None
     suite = fetch_releases(REPOSITORY) if products is None or products & ASSET_PATTERNS.keys() else []
     assistant = fetch_releases(ASSISTANT_REPOSITORY) if products is None or products & ASSISTANT_ASSET_PATTERNS.keys() else []
-    updates = resolve_assets(suite, assistant, products)
+    companion = fetch_releases(COMPANION_REPOSITORY) if products is None or products & COMPANION_ASSET_PATTERNS.keys() else []
+    updates = resolve_assets(suite, assistant, products, companion)
     docs = ROOT / "docs"
     if products is not None:
         payload = json.loads((docs / "release.json").read_text())
         payload["assets"].update(updates)
+        payload.setdefault("repositories", {}).update({"companion": COMPANION_REPOSITORY})
     else:
         # The footer describes the suite, never an unrelated app sharing this repository.
         release = max((r for r in suite if not r.get("draft") and not r.get("prerelease")
                        and r["tag_name"].startswith("vamp-suite-")), key=lambda r: r["published_at"])
-        payload = {"repository": REPOSITORY, "repositories": {"suite": REPOSITORY, "assistant": ASSISTANT_REPOSITORY},
+        payload = {"repository": REPOSITORY, "repositories": {"suite": REPOSITORY, "assistant": ASSISTANT_REPOSITORY,
+                                                              "companion": COMPANION_REPOSITORY},
                    "tag": release["tag_name"], "name": release.get("name", release["tag_name"]),
                    "url": release["html_url"], "published_at": release.get("published_at"), "assets": updates}
     assets = payload["assets"]

@@ -6,7 +6,7 @@ This file is the operational contract for AI agents working with the Vamp suite.
 
 Vamp is an open-source remote desktop and terminal suite. Mac hosts and clients
 reuse the signed pairing, trust, Tailscale, and authenticated WebRTC stack in
-this repository. Current hosts are Vamp Sync and Vamp Assistant. Vamp Host,
+this repository. Current hosts are Vamp Sync, Vamp Assistant, and Vamp Companion. Vamp Host,
 Vamp Terminal Host, and Vamp Linux Host are discontinued; historical sources
 and identifiers remain for compatibility and shared-source verification.
 Do not package, reinstall, or advertise discontinued hosts.
@@ -21,6 +21,7 @@ Do not package, reinstall, or advertise discontinued hosts.
 | Terminal client | `Vamp Terminal` — eight concurrent tabs and ten agent launchers |
 | App-stream client | `Vamp Stream` — focused iOS/iPadOS app-window streaming client |
 | Assistant compatibility | `Vamp Assistant` — active independent AI workspace and remote host on private port `9575` |
+| Companion compatibility | `Vamp Companion` — compact independent AI host for the existing Assistant iOS app on private port `9675` |
 | Browser client | Safari control on host loopback `9475` |
 | Full host bundle ID | `com.mesutcy.remotedesktop.host` |
 | Light host bundle ID | `com.mesutcy.remotedesktop.terminalhost` |
@@ -43,7 +44,8 @@ Do not package, reinstall, or advertise discontinued hosts.
 | Mini URL scheme | `vampminihost://` |
 | License | Apache-2.0 |
 
-Run only one macOS host at a time. Vamp Control and Vamp Terminal cannot attach
+Run only one Sync/legacy WebRTC host at a time. Vamp Companion has its own
+port, data, and update channel and may run alongside Vamp Assistant. Vamp Control and Vamp Terminal cannot attach
 to Vamp Linux Host.
 
 The iOS builds are unsigned device IPAs for AltStore-style re-signing. No

@@ -50,10 +50,19 @@ local or BYOK chat, Code workspaces, and specialist tools. Its features include:
 on your Mac, then add its mobile companion if needed. It does not require Sync. Assistant lives in the separate
 [vamp-assistant repository](https://github.com/Mesutcydev/vamp-assistant).
 
+### Optional: Vamp Companion
+
+[Vamp Companion](https://thevamp.app/companion/) is a compact Mac host for an
+iPhone-first assistant. Use the existing Vamp Assistant iOS app for sessions,
+tools, bots, and approvals; manage local models, API providers, pairing, and
+settings on Mac. Requires Apple Silicon and macOS 15+. Its data and signed
+update channel are separate from Assistant. Source and notarized downloads live
+in [vamp-companion](https://github.com/Mesutcydev/vamp-companion).
+
 <details>
 <summary>Other tools and compatibility</summary>
 
-**Vamp Sync and Vamp Assistant are the only current hosts.** Vamp Host, Vamp
+**Vamp Sync, Vamp Assistant, and Vamp Companion are the current hosts.** Vamp Host, Vamp
 Terminal Host, and Vamp Linux Host are discontinued. Their historical source
 and build targets remain for compatibility and shared-source verification;
 new packages are no longer produced. Vamp Terminal documentation describes

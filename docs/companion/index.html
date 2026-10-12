@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111111">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <link rel="canonical" href="https://thevamp.app/companion/">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg?v=arcade-emblem-20260908">
+  <link rel="apple-touch-icon" href="../assets/vamp-companion-icon.png">
+  <meta name="description" content="Vamp Companion runs local assistant models on your Mac while the existing Vamp Assistant iPhone and iPad app handles chats, tools, bots, and approvals.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Vamp">
+  <meta property="og:title" content="Vamp Companion · Your iPhone. Your Mac’s AI.">
+  <meta property="og:description" content="A compact Mac companion for local models, private device pairing, and API providers. Keep your assistant interface on iPhone and iPad.">
+  <meta property="og:url" content="https://thevamp.app/companion/">
+  <meta property="og:image" content="https://thevamp.app/assets/vamp-companion-icon.png">
+  <meta name="twitter:card" content="summary">
+  <title>Vamp Companion · Your iPhone. Your Mac’s AI.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Barlow+Condensed:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/site.css?v=suite-16">
+  <link rel="stylesheet" href="../assets/products.css?v=preview-lightbox-20260908">
+  <link rel="stylesheet" href="../assets/arcade.css?v=arcade-edge-light-20260908">
+  <link rel="stylesheet" href="../assets/companion.css?v=companion-20261012">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Vamp Companion","url":"https://thevamp.app/companion/","operatingSystem":"macOS 15 or later, Apple Silicon","applicationCategory":"UtilitiesApplication","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"codeRepository":"https://github.com/Mesutcydev/vamp-companion"}</script>
+</head>
+<body class="companion-page">
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="../" aria-label="Vamp home"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40" focusable="false"><path fill="currentColor" fill-rule="evenodd" d="M8 5h24l6 6v17H28l-3 8-5-8-5 8-3-8H2V11zm2 6-2 2v9h24v-9l-2-2z"/><path fill="currentColor" d="M12 15h6v3h-6zm10 0h6v3h-6z"/></svg></span><span class="brand-word">Vamp</span><span class="brand-tag">companion</span></a>
+      <nav class="nav-links" aria-label="Primary navigation"><a class="text-button" href="#features" data-i18n="companion.navFeatures">Features</a><a class="text-button" href="#setup" data-i18n="companion.navSetup">Pair your devices</a><a class="text-button" href="../assistant/">Assistant</a></nav>
+      <div class="nav-actions"><a class="primary-button" href="#download" data-i18n="companion.get">Get Companion ↓</a><a class="icon-button" href="https://github.com/Mesutcydev/vamp-companion" target="_blank" rel="noreferrer" aria-label="Open Companion on GitHub">GH</a><button class="icon-button language-button" id="language-toggle" type="button"><span id="language-code">TR</span></button><button class="icon-button" id="theme-toggle" type="button"><span id="theme-icon">☾</span></button><button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mobile-menu">☰</button></div>
+    </div>
+    <nav class="container mobile-menu" id="mobile-menu" data-open="false" hidden aria-label="Mobile navigation"><a class="text-button" href="#features" data-i18n="companion.navFeatures">Features</a><a class="text-button" href="#setup" data-i18n="companion.navSetup">Pair your devices</a><a class="text-button" href="#download" data-i18n="ux.downloads">Downloads</a><a class="text-button" href="../assistant/">Vamp Assistant</a></nav>
+  </header>
+  <main id="top">
+    <section class="container product-hero">
+      <div class="product-hero-copy">
+        <div class="eyebrow" data-i18n="companion.eyebrow">Mac companion · iPhone-first assistant</div>
+        <h1><span data-i18n="companion.title1">Your iPhone.</span><br><span class="marked" data-i18n="companion.title2">Your Mac’s AI.</span></h1>
+        <p class="product-hero-sub" data-i18n="companion.hero">Run assistant models on your Mac. Chat, use tools, manage bots, and approve work from the existing Vamp Assistant app on iPhone or iPad.</p>
+        <div class="hero-actions"><a class="primary-button" data-release-link="vamp-companion-macos" data-i18n="companion.downloadMac" href="https://github.com/Mesutcydev/vamp-companion/releases/download/v0.1.0/Vamp-Companion-0.1.0-build-1-public.zip">Download for Mac ↓</a><a class="secondary-button" href="#setup" data-i18n="companion.navSetup">Pair your devices</a></div>
+        <p class="product-hero-note" data-i18n="companion.requirements">Apple Silicon · macOS 15+ · signed &amp; notarized</p>
+      </div>
+      <figure class="product-visual companion-scene" aria-label="Vamp Companion runs models on your Mac for Vamp Assistant on iPhone and iPad">
+        <div class="visual-bar"><span>Vamp Companion</span><span data-i18n="companion.sceneMac">On your Mac</span></div>
+        <div class="companion-scene-body">
+          <div class="companion-machine"><img src="../assets/vamp-companion-icon.png" width="88" height="88" alt=""><div><span class="companion-scene-label" data-i18n="companion.sceneHost">Models run here</span><h2>Vamp Companion</h2><p data-i18n="companion.sceneModels">Local models + your API providers</p></div></div>
+          <div class="companion-scene-tabs"><span data-i18n="companion.models">Models</span><span data-i18n="companion.devices">Devices</span><span data-i18n="companion.settings">Settings</span></div>
+          <div class="companion-connection"><span aria-hidden="true">↕</span><span>Wi-Fi / Tailscale</span></div>
+          <div class="companion-mobile"><span class="companion-phone-icon" aria-hidden="true"><svg viewBox="0 0 32 44" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="24" height="40" rx="5"/><path d="M12 6h8M13 37h6"/></svg></span><div><span class="companion-scene-label">iPhone · iPad</span><h3>Vamp Assistant</h3><p data-i18n="companion.scenePhone">Chats, tools, bots, and approvals</p></div></div>
+        </div>
+        <figcaption class="companion-scene-caption" data-i18n="companion.sceneCaption">Your assistant in hand. Your models on Mac.</figcaption>
+      </figure>
+    </section>
+    <div class="container product-rail"><div class="product-stat"><strong>MLX / GGUF</strong><span data-i18n="companion.statLocal">local model support</span></div><div class="product-stat"><strong data-i18n="companion.statApiTitle">API models</strong><span data-i18n="companion.statApi">bring your own provider</span></div><div class="product-stat"><strong>iPhone + iPad</strong><span data-i18n="companion.statPhone">your assistant interface</span></div><div class="product-stat"><strong data-i18n="companion.statBackgroundTitle">Background</strong><span data-i18n="companion.statBackground">runs with the window closed</span></div></div>
+    <section class="container product-section" id="features">
+      <div class="product-section-head"><div><div class="section-kicker"><span class="number">01</span><span class="bar"></span></div><h2 class="section-title" data-i18n="companion.featuresTitle">Three tabs. Ready to assist.</h2></div><p class="section-lead" data-i18n="companion.featuresLead">The Mac handles setup and execution. Your phone is the main assistant interface.</p></div>
+      <div class="feature-grid">
+        <article class="feature-card"><div class="card-topline"><span class="card-number">01</span></div><h3 data-i18n="companion.models">Models</h3><p data-i18n="companion.modelsCopy">Browse the catalog, check what fits your Mac, download with pause and resume, or import MLX and GGUF models. Load a local model or choose a connected provider.</p></article>
+        <article class="feature-card"><div class="card-topline"><span class="card-number">02</span></div><h3 data-i18n="companion.devices">Devices</h3><p data-i18n="companion.devicesCopy">Enable iPhone access, scan a QR or enter a pairing code, and see your connection address. Renew pairing and revoke devices whenever you choose.</p></article>
+        <article class="feature-card"><div class="card-topline"><span class="card-number">03</span></div><h3 data-i18n="companion.settings">Settings</h3><p data-i18n="companion.settingsCopy">Connect API providers and accounts, save Hugging Face credentials, choose appearance and launch at login, and manage sharing, Mac control, and updates.</p></article>
+      </div>
+      <p class="feature-note" data-i18n="companion.backgroundCopy">Close the window and keep going from iOS. Downloads and remote sessions continue; the menu bar brings Models, Devices, or Settings back when needed. Your Mac must stay awake and reachable.</p>
+      <p class="feature-note" data-i18n="companion.providerBoundary">Local inference runs on your Mac. When you choose an API provider or connected service, the relevant requests go to that service; its availability and costs apply.</p>
+    </section>
+    <section class="container product-section" id="setup">
+      <div class="product-section-head"><div><div class="section-kicker"><span class="number">02</span><span class="bar"></span></div><h2 class="section-title" data-i18n="companion.setupTitle">Mac ready. iPhone paired.</h2></div><p class="section-lead" data-i18n="companion.setupLead">Use the existing Vamp Assistant iOS app. All its assistant features stay available.</p></div>
+      <div class="flow-board">
+        <article class="family-card flow-step"><span class="card-number">01</span><h3 data-i18n="companion.step1Title">Install on Mac.</h3><p data-i18n="companion.step1Copy">Unzip the download and move Vamp Companion.app to Applications. Download or import a model, or connect an API provider.</p></article>
+        <article class="family-card flow-step"><span class="card-number">02</span><h3 data-i18n="companion.step2Title">Open the iOS app.</h3><p data-i18n="companion.step2Copy">Open your existing Vamp Assistant build on iPhone or iPad. You can pair a sideloaded installation directly. An iOS download will be added here when available.</p></article>
+        <article class="family-card flow-step"><span class="card-number">03</span><h3 data-i18n="companion.step3Title">Pair and start.</h3><p data-i18n="companion.step3Copy">In Devices on Mac, enable iPhone access. On iOS, scan the QR or enter the address and code. Connect over trusted Wi-Fi or your private Tailscale network, then start a session.</p></article>
+      </div>
+    </section>
+    <section class="container product-section" id="permissions">
+      <div class="product-section-head"><div><div class="section-kicker"><span class="number">03</span><span class="bar"></span></div><h2 class="section-title" data-i18n="companion.permissionsTitle">Access stays in your hands.</h2></div><p class="section-lead" data-i18n="companion.permissionsLead">Pairing, sharing, and control each have their own settings. Grant only the access you want to use.</p></div>
+      <div class="guard-grid">
+        <div class="guard"><strong data-i18n="companion.privateTitle">Private connection</strong><span data-i18n="companion.privateCopy">Hosting starts after you enable it. Use trusted Wi-Fi or Tailscale; revoke paired devices from the Mac.</span></div>
+        <div class="guard"><strong data-i18n="companion.controlTitle">Optional Mac control</strong><span data-i18n="companion.controlCopy">Clipboard, files, and Mac control are off by default. Control also needs the relevant macOS Screen Recording and Accessibility permissions.</span></div>
+        <div class="guard"><strong data-i18n="companion.independentTitle">A separate app</strong><span data-i18n="companion.independentCopy">Companion has its own models, credentials, settings, sessions, and update channel. It keeps your original Vamp Assistant installation separate.</span></div>
+        <div class="guard"><strong data-i18n="companion.updatesTitle">Signed updates</strong><span data-i18n="companion.updatesCopy">Developer ID signed and notarized by Apple. Sparkle checks automatically; you choose when to install an update.</span></div>
+      </div>
+    </section>
+    <section class="container product-section" id="download">
+      <div class="product-section-head"><div><div class="section-kicker"><span class="number">04</span><span class="bar"></span></div><h2 class="section-title" data-i18n="companion.downloadTitle">The pair for your assistant.</h2></div><p class="section-lead" data-i18n="companion.downloadLead">Companion goes on the Mac. The existing Assistant app goes on iPhone or iPad.</p></div>
+      <div class="download-board">
+        <article class="download-card"><div class="eyebrow">Vamp Companion · macOS</div><h3 data-i18n="companion.macCardTitle">Your models, on Mac.</h3><p data-i18n="companion.macCardCopy">Apple Silicon and macOS 15 or later. Download the signed, notarized ZIP, unzip it, and move the app to Applications.</p><p class="download-version"><span data-release-version="vamp-companion-macos">0.1.0 · build 1</span></p><div class="download-actions"><a class="primary-button" data-release-link="vamp-companion-macos" data-i18n="assistant.downloadDmg" href="https://github.com/Mesutcydev/vamp-companion/releases/download/v0.1.0/Vamp-Companion-0.1.0-build-1-public.zip">Download ZIP ↓</a><a class="secondary-button" data-release-sha256="vamp-companion-macos" href="https://github.com/Mesutcydev/vamp-companion/releases/download/v0.1.0/Vamp-Companion-0.1.0-build-1-public.zip.sha256">SHA-256</a></div></article>
+        <article class="download-card"><div class="eyebrow">Vamp Assistant · iPhone + iPad</div><h3 data-i18n="companion.iosCardTitle">Your assistant, in hand.</h3><p data-i18n="companion.iosCardCopy">iOS or iPadOS 18 or later. The existing app handles sessions, streaming, stop, approvals, bots, and permitted tools. Re-sign the unsigned IPA to install.</p><p class="download-version" data-i18n="companion.iosUnavailable">iOS download not available yet. Existing sideloaded builds can pair now.</p></article>
+      </div>
+      <div class="companion-choice"><p data-i18n="companion.fullMac">Prefer to chat and work directly on your Mac? Vamp Assistant includes the full Mac workspace.</p><a class="text-button" href="../assistant/" data-i18n="companion.exploreAssistant">Explore Vamp Assistant →</a></div>
+    </section>
+  </main>
+  <footer class="container site-footer"><div class="footer-top"><div class="footer-brand"><a class="brand" href="../"><span class="brand-word">Vamp</span></a><p data-i18n="companion.footer">Your assistant on iPhone. Your models on Mac.</p></div><div class="footer-links"><a href="../assistant/">Assistant</a><a href="../sync/">Sync</a><a href="../stream/">Stream</a><a href="../privacy/">Privacy</a><a href="https://github.com/Mesutcydev/vamp-companion" target="_blank" rel="noreferrer">Companion GitHub ↗</a></div></div><div class="footer-bottom"><span>© <span id="year"></span> Vamp Companion · MIT</span><span data-i18n="footer.meta">local-first · peer-approved · no hosted relay</span></div></footer>
+  <script src="../assets/site.js?v=companion-20261012" defer></script>
+</body>
+</html>

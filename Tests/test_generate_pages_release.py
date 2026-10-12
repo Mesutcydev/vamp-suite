@@ -120,6 +120,37 @@ class PagesReleaseSelectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "vamp-mini-host-dmg"):
             pages_release.resolve_assets([], [], {"vamp-mini-host-dmg"})
 
+    def test_companion_refresh_uses_its_own_repository_and_preserves_assistant(self):
+        key = "vamp-companion-macos"
+        name = "Vamp-Companion-0.1.0-build-1-public.zip"
+        url = f"https://github.com/Mesutcydev/vamp-companion/releases/download/v0.1.0/{name}"
+        releases = [{"tag_name": "v0.1.0", "html_url": "https://example.test/companion",
+                     "assets": [{"name": name, "browser_download_url": url},
+                                {"name": name + ".sha256", "browser_download_url": url + ".sha256"}]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs = root / "docs"
+            docs.mkdir()
+            assistant = {"url": "https://example.test/assistant.ipa", "label": "existing"}
+            (docs / "release.json").write_text(json.dumps({"assets": {"vamp-assistant-ios": assistant}}))
+            (docs / "index.html").write_text(f'<a data-release-link="{key}" href="old">Companion</a>')
+            with patch.object(pages_release, "ROOT", root), patch.object(pages_release, "fetch_releases", return_value=releases) as fetch:
+                pages_release.main(["--product", key])
+            fetch.assert_called_once_with(pages_release.COMPANION_REPOSITORY)
+            result = json.loads((docs / "release.json").read_text())
+            self.assertEqual(result["assets"]["vamp-assistant-ios"], assistant)
+            self.assertEqual(result["assets"][key]["sha256Url"], url + ".sha256")
+            self.assertEqual(result["repositories"]["companion"], pages_release.COMPANION_REPOSITORY)
+
+    def test_companion_selector_excludes_assistant_and_non_public_archives(self):
+        pattern = pages_release.COMPANION_ASSET_PATTERNS["vamp-companion-macos"]
+        self.assertIsNone(pattern.fullmatch("Vamp-Assistant-0.1.0-build-1-public.zip"))
+        self.assertIsNone(pattern.fullmatch("Vamp-Companion-0.1.0-build-1-preview.zip"))
+        releases = [{"assets": [{"name": "Vamp-Companion-0.1.0-build-1-public.zip"},
+                                {"name": "Vamp-Companion-0.1.1-build-2-public.zip"}]}]
+        self.assertEqual(pages_release.choose_release_asset(releases, pattern)[1]["name"],
+                         "Vamp-Companion-0.1.1-build-2-public.zip")
+
     def test_pagination_reads_beyond_first_hundred_releases(self):
         with patch.object(pages_release, "fetch_json", side_effect=[[{}] * 100, [{"tag_name": "older"}]]):
             self.assertEqual(len(pages_release.fetch_releases("example/repo")), 101)

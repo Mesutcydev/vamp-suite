@@ -10,8 +10,10 @@ Downloads: https://thevamp.app/#download
 Control: https://thevamp.app/#control
 Stream: https://thevamp.app/stream/
 Assistant: https://thevamp.app/assistant/
+Companion: https://thevamp.app/companion/
 Suite source: https://github.com/Mesutcydev/vamp-suite
 Assistant source: https://github.com/Mesutcydev/vamp-assistant
+Companion source: https://github.com/Mesutcydev/vamp-companion (MIT)
 License: Apache-2.0
 
 ## Products
@@ -27,7 +29,13 @@ License: Apache-2.0
   specialist bots, and approval-gated automation. Includes its own iOS and
   browser remote access. Runs independently; Sync is not required.
 
-Vamp Sync and Vamp Assistant are the only current hosts. Vamp Host, Vamp
+- Vamp Companion: a compact Apple Silicon/macOS 15+ host for the existing
+  Vamp Assistant iOS app. Runs local MLX/GGUF and API models; its Mac window
+  contains Models, Devices, and Settings. Uses separate data and signed updates.
+  Downloads and sessions continue with the window closed. Sharing and Mac
+  control are opt-in; the Mac must remain awake and reachable.
+
+Vamp Sync, Vamp Assistant, and Vamp Companion are the current hosts. Vamp Host, Vamp
 Terminal Host, and Vamp Linux Host are discontinued. Shared transport source
 and historical technical documentation remain available in the repository.
 

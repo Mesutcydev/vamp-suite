@@ -19,6 +19,7 @@ on:
           - vamp-stream-ios
           - vamp-assistant-macos
           - vamp-assistant-ios
+          - vamp-companion-macos
 
 permissions:
   contents: read
