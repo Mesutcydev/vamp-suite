@@ -53,6 +53,14 @@ class PagesReleaseSelectionTests(unittest.TestCase):
                      "assets": [{"name": name}]} for i, name in enumerate(names)]
         return pages_release.choose_release_asset(releases, pages_release.ASSET_PATTERNS[key])[1]["name"]
 
+    def test_assistant_notarized_zip_is_selected(self):
+        pattern = pages_release.ASSISTANT_ASSET_PATTERNS["vamp-assistant-macos"]
+        archive = {"name": "Vamp-Assistant-0.10.54-build-133-public.zip"}
+        previous = {"name": "Vamp-Assistant-0.10.52-build-131-preview.dmg"}
+        releases = [{"assets": [previous, archive], "published_at": "2026-10-12"}]
+        self.assertEqual(pages_release.choose_release_asset(releases, pattern)[1], archive)
+        self.assertIsNone(pattern.fullmatch("Vamp-Assistant-iOS-0.10.54-build-133-unsigned.ipa"))
+
     def test_marketing_version_reset_keeps_newest_build(self):
         old = "VampControl-iOS-3.7.5-build-40-altstore-unsigned.ipa"
         new = "VampControl-iOS-2.3.0-build-47-altstore-unsigned.ipa"
