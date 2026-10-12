@@ -89,6 +89,9 @@ targets:
       configs:
         Release:
           CODE_SIGN_ENTITLEMENTS: Configuration/VampStream-AppStore.entitlements
+          # Supplied locally for TestFlight; dependency resource bundles must
+          # never inherit the application's provisioning profile.
+          PROVISIONING_PROFILE_SPECIFIER: "$(VAMP_STREAM_PROFILE_SPECIFIER)"
     dependencies:
       - package: VampStreamCore
         product: SharedModels
