@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Direct-distribution (website) build entitlements. NON-sandboxed, mirroring the
+	  host's MacHost-Release.entitlements. The sandboxed MacClient.entitlements is
+	  kept for the manual Mac App Store build.
+	-->
+	<key>com.apple.security.get-task-allow</key>
+	<false/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>
