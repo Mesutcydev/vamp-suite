@@ -62,7 +62,7 @@
       'sync.inputTitle': "İzin verildiğinde kontrol et",
       'sync.videoCopy': "Paylaşılacak Mac uygulamasını Control veya Stream’den seç. Sync o uygulama penceresini yakalar.",
       'sync.videoTitle': "Bir uygulama penceresi paylaş",
-      'sync.pairCopy': "Vamp Control veya Vamp Stream’i onaylamadan önce cihazın tam parmak izini karşılaştır.",
+      'sync.pairCopy': "Sync’te Yerel Wi-Fi veya Tailscale’i seç, o ağın QR kodunu tara ve cihazı onaylamadan önce tam parmak izini karşılaştır. Tailscale özel sayısal adres kullanır; MagicDNS isteğe bağlıdır.",
       'sync.pairTitle': "Her yeni cihazı doğrula",
       'sync.surfaceLead': "Erişilebilirliği, izinleri, eşleme isteklerini, onaylı cihazları ve çalışma kontrollerini tek bir menü çubuğu arayüzünde gör.",
       'sync.surfaceTitle': "Tek host. İki istemci.",
