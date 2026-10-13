@@ -67,12 +67,12 @@
       "sha256Url": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.52/Vamp-Assistant-iOS-0.10.52-build-131-unsigned.ipa.sha256"
     },
     "vamp-companion-macos": {
-      "name": "Vamp-Companion-0.1.5-build-9-public.zip",
-      "url": "https://github.com/Mesutcydev/vamp-companion/releases/download/v0.1.5/Vamp-Companion-0.1.5-build-9-public.zip",
-      "label": "0.1.5 \u00b7 build 9",
-      "releaseUrl": "https://github.com/Mesutcydev/vamp-companion/releases/tag/v0.1.5",
-      "tag": "v0.1.5",
-      "sha256Url": "https://github.com/Mesutcydev/vamp-companion/releases/download/v0.1.5/Vamp-Companion-0.1.5-build-9-public.zip.sha256"
+      "name": "Vamp-Companion-0.1.6-build-10-public.zip",
+      "url": "https://github.com/Mesutcydev/vamp-companion/releases/download/v0.1.6/Vamp-Companion-0.1.6-build-10-public.zip",
+      "label": "0.1.6 \u00b7 build 10",
+      "releaseUrl": "https://github.com/Mesutcydev/vamp-companion/releases/tag/v0.1.6",
+      "tag": "v0.1.6",
+      "sha256Url": "https://github.com/Mesutcydev/vamp-companion/releases/download/v0.1.6/Vamp-Companion-0.1.6-build-10-public.zip.sha256"
     }
   }
 }
