@@ -292,9 +292,7 @@ enum VampStreamHomeCopy {
     static let lookingForSync = "Looking for \(VampProductIdentity.syncName)…"
     static let noSyncFound = "No \(VampProductIdentity.syncName) found"
     static var syncNetworkHint: String {
-        VampProductIdentity.isStoreDistribution
-            ? "Open App Sync or Vamp Sync on your own Mac and keep both devices on the same Wi-Fi or Ethernet network."
-            : "Open Vamp Sync on your Mac and keep both devices on the same LAN or private Tailscale network."
+        "Open App Sync or Vamp Sync on your own Mac and connect over the same LAN or private Tailscale network."
     }
     static let retryDiscovery = "Retry discovery"
     static let unavailableSync = "A saved host is unavailable. Check that it is running and reachable on a trusted network."

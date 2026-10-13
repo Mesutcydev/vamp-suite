@@ -441,8 +441,8 @@ final class ClientSessionCoordinator: ObservableObject {
 
         do {
             // Set the remote host on the provider so the peer connection knows where to connect
-            let connectionHost = StoreLANConnectionPolicy.requiresLAN
-                ? try await StoreLANConnectionPolicy.validatedHost(target.host) : target.host
+            let connectionHost = StorePrivateNetworkConnectionPolicy.requiresPrivateNetwork
+                ? try await StorePrivateNetworkConnectionPolicy.validatedHost(target.host) : target.host
             peerConnectionProvider.setRemoteHost(connectionHost)
 
             // Set stable client identity on the signaling service so the host

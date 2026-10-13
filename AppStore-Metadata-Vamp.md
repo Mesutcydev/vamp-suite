@@ -8,7 +8,7 @@ Both products use version **1.0**, build **1** for the initial store release; th
 
 Sync's `VampSyncBase` template in `project.yml` owns its sources, dependencies, version, and build number. `VampMiniHostApp` adds Sparkle for website updates; `VampSyncAppStore` adds App Sandbox and removes the external updater. Both keep `com.mesutcy.remotedesktop.minhost`. Run only one Sync installation at a time. Store storage is containerized; moving between channels can require pairing again. Do not reset TCC or copy trust keys automatically.
 
-Stream uses one target in `vampstream-project.yml`: Release produces the website build and AppStore produces the App Store build. Both keep `com.mesutcy.remotedesktop.stream` and the same version/build values. The AppStore configuration enforces a directly connected Wi-Fi/Ethernet subnet for both Sync and Assistant connections, including reconnects. Website builds retain private Tailscale support.
+Stream uses one target in `vampstream-project.yml`: Release produces the website build and AppStore produces the App Store build. Both keep `com.mesutcy.remotedesktop.stream` and the same version/build values. Both editions support trusted Wi-Fi/Ethernet and private Tailscale for Sync, Assistant, and Companion connections, including reconnects. The AppStore configuration validates each resolved address and requires an active Tailscale tunnel for tailnet destinations. Public addresses and redirects remain blocked.
 
 Change shared code once, increment each product's version/build in its shared spec once, then build both channels from the same commit. CI compiles both editions and checks the store bundles. Apple releases still require review; publishing a website update cannot automatically install a store update.
 
@@ -40,7 +40,7 @@ App Sync shares app windows from your Mac with your paired iPhone or iPad runnin
 
 The Mac App Store edition runs in View Only mode. Screen Recording permission is needed to share video. It does not request Accessibility permission, inject keyboard or pointer input, resize windows, launch or close other apps, or remotely unlock your Mac. Open and arrange windows on the Mac before sharing them. Updates are provided by the Mac App Store.
 
-App Sync does not require a Vamp account or a hosted relay. App Stream's App Store edition requires your own Mac and the same local Wi-Fi or Ethernet network. A receiving App Stream or Vamp Control client is required to view a stream.
+App Sync does not require a Vamp account or a hosted relay. App Stream connects to your own Mac over trusted Wi-Fi/Ethernet or a private Tailscale network. A receiving App Stream or Vamp Control client is required to view a stream.
 
 Review notes:
 
@@ -66,18 +66,20 @@ View app windows from your own Mac on iPhone or iPad. App Stream discovers App S
 
 With App Sync from the Mac App Store, view windows already open on your Mac. Zoom, pan, and annotate locally while opening and arranging windows on the Mac. With the website edition of Vamp Sync, touch and keyboard control and window resizing are available after Accessibility permission is approved on the Mac. Settings explain the editions and provide product, support, and privacy links.
 
-The App Store edition connects to your own Mac on the same Wi-Fi or Ethernet network. A compatible App Sync installation is required. Vamp Assistant remains a separate compatibility connection to your own Mac on that LAN. No Vamp account or hosted relay is required.
+The App Store edition connects to your own Mac over trusted Wi-Fi/Ethernet or your private Tailscale network. A compatible App Sync or Vamp Sync host is required for Sync streaming. Vamp Assistant and Vamp Companion remain separate authenticated compatibility hosts. Connect both devices to the same tailnet when away from home. No Vamp account or hosted relay is required.
 
 Review notes:
 
-App Store connections, including saved connections and reconnects, are limited to a physical Wi-Fi/Ethernet interface's directly connected subnet. VPN interfaces and Tailscale's CGNAT space do not qualify. Assistant HTTP requests are also checked and redirects are refused. The website distribution retains private Tailscale connections.
+App Store connections, including saved connections and reconnects, support a physical Wi-Fi/Ethernet interface's directly connected subnet or private Tailscale device addresses. Tailscale destinations require an active tunnel carrying a tailnet address. MagicDNS names are resolved and the checked numeric address is used for the connection. Assistant and Companion HTTP requests are also checked, and redirects are refused. Existing pairing, host authentication, and permissions remain mandatory.
+
+This build includes off-LAN Tailscale connections at the publisher's request. App Review guideline 4.2.7(a) currently specifies a local LAN for focused app-streaming clients; this feature may affect approval. Review notes must describe it accurately. TestFlight processing or internal distribution does not constitute App Store approval.
 
 Pair with a Mac running App Sync on the same LAN. Verify fingerprints and approve the device on the Mac, then select an existing TextEdit window. The host reports Full Control or View Only, and Stream hides keyboard, remote app closing, and remote resizing in View Only mode. The comparison screen is available during onboarding and in Settings. For full input review, use the website Vamp Sync edition after independently granting its Accessibility permission. No account or in-app purchase is required.
 
 ## Before submitting
 
 1. Validate signed archives and their actual entitlements in Xcode Organizer. The Sync store bundle must have App Sandbox, incoming/outgoing networking, and no Sparkle, Accessibility exception, or external updater. Stream does not request multicast entitlement; Bonjour discovery uses its declared service and Local Network consent.
-2. Test signed Sync capture in the sandbox on a Mac with user-granted Screen Recording. Test Stream on a physical iPhone and iPad, using both Sync editions, denied permissions, rejected pairing, reconnects, and an off-LAN address. A build or simulator check does not verify the signed sandbox capture flow.
+2. Test signed Sync capture in the sandbox on a Mac with user-granted Screen Recording. Test Stream on a physical iPhone and iPad, using both Sync editions, denied permissions, rejected pairing, LAN/Tailscale reconnects, Tailscale disabled, MagicDNS, and rejected public addresses. A build or simulator check does not verify the signed sandbox capture flow.
 3. Capture listing screenshots of real app use with sample content on your own Mac and devices. Avoid real fingerprints, addresses, names, or document contents. Upload the required iPhone/iPad and Mac screenshot sizes.
 4. Publish the updated edition pages before submission. Add the actual App Store listing links after Apple assigns/releases them; the app uses stable product URLs and needs no binary update for a new listing URL.
 5. Complete App Store Connect contact details, age rating, export compliance, and privacy disclosures. The current privacy manifests declare no developer-collected data, no tracking, and required reasons for local preferences/file timestamps. Confirm that against the final dependencies and actual practices; retain the distinction between private peer traffic and collection by the developer.

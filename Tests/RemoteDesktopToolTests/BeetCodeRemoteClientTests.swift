@@ -46,6 +46,15 @@ final class BeetCodeRemoteClientTests: XCTestCase {
         XCTAssertEqual(try BeetCodeRemoteEndpoint.parse(address: "192.168.1.20").url.port, 9575)
     }
 
+    func testCompanionPairingSupportsTailscaleIPv6AndMagicDNS() throws {
+        for host in ["[fd7a:115c:a1e0::1234]", "studio.tailnet-example.ts.net"] {
+            let endpoint = try BeetCodeRemoteEndpoint.parsePairingLink("http://\(host):9675/?pair=123456")
+            XCTAssertEqual(endpoint.url.port, 9675)
+            XCTAssertEqual(endpoint.pairingCode, "123456")
+        }
+        XCTAssertThrowsError(try BeetCodeRemoteEndpoint.parsePairingLink("http://[2001:4860:4860::8888]:9675/?pair=123456"))
+    }
+
     func testQRPairingRejectsSyncPortsAndMissingCodes() {
         for port in [9471, 9473, 9574, 9584, 9674, 9684] {
             XCTAssertThrowsError(try BeetCodeRemoteEndpoint.parsePairingLink("http://192.168.1.20:\(port)/?pair=123456")) { error in

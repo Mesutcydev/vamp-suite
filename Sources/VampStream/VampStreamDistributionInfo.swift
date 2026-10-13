@@ -8,7 +8,7 @@ struct VampStreamDistributionInfo: View {
             Text("\(VampProductIdentity.syncName) editions")
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
-            Text("The App Store edition of \(VampProductIdentity.streamName) connects to your own Mac on the same Wi-Fi or Ethernet network. The website edition also supports private Tailscale connections.")
+            Text("Both editions of \(VampProductIdentity.streamName) connect to your own Mac over trusted Wi-Fi or Ethernet, or your private Tailscale network. Connect both devices to Tailscale when you’re away from home.")
                 .font(.footnote)
                 .foregroundStyle(StreamReading.secondary)
                 .fixedSize(horizontal: false, vertical: true)

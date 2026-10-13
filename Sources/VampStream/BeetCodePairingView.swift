@@ -232,7 +232,7 @@ struct BeetCodePairingView: View {
                     }
                 }
                 .accessibilityLabel("Assistant or Companion private address")
-                .accessibilityHint(VampProductIdentity.isStoreDistribution ? "Enter the local address of Assistant or Companion on your own Mac" : "Enter the local or Tailscale address of Assistant or Companion")
+                .accessibilityHint("Enter the local or Tailscale address of Assistant or Companion on your own Mac")
 
             VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                 Text("Assistant uses port 9575; Companion uses port 9675.")
@@ -366,9 +366,7 @@ struct BeetCodePairingView: View {
         .accessibilityElement(children: .combine)
 
         if showSecurityDetails {
-            Text(VampProductIdentity.isStoreDistribution
-                ? "Connect to Assistant or Companion on your own Mac using the same Wi-Fi or Ethernet network. Never expose a host port to the public internet."
-                : "Keep Assistant or Companion on your LAN or private Tailscale network; never expose a host port to the public internet.")
+            Text("Connect to Assistant or Companion on your own Mac over trusted Wi-Fi or your private Tailscale network. Never expose a host port to the public internet.")
                 .font(.footnote)
                 .foregroundStyle(StreamReading.secondary)
                 .fixedSize(horizontal: false, vertical: true)

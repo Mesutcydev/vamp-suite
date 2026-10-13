@@ -57,8 +57,12 @@ retain the existing bundle IDs, wire names, storage paths, and internal schemes.
 Keep website and store sources and version/build settings shared. Sync's store
 edition is sandboxed and View Only: no Accessibility request, remote input,
 Remote Unlock, window resize, app launch/close, terminal execution, or Sparkle.
-Stream's store edition requires the user's own Mac on the same physical LAN;
-website Stream retains private Tailscale support. Do not bypass these policies.
+Both Stream editions connect to the user's own Mac over a physical LAN or a
+private Tailscale network. Store connections validate the resolved address and
+require an active Tailscale tunnel for tailnet peers. Preserve pairing, TLS,
+redirect restrictions, and Sync's View Only policy. App Review 4.2.7 still
+specifies LAN for focused streaming clients; disclose Tailscale honestly in
+review notes and do not claim that a TestFlight upload confirms Store approval.
 Signed store archives require the publisher's team supplied at build time;
 never hard-code a team or credential. See `AppStore-Metadata-Vamp.md` and
 `scripts/archive-vamp-app-store.sh` for the release path.

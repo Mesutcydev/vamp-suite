@@ -80,6 +80,7 @@ struct BeetCodeRemoteEndpoint: Equatable, Hashable, Sendable {
             || normalized.hasSuffix(".ts.net") {
             return true
         }
+        if StorePrivateNetworkConnectionPolicy.isTailscaleHost(normalized) { return true }
 
         let parts = normalized.split(separator: ".").compactMap { Int($0) }
         guard parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }) else { return false }
@@ -469,7 +470,7 @@ struct BeetCodeRemoteClient: Sendable {
                     request.timeoutInterval = 24 * 60 * 60
                     request.setValue("multipart/mixed, multipart/x-mixed-replace, video/avc", forHTTPHeaderField: "Accept")
 
-                    let events = Self.dataEvents(for: try await Self.localStoreRequest(request))
+                    let events = Self.dataEvents(for: try await Self.privateStoreRequest(request))
                     var parser = BeetCodeScreenStreamParser()
                     for try await event in events {
                         try Task.checkCancellation()
@@ -525,8 +526,8 @@ struct BeetCodeRemoteClient: Sendable {
     }
 
     private func decode<Response: Decodable>(_ type: Response.Type, request: URLRequest) async throws -> Response {
-        let request = try await Self.localStoreRequest(request)
-        let session = StoreLANConnectionPolicy.requiresLAN ? Self.storeSession : URLSession.shared
+        let request = try await Self.privateStoreRequest(request)
+        let session = StorePrivateNetworkConnectionPolicy.requiresPrivateNetwork ? Self.storeSession : URLSession.shared
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw BeetCodeRemoteError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
@@ -543,20 +544,20 @@ struct BeetCodeRemoteClient: Sendable {
         case data(Data)
     }
 
-    private static func localStoreRequest(_ request: URLRequest) async throws -> URLRequest {
-        guard StoreLANConnectionPolicy.requiresLAN else { return request }
+    private static func privateStoreRequest(_ request: URLRequest) async throws -> URLRequest {
+        guard StorePrivateNetworkConnectionPolicy.requiresPrivateNetwork else { return request }
         guard let url = request.url, let host = url.host,
               var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            throw StoreLANConnectionPolicy.NotOnLocalNetwork()
+            throw StorePrivateNetworkConnectionPolicy.NotOnPrivateNetwork()
         }
-        components.host = try await StoreLANConnectionPolicy.validatedHost(host)
-        guard let localURL = components.url else { throw StoreLANConnectionPolicy.NotOnLocalNetwork() }
-        var localRequest = request
-        localRequest.url = localURL
-        return localRequest
+        components.host = try await StorePrivateNetworkConnectionPolicy.validatedHost(host)
+        guard let privateURL = components.url else { throw StorePrivateNetworkConnectionPolicy.NotOnPrivateNetwork() }
+        var privateRequest = request
+        privateRequest.url = privateURL
+        return privateRequest
     }
 
-    /// A local peer cannot redirect store requests to an off-LAN service.
+    /// A paired peer cannot redirect Store requests to another service.
     private final class StoreRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
         func urlSession(_ session: URLSession, task: URLSessionTask,
                         willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
@@ -579,7 +580,7 @@ struct BeetCodeRemoteClient: Sendable {
                 func urlSession(_ session: URLSession, task: URLSessionTask,
                                 willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
                                 completionHandler: @escaping (URLRequest?) -> Void) {
-                    completionHandler(StoreLANConnectionPolicy.requiresLAN ? nil : request)
+                    completionHandler(StorePrivateNetworkConnectionPolicy.requiresPrivateNetwork ? nil : request)
                 }
 
                 func urlSession(

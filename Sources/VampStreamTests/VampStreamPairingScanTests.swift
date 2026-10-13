@@ -26,6 +26,15 @@ final class VampStreamPairingScanTests: XCTestCase {
         XCTAssertEqual(endpoint.url.port, 9675)
     }
 
+    func testHomeScannerPreservesTailscaleIPv6AndMagicDNS() throws {
+        for host in ["[fd7a:115c:a1e0::1234]", "studio.tailnet-example.ts.net"] {
+            let scan = try XCTUnwrap(VampStreamPairingScan.parse("http://\(host):9675/?pair=123456"))
+            guard case .assistant(let endpoint) = scan else { return XCTFail("Expected Companion pairing") }
+            XCTAssertEqual(endpoint.url.port, 9675)
+            XCTAssertEqual(endpoint.pairingCode, "123456")
+        }
+    }
+
     func testHomeScannerRejectsUnrelatedMissingAndInvalidPairingCodes() {
         for payload in [
             "not a pairing link",
