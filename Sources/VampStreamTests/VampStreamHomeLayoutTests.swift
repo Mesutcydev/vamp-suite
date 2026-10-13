@@ -245,7 +245,7 @@ final class VampStreamHomeLayoutTests: XCTestCase {
 
     func testPrimaryScanCopyNamesVampSync() {
         XCTAssertEqual(VampStreamHomeCopy.syncTitle, "Vamp Sync")
-        XCTAssertEqual(VampStreamHomeCopy.scanSync, "Scan Vamp Sync")
+        XCTAssertEqual(VampStreamHomeCopy.scanSync, "Scan Mac QR Code")
         XCTAssertEqual(VampStreamHomeCopy.assistantTitle, "Assistant / Companion")
         XCTAssertEqual(
             VampStreamHomeCopy.pairAssistantTitle(hasSavedAssistants: false),

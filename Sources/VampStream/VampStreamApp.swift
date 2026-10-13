@@ -62,9 +62,11 @@ struct VampStreamRootView: View {
     @State private var assistantTask: Task<Void, Never>?
     @State private var syncTask: Task<Void, Never>?
     @State private var showVampAssistantPairing = false
+    @State private var scannedAssistantEndpoint: BeetCodeRemoteEndpoint?
     @State private var showVampHostScanner = false
     @State private var hostScannerError: String?
     @AppStorage(VampStreamForgottenHosts.key) private var forgottenHostsRaw = ""
+    @AppStorage(VampStreamHostSourceStore.key) private var hostSourceRaw = ""
 
     init(
         environment: ClientAppEnvironment,
@@ -106,6 +108,13 @@ struct VampStreamRootView: View {
         .onChangeCompat(of: sessionCoordinator.phase) { phase in
             if phase == .error { connectingName = nil }
         }
+        .onChangeCompat(of: vampAssistant.session?.address) { address in
+            // A Companion scanned from the Sync card must remain visible after
+            // disconnecting. Change the host filter only after pairing succeeds.
+            if address != nil, hostSourceRaw == VampStreamHostSource.sync.rawValue {
+                hostSourceRaw = VampStreamHostSource.both.rawValue
+            }
+        }
         .onChangeCompat(of: sessionCoordinator.connectedHostFingerprint) { fingerprint in
             // A QR or typed address starts as an anonymous row; the Mac's real identity only
             // arrives with the handshake. Connecting is the user asking for this Mac, so a Mac
@@ -118,13 +127,18 @@ struct VampStreamRootView: View {
             }
             forgottenHostsRaw = VampStreamForgottenHosts.restoring(ids, in: forgottenHostsRaw)
         }
-        .fullScreenCover(isPresented: $showVampAssistantPairing) {
-            BeetCodePairingView(model: vampAssistant)
+        .fullScreenCover(isPresented: $showVampAssistantPairing, onDismiss: {
+            scannedAssistantEndpoint = nil
+        }) {
+            BeetCodePairingView(model: vampAssistant, initialEndpoint: scannedAssistantEndpoint)
         }
-        .sheet(isPresented: $showVampHostScanner) {
+        .sheet(isPresented: $showVampHostScanner, onDismiss: {
+            // Present only after the camera sheet finishes dismissing.
+            if scannedAssistantEndpoint != nil { showVampAssistantPairing = true }
+        }) {
             NavigationStack {
-                BeetCodeQRScannerView(source: .sync, onPayload: handleVampHostPayload)
-                    .navigationTitle("Scan \(VampProductIdentity.syncName)")
+                BeetCodeQRScannerView(source: .mac, onPayload: handleVampHostPayload)
+                    .navigationTitle("Scan Mac QR code")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
@@ -156,7 +170,7 @@ struct VampStreamRootView: View {
         )) {
             Button("OK", role: .cancel) { hostScannerError = nil }
         } message: {
-            Text(hostScannerError ?? "Scan the QR shown by \(VampProductIdentity.syncName).")
+            Text(hostScannerError ?? "Scan a pairing QR code shown by Sync, Assistant, or Companion on your Mac.")
         }
     }
 
@@ -205,7 +219,10 @@ struct VampStreamRootView: View {
             VampStreamConnectView(
                 environment: environment,
                 onConnect: { host in connect(to: host) },
-                onPairVampAssistant: { showVampAssistantPairing = true },
+                onPairVampAssistant: {
+                    scannedAssistantEndpoint = nil
+                    showVampAssistantPairing = true
+                },
                 onScanVampHost: { showVampHostScanner = true },
                 pairedVampAssistants: vampAssistant.savedAssistants,
                 vampAssistantAvailability: vampAssistant.availabilityByAddress,
@@ -230,14 +247,28 @@ struct VampStreamRootView: View {
     }
 
     private func handleVampHostPayload(_ payload: String) {
-        guard let pairing = VampHostPairingLink.parse(payload),
-              let host = environment.sharedHostsViewModel.addManualHost(address: pairing.address) else {
-            hostScannerError = "Scan the QR shown by \(VampProductIdentity.syncName), then try again."
+        switch VampStreamPairingScan.parse(payload) {
+        case .assistant(let endpoint):
+            hostScannerError = nil
+            scannedAssistantEndpoint = endpoint
             showVampHostScanner = false
-            return
+        case .sync(let address):
+            guard let host = environment.sharedHostsViewModel.addManualHost(address: address) else {
+                rejectScannedPayload()
+                return
+            }
+            hostScannerError = nil
+            showVampHostScanner = false
+            connect(to: host)
+        case nil:
+            rejectScannedPayload()
         }
+    }
+
+    private func rejectScannedPayload() {
+        scannedAssistantEndpoint = nil
+        hostScannerError = String(localized: "Scan a pairing QR code shown by Sync, Assistant, or Companion on your Mac, then try again.")
         showVampHostScanner = false
-        connect(to: host)
     }
 
     private func reconnectAssistant(_ saved: BeetCodeRemoteSessionViewModel.SavedAssistant) {

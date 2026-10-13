@@ -282,8 +282,8 @@ enum VampStreamHomeCopy {
 
     static let syncTitle = "\(VampProductIdentity.syncName)"
     static let syncDetail = "Scan the pairing QR on your Mac, or enter the private address shown by \(VampProductIdentity.syncName)."
-    static let scanSync = "Scan \(VampProductIdentity.syncName)"
-    static let scanSyncHint = "Scan a \(VampProductIdentity.syncName) pairing code"
+    static let scanSync = "Scan Mac QR Code"
+    static let scanSyncHint = "Scan a Sync, Assistant, or Companion pairing code"
     static let orConnectByAddress = "Or connect by address"
     static let addressPlaceholder = "\(VampProductIdentity.syncName) private address"
     static let connectByAddress = "Connect by address"

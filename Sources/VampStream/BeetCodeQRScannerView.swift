@@ -7,11 +7,12 @@ import VisionKit
 
 struct BeetCodeQRScannerView: UIViewControllerRepresentable {
     enum Source {
-        case assistant, sync
+        case assistant, sync, mac
         var instructions: String {
             switch self {
             case .assistant: return "Enter the address and six-digit pairing code shown by Assistant or Companion manually."
             case .sync: return "Close the scanner and enter the private address shown by \(VampProductIdentity.syncName)."
+            case .mac: return "Scan a pairing QR code shown by Sync, Assistant, or Companion on your Mac."
             }
         }
     }
@@ -124,7 +125,7 @@ final class QRScannerController: UIViewController, DataScannerViewControllerDele
 }
 #else
 struct BeetCodeQRScannerView: View {
-    enum Source { case assistant, sync }
+    enum Source { case assistant, sync, mac }
     var source: Source = .assistant
     let onPayload: (String) -> Void
     var body: some View {

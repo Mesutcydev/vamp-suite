@@ -17,11 +17,12 @@ struct BeetCodePairingView: View {
     @State private var pairingTask: Task<Void, Never>?
     @FocusState private var focusedField: PairingField?
 
-    init(model: BeetCodeRemoteSessionViewModel) {
+    init(model: BeetCodeRemoteSessionViewModel, initialEndpoint: BeetCodeRemoteEndpoint? = nil) {
         self.model = model
-        // Pairing adds a Mac. Existing Assistants reconnect from their own cards,
-        // so never prefill this form with another saved Mac's address.
-        _address = State(initialValue: "")
+        // Only a newly scanned QR can prefill this form; saved Macs reconnect
+        // from their own cards and must not leak their address into new pairing.
+        _address = State(initialValue: initialEndpoint?.url.absoluteString ?? "")
+        _code = State(initialValue: initialEndpoint?.pairingCode ?? "")
     }
 
     private var canPair: Bool {
