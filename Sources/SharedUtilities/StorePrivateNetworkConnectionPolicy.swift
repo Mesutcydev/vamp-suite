@@ -51,6 +51,13 @@ public enum StorePrivateNetworkConnectionPolicy {
         permittedInterface(for: address, interfaces: interfaces) != nil
     }
 
+    /// The HTTP Assistant/Companion hosts advertise IPv4 listeners. Prefer an
+    /// allowed IPv4 DNS answer, retaining IPv6 for hosts without an IPv4 answer.
+    public static func preferredAddress(from addresses: [[UInt8]], interfaces: [NetworkInterface]) -> [UInt8]? {
+        let allowed = addresses.filter { permits(address: $0, interfaces: interfaces) }
+        return allowed.first(where: { $0.count == 4 }) ?? allowed.first
+    }
+
     public static func isTailscaleAddress(_ address: [UInt8]) -> Bool {
         if address.count == 4 {
             return address[0] == 100 && (64...127).contains(address[1])
@@ -133,21 +140,29 @@ public enum StorePrivateNetworkConnectionPolicy {
             throw NotOnPrivateNetwork()
         }
         defer { freeaddrinfo(resolved) }
+        var entries: [(UnsafeMutablePointer<addrinfo>, [UInt8])] = []
         var destination: UnsafeMutablePointer<addrinfo>? = resolved
         while let entry = destination {
-            defer { destination = entry.pointee.ai_next }
-            guard let address = entry.pointee.ai_addr, let bytes = addressBytes(address) else { continue }
-            if let allowed = permittedInterface(for: bytes, interfaces: networkInterfaces) {
-                var numeric = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                guard getnameinfo(address, entry.pointee.ai_addrlen, &numeric,
-                                  socklen_t(numeric.count), nil, 0, NI_NUMERICHOST) == 0 else { continue }
-                let result = String(cString: numeric)
-                if bytes.count == 16, bytes[0] == 0xfe, bytes[1] & 0xc0 == 0x80 {
-                    // Link-local IPv6 needs the physical interface's scope.
-                    return result.components(separatedBy: "%")[0] + "%" + allowed.name
-                }
-                return result
+            destination = entry.pointee.ai_next
+            if let address = entry.pointee.ai_addr, let bytes = addressBytes(address) {
+                entries.append((entry, bytes))
             }
+        }
+        guard let preferred = preferredAddress(from: entries.map { $0.1 }, interfaces: networkInterfaces),
+              let (entry, bytes) = entries.first(where: { $0.1 == preferred }),
+              let address = entry.pointee.ai_addr else { throw NotOnPrivateNetwork() }
+        if let allowed = permittedInterface(for: bytes, interfaces: networkInterfaces) {
+            var numeric = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            guard getnameinfo(address, entry.pointee.ai_addrlen, &numeric,
+                             socklen_t(numeric.count), nil, 0, NI_NUMERICHOST) == 0 else {
+                throw NotOnPrivateNetwork()
+            }
+            let result = String(cString: numeric)
+            if bytes.count == 16, bytes[0] == 0xfe, bytes[1] & 0xc0 == 0x80 {
+                // Link-local IPv6 needs the physical interface's scope.
+                return result.components(separatedBy: "%")[0] + "%" + allowed.name
+            }
+            return result
         }
         #endif
         throw NotOnPrivateNetwork()

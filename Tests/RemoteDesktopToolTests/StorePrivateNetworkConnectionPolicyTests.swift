@@ -62,6 +62,15 @@ final class StorePrivateNetworkConnectionPolicyTests: XCTestCase {
         XCTAssertFalse(Policy.permits(address: tunnel.address, interfaces: [ipv6Tunnel, tunnel]))
     }
 
+    func testDualStackHostnamePrefersAllowedIPv4AndRetainsIPv6Fallback() {
+        let ipv6: [UInt8] = [0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0] + [UInt8](repeating: 0, count: 9) + [2]
+        let ipv4: [UInt8] = [100, 90, 80, 2]
+        XCTAssertEqual(Policy.preferredAddress(from: [ipv6, ipv4], interfaces: [tunnel]), ipv4)
+        XCTAssertEqual(Policy.preferredAddress(from: [ipv6], interfaces: [tunnel]), ipv6)
+        XCTAssertEqual(Policy.preferredAddress(from: [[8, 8, 8, 8], ipv6], interfaces: [tunnel]), ipv6)
+        XCTAssertNil(Policy.preferredAddress(from: [ipv4], interfaces: [lan]))
+    }
+
     func testPhysicalLANSubnetAllowsNeighborButRejectsDifferentNetwork() {
         let local: [UInt8] = [192, 168, 1, 8]
         let mask: [UInt8] = [255, 255, 255, 0]

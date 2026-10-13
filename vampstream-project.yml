@@ -91,7 +91,7 @@ targets:
         VAMP_DISTRIBUTION_CHANNEL: website
         VAMP_DISPLAY_NAME: Vamp Stream
         MARKETING_VERSION: "1.0"
-        CURRENT_PROJECT_VERSION: 11
+        CURRENT_PROJECT_VERSION: 12
         PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.stream
         PRODUCT_NAME: Vamp Stream
         CODE_SIGN_ENTITLEMENTS: Configuration/VampStream.entitlements
