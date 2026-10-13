@@ -16,7 +16,9 @@ struct TailscaleConnectionInfo: Equatable, Sendable {
     }
 
     var connectAddress: String {
-        "\(connectHost):\(RemoteDesktopConstants.defaultSignalingPort)"
+        // Numeric IPv4 works even when MagicDNS is disabled and matches the
+        // IPv4 listener. Keep DNS for the optional Tailscale Serve HTTPS URL.
+        "\(ipAddress):\(RemoteDesktopConstants.defaultSignalingPort)"
     }
 
     /// Tailscale Serve terminates HTTPS on the tailnet hostname and proxies to
@@ -50,10 +52,8 @@ struct TailscaleDetectionSnapshot: Equatable, Sendable {
 }
 
 func getTailscaleDetectionSnapshot() -> TailscaleDetectionSnapshot {
-    TailscaleDetectionSnapshot(
-        info: getTailscaleConnectionInfo(),
-        installed: isTailscaleInstalled()
-    )
+    let info = getTailscaleConnectionInfo()
+    return TailscaleDetectionSnapshot(info: info, installed: info != nil || isTailscaleInstalled())
 }
 
 /// Detects whether this Mac is on a Tailscale tailnet and returns its addressable identity.
@@ -61,11 +61,14 @@ func getTailscaleDetectionSnapshot() -> TailscaleDetectionSnapshot {
 /// the 100.64.0.0/10 CGNAT range on local interfaces — the last path works in sandboxed builds
 /// where launching the CLI isn't permitted.
 func getTailscaleConnectionInfo() -> TailscaleConnectionInfo? {
+    // The daemon may retain its last IP while disconnected. Only advertise an
+    // address currently assigned to an active tunnel, including in App Sandbox.
+    guard let activeAddress = getTailscaleIPFromInterfaces() else { return nil }
     if let statusOutput = runTailscaleCommand(["status", "--json"]),
        let data = statusOutput.data(using: .utf8),
        let payload = try? JSONDecoder().decode(TailscaleStatusPayload.self, from: data),
        let device = payload.device,
-       let ipAddress = device.tailscaleIPs?.first(where: { tsIsValidIPAddress($0) }) {
+       let ipAddress = device.tailscaleIPs?.first(where: { $0 == activeAddress && tsIsValidIPAddress($0) }) {
         let dnsName = device.dnsName?
             .trimmingCharacters(in: CharacterSet(charactersIn: "."))
         return TailscaleConnectionInfo(ipAddress: ipAddress, dnsName: dnsName)
@@ -74,15 +77,11 @@ func getTailscaleConnectionInfo() -> TailscaleConnectionInfo? {
     if let ipOutput = runTailscaleCommand(["ip", "-4"]),
        let ipAddress = ipOutput
         .components(separatedBy: .newlines)
-        .first(where: { !$0.isEmpty && tsIsValidIPAddress($0) }) {
+        .first(where: { $0 == activeAddress && tsIsValidIPAddress($0) }) {
         return TailscaleConnectionInfo(ipAddress: ipAddress, dnsName: nil)
     }
 
-    if let ip = getTailscaleIPFromInterfaces() {
-        return TailscaleConnectionInfo(ipAddress: ip, dnsName: nil)
-    }
-
-    return nil
+    return TailscaleConnectionInfo(ipAddress: activeAddress, dnsName: nil)
 }
 
 private func isTailscaleInstalled() -> Bool {
@@ -244,6 +243,10 @@ private func getTailscaleIPFromInterfaces() -> String? {
     guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return nil }
     defer { freeifaddrs(ifaddr) }
     for ptr in sequence(first: first, next: { $0.pointee.ifa_next }) {
+        let flags = Int32(ptr.pointee.ifa_flags)
+        let name = String(cString: ptr.pointee.ifa_name)
+        guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0,
+              name.hasPrefix("utun") || name.hasPrefix("tun") else { continue }
         guard let addr = ptr.pointee.ifa_addr,
               addr.pointee.sa_family == UInt8(AF_INET) else { continue }
         var buf = [CChar](repeating: 0, count: Int(NI_MAXHOST))
@@ -262,8 +265,6 @@ private func getTailscaleIPFromInterfaces() -> String? {
 }
 
 private func tsIsValidIPAddress(_ address: String) -> Bool {
-    let ipPattern = "^(\\d{1,3}\\.){3}\\d{1,3}$"
-    guard let regex = try? NSRegularExpression(pattern: ipPattern) else { return false }
-    let range = NSRange(address.startIndex..<address.endIndex, in: address)
-    return regex.firstMatch(in: address, range: range) != nil
+    HostPairingAddress.make(network: .tailscale, localIPv4: nil,
+                            tailscaleIPv4: address, port: RemoteDesktopConstants.defaultSignalingPort) != nil
 }

@@ -561,6 +561,8 @@ private struct VampSyncCompanionPopover: View {
     @State private var revokedPeers: [TrustedPeer] = []
     @State private var isRefreshing = false
     @State private var tailscaleInfo: TailscaleConnectionInfo?
+    @State private var pairingNetwork = HostPairingAddress.Network.localWiFi
+    @State private var hasRefreshedPairingNetwork = false
     @State private var copiedValue: String?
     @State private var deviceManagementError: String?
     @State private var peerToRevoke: TrustedPeer?
@@ -620,6 +622,8 @@ private struct VampSyncCompanionPopover: View {
 
                     if isRuntimeActive {
                         VampSyncCompanionPairingCard(
+                            network: $pairingNetwork,
+                            tailscaleAvailable: tailscaleInfo != nil,
                             pairingLink: pairingLink,
                             pairingAddress: pairingAddress,
                             fingerprint: environment.hostIdentity.publicKeyFingerprint,
@@ -738,10 +742,10 @@ private struct VampSyncCompanionPopover: View {
 
     private var pairingAddress: String? {
         guard isRuntimeActive else { return nil }
-        if let local = localIPv4AddressForPairing() {
-            return "\(local):\(RemoteDesktopConstants.defaultSignalingPort)"
-        }
-        return tailscaleInfo?.connectAddress
+        return HostPairingAddress.make(network: pairingNetwork,
+                                       localIPv4: localIPv4AddressForPairing(),
+                                       tailscaleIPv4: tailscaleInfo?.ipAddress,
+                                       port: RemoteDesktopConstants.defaultSignalingPort)
     }
 
     private var pairingLink: String? {
@@ -790,6 +794,12 @@ private struct VampSyncCompanionPopover: View {
         }.value
         guard !Task.isCancelled else { return }
         tailscaleInfo = snapshot.info
+        if !hasRefreshedPairingNetwork {
+            hasRefreshedPairingNetwork = true
+            if localIPv4AddressForPairing() == nil, snapshot.info != nil {
+                pairingNetwork = .tailscale
+            }
+        }
         await environment.discoveryAdvertiserViewModel.updateTailscaleIdentity(
             hostname: snapshot.info?.dnsName,
             ip: snapshot.info?.ipAddress
@@ -1100,6 +1110,8 @@ private struct VampSyncCompanionApprovalCard: View {
 }
 
 private struct VampSyncCompanionPairingCard: View {
+    @Binding var network: HostPairingAddress.Network
+    let tailscaleAvailable: Bool
     let pairingLink: String?
     let pairingAddress: String?
     let fingerprint: String
@@ -1110,6 +1122,23 @@ private struct VampSyncCompanionPairingCard: View {
     var body: some View {
         VampSyncCompanionSurface(raised: true) {
             VStack(alignment: .leading, spacing: 18) {
+                Picker("Pair over", selection: $network) {
+                    Text("Local Wi-Fi").tag(HostPairingAddress.Network.localWiFi)
+                    Text("Tailscale").tag(HostPairingAddress.Network.tailscale)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("sync-pairing-network")
+                Text(network == .tailscale
+                     ? "Connect both devices to the same private Tailscale network, then scan this code."
+                     : "Keep both devices on the same trusted Wi-Fi network, then scan this code.")
+                    .font(.system(size: 11)).foregroundStyle(palette.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if network == .tailscale, !tailscaleAvailable {
+                    Label("Connect Tailscale on this Mac to show its pairing code.", systemImage: "network")
+                        .font(.system(size: 12)).foregroundStyle(palette.secondary)
+                    Button("Open Tailscale") { openTailscaleApplication() }
+                        .buttonStyle(.bordered)
+                }
                 HStack(alignment: .center, spacing: 18) {
                     if let pairingLink {
                         HostBrowserPairingQRCode(
@@ -1118,7 +1147,8 @@ private struct VampSyncCompanionPairingCard: View {
                             size: 116
                         )
                     } else {
-                        ProgressView().frame(width: 116, height: 116)
+                        Image(systemName: "qrcode").font(.system(size: 38, weight: .light))
+                            .foregroundStyle(palette.secondary).frame(width: 116, height: 116)
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Make the connection")
@@ -1513,7 +1543,6 @@ private func vampSyncFormattedFingerprint(_ fingerprint: String) -> String {
 
 /// First usable IPv4 address on an up interface, preferring Wi-Fi and Ethernet.
 private func localIPv4AddressForPairing() -> String? {
-    var fallback: String?
     var ifaddr: UnsafeMutablePointer<ifaddrs>?
     guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else { return nil }
     defer { freeifaddrs(ifaddr) }
@@ -1535,8 +1564,7 @@ private func localIPv4AddressForPairing() -> String? {
         // can never connect.
         guard !address.hasPrefix("169.254.") else { continue }
         if interfaceName.hasPrefix("en") { return address }
-        if fallback == nil { fallback = address }
     }
-    return fallback
+    return nil
 }
 #endif
