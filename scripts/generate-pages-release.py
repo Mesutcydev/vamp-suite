@@ -26,7 +26,7 @@ ASSISTANT_ASSET_PATTERNS = {
     "vamp-assistant-ios": re.compile(r"^Vamp-Assistant-iOS-.+-unsigned\.ipa$"),
 }
 COMPANION_ASSET_PATTERNS = {
-    "vamp-companion-macos": re.compile(r"^Vamp-Companion-\d+\.\d+\.\d+-build-\d+-public\.zip$"),
+    "vamp-companion-macos": re.compile(r"^Vamp-Companion-\d+\.\d+\.\d+-build-\d+-(?:public\.zip|(?:preview|notarized)\.dmg)$"),
 }
 REQUIRED = {"vamp-mini-host-dmg", "vamp-control-macos", "vamp-control-ios", "vamp-stream-ios", *ASSISTANT_ASSET_PATTERNS, *COMPANION_ASSET_PATTERNS}
 

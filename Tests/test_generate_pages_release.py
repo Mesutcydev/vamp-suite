@@ -61,6 +61,14 @@ class PagesReleaseSelectionTests(unittest.TestCase):
         self.assertEqual(pages_release.choose_release_asset(releases, pattern)[1], archive)
         self.assertIsNone(pattern.fullmatch("Vamp-Assistant-iOS-0.10.54-build-133-unsigned.ipa"))
 
+    def test_companion_runtime_dmg_is_selected_and_ios_is_excluded(self):
+        pattern = pages_release.COMPANION_ASSET_PATTERNS["vamp-companion-macos"]
+        old = {"name": "Vamp-Companion-0.1.7-build-11-public.zip"}
+        current = {"name": "Vamp-Companion-0.1.8-build-12-preview.dmg"}
+        releases = [{"assets": [old, current], "published_at": "2026-11-08"}]
+        self.assertEqual(pages_release.choose_release_asset(releases, pattern)[1], current)
+        self.assertIsNone(pattern.fullmatch("Vamp-Companion-iOS-0.1.8-build-12-unsigned.ipa"))
+
     def test_marketing_version_reset_keeps_newest_build(self):
         old = "VampControl-iOS-3.7.5-build-40-altstore-unsigned.ipa"
         new = "VampControl-iOS-2.3.0-build-47-altstore-unsigned.ipa"
