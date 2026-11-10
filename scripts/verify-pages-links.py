@@ -66,7 +66,8 @@ def validate():
         for version in app.get("versions", []):
             urls.add(version["downloadURL"])
         key = {"Vamp Stream": "vamp-stream-ios", "Vamp Assistant": "vamp-assistant-ios"}.get(app["name"])
-        if key and app["versions"][0]["downloadURL"] != assets[key]["url"]:
+        # ponytail: an iOS IPA absent from every release is optional, so its feed entry is not compared.
+        if key in assets and app["versions"][0]["downloadURL"] != assets[key]["url"]:
             errors.append(f"apps.json: latest {app['name']} version needs updating")
     for asset in assets.values():
         urls.add(asset["url"])

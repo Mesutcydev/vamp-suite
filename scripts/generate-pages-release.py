@@ -28,7 +28,9 @@ ASSISTANT_ASSET_PATTERNS = {
 COMPANION_ASSET_PATTERNS = {
     "vamp-companion-macos": re.compile(r"^Vamp-Companion-\d+\.\d+\.\d+-build-\d+-(?:public\.zip|(?:preview|notarized)\.dmg)$"),
 }
-REQUIRED = {"vamp-mini-host-dmg", "vamp-control-macos", "vamp-control-ios", "vamp-stream-ios", *ASSISTANT_ASSET_PATTERNS, *COMPANION_ASSET_PATTERNS}
+# iOS IPAs are optional: no release carries one while iOS distribution is pending, and
+# release.json lists one only when a release does. Pages must not link an absent key.
+REQUIRED = {"vamp-mini-host-dmg", "vamp-control-macos", "vamp-assistant-macos", *COMPANION_ASSET_PATTERNS}
 
 
 def fetch_json(url: str):

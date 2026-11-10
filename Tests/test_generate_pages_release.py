@@ -128,6 +128,19 @@ class PagesReleaseSelectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "vamp-mini-host-dmg"):
             pages_release.resolve_assets([], [], {"vamp-mini-host-dmg"})
 
+    def test_full_refresh_succeeds_without_ios_ipas_but_requires_mac_downloads(self):
+        def release(*names):
+            return [{"tag_name": "t", "html_url": "https://example.test/r",
+                     "assets": [{"name": n, "browser_download_url": f"https://example.test/{n}"} for n in names]}]
+        suite = release("VampSync-macOS-4.0.0-build-80-notarized.dmg", "VampControl-macOS-2.3.0-build-57-adhoc.dmg")
+        assistant = release("Vamp-Assistant-0.10.55-build-134-preview.dmg")
+        companion = release("Vamp-Companion-0.1.10-build-14-notarized.dmg")
+        assets = pages_release.resolve_assets(suite, assistant, None, companion)
+        self.assertNotIn("vamp-control-ios", assets)
+        self.assertNotIn("vamp-assistant-ios", assets)
+        with self.assertRaisesRegex(ValueError, "vamp-companion-macos"):
+            pages_release.resolve_assets(suite, assistant, None, [])
+
     def test_companion_refresh_uses_its_own_repository_and_preserves_assistant(self):
         key = "vamp-companion-macos"
         name = "Vamp-Companion-0.1.0-build-1-public.zip"
