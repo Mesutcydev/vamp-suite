@@ -1,14 +1,5 @@
 {
   "repository": "Mesutcydev/vamp-suite",
-  "repositories": {
-    "suite": "Mesutcydev/vamp-suite",
-    "assistant": "Mesutcydev/vamp-assistant",
-    "companion": "Mesutcydev/vamp-companion"
-  },
-  "tag": "vamp-suite-2.3.0-build-74",
-  "name": "Vamp Stream 0.1.18 \u2014 quiet startup and compact recovery",
-  "url": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-suite-2.3.0-build-74",
-  "published_at": "2026-09-05T17:33:02Z",
   "assets": {
     "vamp-mini-host-dmg": {
       "name": "VampSync-macOS-4.0.0-build-80-notarized.dmg",
@@ -25,22 +16,6 @@
       "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-control-macos-2.3.0-build-57",
       "tag": "vamp-control-macos-2.3.0-build-57",
       "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.3.0-build-57/VampControl-macOS-2.3.0-build-57-adhoc.dmg.sha256"
-    },
-    "vamp-assistant-macos": {
-      "name": "Vamp-Assistant-0.10.55-build-134-preview.dmg",
-      "url": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.55/Vamp-Assistant-0.10.55-build-134-preview.dmg",
-      "label": "0.10.55 \u00b7 build 134",
-      "releaseUrl": "https://github.com/Mesutcydev/vamp-assistant/releases/tag/v0.10.55",
-      "tag": "v0.10.55",
-      "sha256Url": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.55/Vamp-Assistant-0.10.55-build-134-preview.dmg.sha256"
-    },
-    "vamp-companion-macos": {
-      "name": "Vamp-Companion-0.1.10-build-14-notarized.dmg",
-      "url": "https://github.com/Mesutcydev/vamp-companion/releases/download/v0.1.10/Vamp-Companion-0.1.10-build-14-notarized.dmg",
-      "label": "0.1.10 \u00b7 build 14",
-      "releaseUrl": "https://github.com/Mesutcydev/vamp-companion/releases/tag/v0.1.10",
-      "tag": "v0.1.10",
-      "sha256Url": "https://github.com/Mesutcydev/vamp-companion/releases/download/v0.1.10/Vamp-Companion-0.1.10-build-14-notarized.dmg.sha256"
     }
   }
 }

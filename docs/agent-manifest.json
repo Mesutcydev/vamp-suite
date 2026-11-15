@@ -1,7 +1,7 @@
 {
   "name": "Vamp",
   "manifestVersion": "3.0.0",
-  "description": "Vamp Sync is the main Mac host for Vamp Control and Vamp Stream. Vamp Assistant provides a separate private AI workspace and remote connection.",
+  "description": "Vamp Sync shares your Mac with Vamp Control on Mac, iPhone, and iPad.",
   "license": "Apache-2.0",
   "website": "https://thevamp.app/",
   "source": "https://github.com/Mesutcydev/vamp-suite",
@@ -22,20 +22,6 @@
       ],
       "role": "Client",
       "url": "https://thevamp.app/#control"
-    },
-    "stream": {
-      "displayName": "Vamp Stream",
-      "platforms": [
-        "iOS",
-        "iPadOS"
-      ],
-      "role": "Focused visual client",
-      "url": "https://thevamp.app/stream/"
-    },
-    "assistant": {
-      "displayName": "Vamp Assistant",
-      "role": "AI workspace and separate remote endpoint",
-      "url": "https://thevamp.app/assistant/"
     }
   },
   "network": {

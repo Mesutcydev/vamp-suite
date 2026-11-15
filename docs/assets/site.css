@@ -1358,9 +1358,6 @@ main#top, section[id] { scroll-margin-top: 82px; }
 .app-card[data-has-preview="true"] .app-card-visual.is-remote-preview::before {
   background: url("previews/vamp-control-ios-remote.png?v=ios-preview-1") center top / cover no-repeat;
 }
-.app-card[data-has-preview="true"] .app-card-visual.is-terminal-preview::before {
-  background: url("previews/vamp-terminal-ios-preview.png?v=ios-preview-1") center top / cover no-repeat;
-}
 .app-card[data-has-preview="true"] .app-card-visual img {
   position: relative;
   z-index: 2;

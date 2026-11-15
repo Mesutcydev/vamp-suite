@@ -3,39 +3,36 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f3eee4">
+  <meta name="theme-color" content="#111111">
   <meta name="robots" content="index,follow,max-image-preview:large">
   <link rel="canonical" href="https://thevamp.app/">
   <link rel="alternate" type="text/plain" href="https://thevamp.app/llms.txt" title="Instructions for AI agents">
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=arcade-emblem-20260908">
-  <link rel="icon" type="image/png" href="assets/vamp-terminal-icon.png">
-  <link rel="apple-touch-icon" href="assets/vamp-terminal-icon.png">
-  <meta name="description" content="Vamp Sync is your Mac host for Vamp Control and Vamp Stream. Pair privately, stream app windows, and keep your Mac in reach.">
+  <meta name="description" content="Connect privately to your Mac from another Mac, iPhone, or iPad with Vamp Sync and Vamp Control.">
   <meta property="og:title" content="Vamp · Your Mac, in reach">
-  <meta property="og:description" content="Vamp Sync, Control, Stream, Assistant, and Companion — private Mac tools with no account and no hosted relay.">
+  <meta property="og:description" content="Vamp Sync shares your Mac. Vamp Control connects from your other device.">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Vamp">
   <meta property="og:url" content="https://thevamp.app/">
-  <meta property="og:image" content="https://thevamp.app/assets/og-image-v2.png">
+  <meta property="og:image" content="https://thevamp.app/assets/arcade/marquee-art.png">
   <meta name="twitter:card" content="summary_large_image">
-  <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://thevamp.app/#organization","name":"Vamp","url":"https://thevamp.app/","sameAs":["https://github.com/Mesutcydev/vamp-suite","https://github.com/Mesutcydev/vamp-assistant"]},{"@type":"WebSite","url":"https://thevamp.app/","name":"Vamp","publisher":{"@id":"https://thevamp.app/#organization"}}]}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://thevamp.app/#organization","name":"Vamp","url":"https://thevamp.app/","sameAs":["https://github.com/Mesutcydev/vamp-suite"]},{"@type":"WebSite","url":"https://thevamp.app/","name":"Vamp","publisher":{"@id":"https://thevamp.app/#organization"}}]}</script>
   <title>Vamp · Your Mac, in reach</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/site.css?v=suite-16">
+  <link rel="stylesheet" href="assets/site.css?v=sync-control">
   <link rel="stylesheet" href="assets/products.css?v=control-logo-transparent-2">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&display=swap" rel="stylesheet"><link rel="stylesheet" href="assets/arcade.css?v=arcade-edge-light-20260908">
-<link rel="stylesheet" href="assets/companion.css?v=companion-20261012">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&display=swap" rel="stylesheet"><link rel="stylesheet" href="assets/arcade.css?v=sync-control-2">
 </head>
 <body class="suite-home">
   <header class="site-header">
     <div class="container nav">
-      <a class="brand" href="#top" aria-label="Vamp home"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40" focusable="false" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M8 5h24l6 6v17H28l-3 8-5-8-5 8-3-8H2V11zm2 6-2 2v9h24v-9l-2-2z"/><path fill="currentColor" d="M12 15h6v3h-6zm10 0h6v3h-6z"/></svg></span><span class="brand-word">Vamp</span><span class="brand-tag">suite</span></a>
-      <nav class="nav-links" aria-label="Primary navigation"><a class="text-button" href="#setup"><span data-i18n="ux.start">Start here</span></a><a class="text-button" href="#families"><span data-i18n="ux.compare">Compare clients</span></a><a class="text-button" href="#assistant"><span data-i18n="ai.homeNav">AI Assistant</span></a></nav>
+      <a class="brand" href="#top" aria-label="Vamp home"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40" focusable="false" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M8 5h24l6 6v17H28l-3 8-5-8-5 8-3-8H2V11zm2 6-2 2v9h24v-9l-2-2z"/><path fill="currentColor" d="M12 15h6v3h-6zm10 0h6v3h-6z"/></svg></span><span class="brand-word">Vamp</span></a>
+      <nav class="nav-links" aria-label="Primary navigation"><a class="text-button" href="sync/">Vamp Sync</a><a class="text-button" href="#control">Vamp Control</a></nav>
       <div class="nav-actions"><a class="primary-button" href="#download"><span data-i18n="ux.downloads">Downloads</span><span aria-hidden="true">↓</span></a><a class="icon-button" href="https://github.com/Mesutcydev/vamp-suite" target="_blank" rel="noreferrer" aria-label="Open GitHub">GH</a><button class="icon-button language-button" id="language-toggle" type="button" aria-label="Türkçe'ye geç"><span id="language-code">TR</span></button><button class="icon-button" id="theme-toggle" type="button" aria-label="Switch color theme"><span id="theme-icon">☾</span></button><button class="menu-button" id="menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open navigation menu">☰</button></div>
     </div>
-    <nav class="container mobile-menu" id="mobile-menu" data-open="false" hidden aria-label="Mobile navigation"><a class="text-button" href="#setup"><span data-i18n="ux.start">Start here</span></a><a class="text-button" href="#families"><span data-i18n="ux.compare">Compare clients</span></a><a class="text-button" href="#download"><span data-i18n="ux.downloads">Downloads</span></a><a class="text-button" href="#assistant"><span data-i18n="ai.homeNav">AI Assistant</span></a></nav>
+    <nav class="container mobile-menu" id="mobile-menu" data-open="false" hidden aria-label="Mobile navigation"><a class="text-button" href="sync/">Vamp Sync</a><a class="text-button" href="#control">Vamp Control</a><a class="text-button" href="#download" data-i18n="ux.downloads">Downloads</a></nav>
   </header>
 
   <main id="top">
@@ -43,56 +40,54 @@
       <img class="marquee-art" src="assets/arcade/marquee-art.png" alt="" fetchpriority="high" width="1536" height="1024">
       <div class="hero-grid-motion" aria-hidden="true"></div><div class="hero-frame-sweep" aria-hidden="true"></div>
       <button class="hero-motion-toggle" type="button" aria-pressed="false" aria-label="Pause hero animation">Pause motion</button>
-      <span class="ArcadeBadge" aria-label="Open source">Open<br>source</span>
-      <p class="marquee-overline">PRIVATE CONNECTION / COMPLETE CONTROL</p>
-      <h1 id="hero-title" data-text="VAMP">VAMP</h1>
-      <p class="marquee-tagline" data-i18n="arcade.tagline">Your Mac. Beyond the screen.</p>
-      <p class="marquee-description" data-i18n="arcade.description">Stream your Mac, take control from anywhere on your private network, or build with your own AI. Choose your way in.</p>
-      <div class="hero-actions"><a class="primary-button ArcadeButton" href="#setup"><span data-i18n="ux.start">Start here</span> ↗</a><a class="secondary-button" href="assistant/">Vamp Assistant →</a></div>
-      <p class="marquee-foot">MAC · iPHONE · iPAD &nbsp; / &nbsp; LAN + TAILSCALE &nbsp; / &nbsp; OPEN SOURCE</p>
+      <h1 id="hero-title" aria-label="Vamp" data-text="VAMP">VAMP</h1>
+      <p class="marquee-tagline" data-i18n="arcade.tagline">Your Mac, within reach.</p>
+      <p class="marquee-description" data-i18n="ux.hero">Install Vamp Sync on the Mac you want to reach. Connect with Vamp Control from another Mac, iPhone, or iPad.</p>
+      <div class="hero-actions"><a class="primary-button ArcadeButton" href="#download"><span data-i18n="ux.downloads">Downloads</span><span aria-hidden="true">↓</span></a></div>
     </section>
-    <section class="container arcade-routing" aria-labelledby="routing-title"><div><div class="eyebrow">01 / CONNECT YOUR MACHINES</div><h2 id="routing-title" data-i18n="arcade.routing">One host.<br>Choose your controls.</h2><p data-i18n="ux.hero">Use a Mac app from another Mac, iPhone, or iPad. Install Vamp Sync on the Mac you want to reach, then choose one client for your other device.</p><a class="text-button" href="sync/">Explore Vamp Sync →</a></div><figure id="sync-preview" class="product-visual product-visual--sync" aria-label="Vamp Sync connects your Mac to Control or Stream">
-        <div class="sync-scene-heading"><span data-i18n="sync.sceneHeading">Your Mac, connected.</span><span class="sync-private"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="4.5" y="8.5" width="11" height="8" rx="2"/><path d="M7 8.5V6a3 3 0 0 1 6 0v2.5"/></svg><span data-i18n="sync.scenePrivate">Private</span></span></div>
-        <div class="sync-diagram">
-          <div class="sync-host"><div class="sync-mark-tile" aria-hidden="true"><svg viewBox="0 0 64 64" fill="currentColor"><rect x="23" y="11" width="18" height="3.2" rx="1.6"/><path fill-rule="evenodd" d="M12.5 18.5h39A6.5 6.5 0 0 1 58 25v20a6.5 6.5 0 0 1-6.5 6.5h-39A6.5 6.5 0 0 1 6 45V25a6.5 6.5 0 0 1 6.5-6.5zm5.8 6.4h27.4a2.4 2.4 0 0 1 2.4 2.4v13.4a2.4 2.4 0 0 1-2.4 2.4H18.3a2.4 2.4 0 0 1-2.4-2.4V27.3a2.4 2.4 0 0 1 2.4-2.4z"/><path d="M22.4 51.2 27.2 60 32 51.2z"/><path d="M32 51.2 36.8 60 41.6 51.2z"/></svg></div><h2>Vamp Sync</h2><p data-i18n="sync.sceneHost">On the Mac you want to reach</p></div>
-          <div class="sync-destinations"><a class="sync-destination" href="#control"><img class="sync-destination-logo" src="assets/vamp-control-logo.png?v=transparent-2" alt="" width="40" height="40"><strong>Vamp Control</strong><span>Mac · iPhone · iPad</span><span class="sync-destination-arrow" aria-hidden="true">↗</span></a><a class="sync-destination" href="stream/"><span class="sync-destination-index">S</span><strong>Vamp Stream</strong><span>iPhone · iPad</span><span class="sync-destination-arrow" aria-hidden="true">↗</span></a></div>
-        </div>
-        <figcaption class="sync-scene-caption"><span data-i18n="sync.sceneCaption">One app window. Wherever you are.</span><span>LAN / Tailscale</span></figcaption>
-      </figure></section>
-    <section class="container promo-film-section" aria-labelledby="promo-film-title">
-      <div class="promo-film-intro">
-        <div>
-          <div class="eyebrow" data-i18n="home.filmEyebrow">Vamp Stream · Product film</div>
-          <h2 id="promo-film-title" data-i18n="home.filmTitle">One app. Right where you are.</h2>
-        </div>
-        <p data-i18n="home.filmCopy">Move from your Mac’s app list to a focused live window on iPhone or iPad—privately, through Vamp Sync.</p>
-      </div>
-      <figure class="promo-film-frame">
-        <div class="promo-film-bar" aria-hidden="true">
-          <span>Vamp Sync + Stream / Full product story</span>
-          <span>4K · 10 sec</span>
-        </div>
-        <div class="promo-film-stage">
-          <video data-autoplay playsinline muted loop autoplay controls preload="metadata" poster="assets/video/vamp-sync-stream-full-reference-poster.jpg" aria-label="Vamp Sync and Stream product film showing the Mac host, app list, and a launched app on iPhone">
-            <source src="assets/video/vamp-sync-stream-full-reference-4k.mp4" type="video/mp4">
-          </video>
-        </div>
-        <figcaption class="promo-film-caption"><span data-i18n="home.filmCaption">Your Mac. Only what you need.</span><a href="stream/" class="text-button"><span data-i18n="home.filmCta">Explore Vamp Stream</span> →</a></figcaption>
-      </figure>
-    </section>
-    <section class="container product-section" id="setup"><span class="section-anchor" id="download" aria-hidden="true"></span><div class="product-section-head"><div><div class="section-kicker"><span class="number">01</span><span class="bar"></span></div><h2 class="section-title" data-i18n="ux.setup">Two apps. One connection.</h2></div><p class="section-lead" data-i18n="ux.setupLead">Sync stays on the Mac. Control or Stream goes on the device you use to reach it.</p></div><div class="flow-board"><article class="family-card flow-step" id="download-mini-host-dmg"><span class="card-number">01</span><h3 data-i18n="ux.step0">Install Vamp Sync</h3><p data-i18n="ux.step0Copy">On the Mac you want to reach. Allow Screen Recording for video and Accessibility for keyboard and pointer control.</p><div class="host-download"><a class="primary-button" data-release-link="vamp-mini-host-dmg" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-80/VampSync-macOS-4.0.0-build-80-notarized.dmg"><span data-i18n="ux.mini-host-dmgButton">Sync for Mac ↓</span></a><span class="platform-requirement">Intel + Apple Silicon · macOS 13+</span><div class="release-meta"><span data-release-version="vamp-mini-host-dmg">4.0.0 · build 80</span><a class="checksum-link" data-release-sha256="vamp-mini-host-dmg" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-80/VampSync-macOS-4.0.0-build-80-notarized.dmg.sha256">SHA-256</a></div></div></article>
-        <article class="family-card flow-step"><span class="card-number">02</span><h3 data-i18n="ux.step1">Choose one client</h3><p data-i18n="ux.step1Copy">Use Control on Mac, iPhone, or iPad. Choose Stream for a focused app window on iPhone or iPad. You only need one.</p><a class="text-button" href="#families"><span data-i18n="ux.step1Cta">Compare below</span></a></article>
-        <article class="family-card flow-step"><span class="card-number">03</span><h3 data-i18n="ux.step2">Pair and open an app</h3><p data-i18n="ux.step2Copy">Use the same trusted LAN or private Tailscale network. Scan Sync’s QR, verify the complete device fingerprint on both devices, approve on the Mac, and choose an app window.</p><a class="text-button" href="sync/"><span data-i18n="ux.step2Cta">Sync setup details</span></a></article></div></section>
-    <section class="container product-section" id="families"><div class="product-section-head"><div><div class="section-kicker"><span class="number">02</span><span class="bar"></span></div><h2 class="section-title" data-i18n="ux.clients">Which client fits your device?</h2></div><p class="section-lead" data-i18n="ux.clientsLead">Both connect to Sync. Choose your client, then download it for the device you’ll use.</p></div><div class="family-grid family-grid--two"><article class="family-card client-card" id="control"><div class="card-topline"><img class="control-card-logo" src="assets/vamp-control-logo.png?v=transparent-2" alt="" width="40" height="40"><span class="card-tag">Mac · iPhone · iPad</span></div><h3>Vamp Control</h3><a class="client-preview" href="assets/previews/vamp-control-ios-remote.png" target="_blank" rel="noreferrer" aria-label="Open full Vamp Control preview"><img src="assets/previews/vamp-control-ios-remote.png" alt="Vamp Control on iPhone" loading="lazy" width="589" height="1280"></a><p data-i18n="ux.control">Choose Control when you connect from another Mac, or want the Control interface on your iPhone or iPad.</p><div class="client-downloads"><div class="client-download" id="download-control-macos"><div><strong>Mac</strong><span class="platform-requirement">Apple Silicon · macOS 13+</span><div class="release-meta"><span data-release-version="vamp-control-macos">2.3.0 · build 57</span><a class="checksum-link" data-release-sha256="vamp-control-macos" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.3.0-build-57/VampControl-macOS-2.3.0-build-57-adhoc.dmg.sha256">SHA-256</a></div></div><a class="secondary-button" data-release-link="vamp-control-macos" aria-label="Download Vamp Control for Mac" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.3.0-build-57/VampControl-macOS-2.3.0-build-57-adhoc.dmg"><span data-i18n="ux.downloadAction">Download ↓</span></a></div><div class="client-download" id="download-control-ios"><div><strong>iPhone · iPad</strong><span class="platform-requirement" data-i18n="companion.iosUnavailable">iOS download not available yet. Existing sideloaded builds can pair now.</span></div></div></div></article>
-        <article class="family-card client-card"><div class="card-topline"><span class="card-number">S</span><span class="card-tag">iPhone · iPad</span></div><h3>Vamp Stream</h3><a class="client-preview" href="assets/previews/stream-ios-pairing-full.png" target="_blank" rel="noreferrer" aria-label="Open full Vamp Stream preview"><img src="assets/previews/stream-ios-pairing-full.png" alt="Vamp Stream on iPhone" loading="lazy" width="1206" height="2622"></a><p data-i18n="ux.stream">Choose Stream when you want a focused view of one Mac app on your iPhone or iPad, with touch and keyboard input.</p><div class="client-downloads"><div class="client-download" id="download-stream-ios"><div><strong>iPhone · iPad</strong><span class="platform-requirement" data-i18n="stream.betaShort">TestFlight · invited testers</span><div class="release-meta"><span>1.0 · build 12</span></div></div><a class="secondary-button" href="stream/#download"><span data-i18n="stream.betaDetails">TestFlight beta</span><span> →</span></a></div><a class="text-button client-detail-link" href="stream/"><span data-i18n="ux.streamPreview">See Stream</span> ↗</a></div></article></div><details class="install-notes"><summary data-i18n="ux.installNotes">Installation help</summary><p data-i18n="ux.install">Mac downloads are direct builds and may need “Open Anyway” in System Settings on first launch. iOS downloads need AltStore-style re-signing with your own Apple ID.</p><div class="card-actions"><a class="text-button" href="https://github.com/Mesutcydev/vamp-suite/blob/main/docs/INSTALL.md"><span data-i18n="ux.installGuide">Mac install guide ↗</span></a><a class="text-button" href="https://github.com/Mesutcydev/vamp-suite/blob/main/docs/IOS_SIDELOAD.md"><span data-i18n="ux.iosGuide">iOS install guide ↗</span></a></div></details></section>
-    <section class="container product-section" id="assistant"><div class="product-section-head"><div><div class="section-kicker"><span class="number">03</span><span class="bar"></span></div><h2 class="section-title" data-i18n="ai.homeTitle">An AI workspace of your own.</h2></div><p class="section-lead" data-i18n="ai.homeLead">Meet Vamp Assistant: local AI, coding agents, specialist bots, and your work within reach on mobile.</p></div><article class="family-card optional-assistant"><div><div class="eyebrow"><span data-i18n="ai.independent">Mac app · independent of Sync</span></div><h3>Vamp Assistant</h3><p data-i18n="ai.homeCopy">Write and research, build and review code, or give work to four specialist bots. Bring your own models, providers, skills, and chat history. Use the built-in browser and iOS Simulator, then follow sessions and approve work from your phone. Sync is not required.</p><div class="card-meta"><span>LOCAL AI + API</span><span>CODE + BOTS</span><span>iPHONE + iPAD</span></div><a class="text-button" href="assistant/"><span data-i18n="ux.assistantMore">Explore Assistant →</span></a></div><a class="family-preview assistant-desktop-preview" href="assistant/previews/macos/build-133-light/00-home.jpg" data-theme-light="assistant/previews/macos/build-133-light/00-home.jpg" data-theme-dark="assistant/previews/macos/build-133-light/00-home.jpg" target="_blank" rel="noreferrer" aria-label="Open full Assistant Mac preview"><img src="assistant/previews/macos/build-133-light/00-home.jpg" data-theme-light="assistant/previews/macos/build-133-light/00-home.jpg" data-theme-dark="assistant/previews/macos/build-133-light/00-home.jpg" alt="Vamp Assistant welcome screen with Chats, Devices, and a persistent composer" loading="lazy" width="1240" height="840"></a></article>
-      <article class="family-card companion-teaser" id="companion">
-        <div><div class="companion-teaser-head"><img src="assets/vamp-companion-icon.png" width="64" height="64" alt=""><div><div class="eyebrow" data-i18n="companion.homeEyebrow">Mac companion · iPhone-first assistant</div><h3>Vamp Companion</h3></div></div><p data-i18n="companion.homeCopy">Use your iPhone or iPad as the main assistant interface. Companion runs local models and connects API providers on your Mac, with one compact window for Models, Devices, and Settings.</p><div class="card-meta"><span>LOCAL AI + API</span><span data-i18n="companion.homeTag">iPHONE-FIRST</span><span>macOS 15+</span></div></div>
-        <div class="hero-actions"><a class="primary-button" href="companion/" data-i18n="companion.explore">Explore Companion →</a><a class="secondary-button" data-release-link="vamp-companion-macos" data-i18n="companion.downloadMac" href="https://github.com/Mesutcydev/vamp-companion/releases/download/v0.1.10/Vamp-Companion-0.1.10-build-14-notarized.dmg">Download for Mac ↓</a></div>
-      </article>
-</section></main>
 
-  <footer class="container site-footer"><div class="footer-top"><div class="footer-brand"><a class="brand" href="#top" aria-label="Vamp home"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40" focusable="false" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M8 5h24l6 6v17H28l-3 8-5-8-5 8-3-8H2V11zm2 6-2 2v9h24v-9l-2-2z"/><path fill="currentColor" d="M12 15h6v3h-6zm10 0h6v3h-6z"/></svg></span><span class="brand-word">Vamp</span></a><p data-i18n="footer.familyCopy">Private AI and focused Mac streaming.</p></div><div class="footer-links"><a href="sync/">Sync</a><a href="#control">Control</a><a href="assistant/">Assistant</a><a href="companion/">Companion</a><a href="stream/">Stream</a><a href="about/">About</a><a href="contact/">Contact</a><a href="privacy/">Privacy</a><a href="https://github.com/Mesutcydev/vamp-assistant" target="_blank" rel="noreferrer">Assistant GitHub ↗</a><a href="https://github.com/Mesutcydev/vamp-suite" target="_blank" rel="noreferrer">Suite GitHub ↗</a></div></div><div class="footer-bottom"><span>© <span id="year"></span> Vamp · Apache 2.0</span><span data-i18n="footer.meta">local-first · peer-approved · no hosted relay</span></div></footer>
-  <script src="assets/site.js?v=companion-tailscale-20261013" defer></script>
+    <section class="container product-section" id="download" aria-labelledby="download-title">
+      <h2 class="section-title" id="download-title" data-i18n="ux.downloads">Downloads</h2>
+      <div class="family-grid family-grid--two">
+        <article class="family-card client-card" id="download-mini-host-dmg">
+          <h3>Vamp Sync</h3>
+          <p data-i18n="ux.step0Copy">Install on the Mac you want to reach. Sync runs in the menu bar.</p>
+          <div class="host-download"><a class="primary-button" data-release-link="vamp-mini-host-dmg" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-80/VampSync-macOS-4.0.0-build-80-notarized.dmg"><span data-i18n="ux.mini-host-dmgButton">Download for Mac ↓</span></a><span class="platform-requirement">Intel and Apple Silicon · macOS 13+</span><div class="release-meta"><span data-release-version="vamp-mini-host-dmg">4.0.0 · build 80</span><a class="checksum-link" data-release-sha256="vamp-mini-host-dmg" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-80/VampSync-macOS-4.0.0-build-80-notarized.dmg.sha256">SHA-256</a></div></div>
+          <a class="text-button product-detail-link" href="sync/" data-i18n="ux.step2Cta">Sync setup and editions ↗</a>
+        </article>
+
+        <article class="family-card client-card" id="control">
+          <span class="section-anchor" id="families" aria-hidden="true"></span>
+          <h3>Vamp Control</h3>
+          <p data-i18n="ux.control">Install on the Mac, iPhone, or iPad you’ll use to connect.</p>
+          <div class="client-downloads">
+            <div class="client-download" id="download-control-macos"><div><strong>Mac</strong><span class="platform-requirement">Apple Silicon · macOS 13+</span><div class="release-meta"><span data-release-version="vamp-control-macos">2.3.0 · build 57</span><a class="checksum-link" data-release-sha256="vamp-control-macos" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.3.0-build-57/VampControl-macOS-2.3.0-build-57-adhoc.dmg.sha256">SHA-256</a></div></div><a class="secondary-button" data-release-link="vamp-control-macos" aria-label="Download Vamp Control for Mac" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.3.0-build-57/VampControl-macOS-2.3.0-build-57-adhoc.dmg"><span data-i18n="ux.downloadAction">Download ↓</span></a></div>
+            <div class="client-download" id="download-control-ios">
+              <div>
+                <strong>iPhone · iPad</strong>
+                <span class="platform-requirement download-unavailable" data-i18n="ux.iosUnavailable">Download currently unavailable</span>
+                <span class="platform-requirement download-available" data-i18n="ux.unsignedIPA">Unsigned IPA · re-sign to install</span>
+                <div class="release-meta download-available"><span data-release-version="vamp-control-ios"></span><a class="checksum-link" data-release-sha256="vamp-control-ios" hidden>SHA-256</a></div>
+              </div>
+              <a class="secondary-button" data-release-link="vamp-control-ios" aria-label="Download Vamp Control for iPhone or iPad" hidden><span data-i18n="ux.downloadAction">Download ↓</span></a>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="container product-section pair-section" id="setup" aria-labelledby="setup-title">
+      <h2 class="section-title" id="setup-title" data-i18n="ux.setup">Pair your devices</h2>
+      <p class="section-lead" data-i18n="ux.step2Copy">Choose Local Wi-Fi or Tailscale in Vamp Sync. Open Vamp Control and use Sync’s pairing QR code or link. Compare the complete device fingerprint on both devices before approving on your Mac.</p>
+      <details class="install-notes">
+        <summary data-i18n="ux.installNotes">Installation help</summary>
+        <p data-i18n="ux.install">The direct Mac downloads may need “Open Anyway” in System Settings. Control for iPhone and iPad requires re-signing before installation.</p>
+        <div class="card-actions"><a class="text-button" href="https://github.com/Mesutcydev/vamp-suite/blob/main/docs/INSTALL.md"><span data-i18n="ux.installGuide">Mac install guide ↗</span></a><a class="text-button" href="https://github.com/Mesutcydev/vamp-suite/blob/main/docs/IOS_SIDELOAD.md"><span data-i18n="ux.iosGuide">iOS install guide ↗</span></a></div>
+      </details>
+    </section>
+  </main>
+
+  <footer class="container site-footer"><div class="footer-top"><div class="footer-brand"><a class="brand" href="#top" aria-label="Vamp home"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40" focusable="false" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M8 5h24l6 6v17H28l-3 8-5-8-5 8-3-8H2V11zm2 6-2 2v9h24v-9l-2-2z"/><path fill="currentColor" d="M12 15h6v3h-6zm10 0h6v3h-6z"/></svg></span><span class="brand-word">Vamp</span></a><p data-i18n="footer.familyCopy">Private remote access to your Mac.</p></div><div class="footer-links"><a href="sync/">Sync</a><a href="#control">Control</a><a href="about/">About</a><a href="contact/">Contact</a><a href="privacy/">Privacy</a><a href="https://github.com/Mesutcydev/vamp-suite" target="_blank" rel="noreferrer">GitHub ↗</a></div></div><div class="footer-bottom"><span>© <span id="year"></span> Vamp · Apache 2.0</span><span data-i18n="footer.meta">local-first · peer-approved · no hosted relay</span></div></footer>
+  <script src="assets/site.js?v=sync-control-2" defer></script>
 </body>
 </html>

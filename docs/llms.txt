@@ -1,51 +1,23 @@
 # Vamp
 
-> Vamp Sync is the main Mac host for Vamp Control and Vamp Stream. Pair on a
-> trusted LAN or private Tailscale network. Every new device needs approval.
+> Install Vamp Sync on the Mac you want to reach. Connect with Vamp Control
+> from another Mac, iPhone, or iPad over a trusted LAN or private Tailscale network.
 
-Website: https://thevamp.app/
-Sync: https://thevamp.app/sync/
-Compare clients: https://thevamp.app/#families
-Downloads: https://thevamp.app/#download
-Control: https://thevamp.app/#control
-Stream: https://thevamp.app/stream/
-Assistant: https://thevamp.app/assistant/
-Companion: https://thevamp.app/companion/
-Suite source: https://github.com/Mesutcydev/vamp-suite
-Assistant source: https://github.com/Mesutcydev/vamp-assistant
-Companion source: https://github.com/Mesutcydev/vamp-companion (MIT)
-License: Apache-2.0
+- Website: https://thevamp.app/
+- Downloads: https://thevamp.app/#download
+- Vamp Sync: https://thevamp.app/sync/
+- Vamp Control: https://thevamp.app/#control
+- Source (Apache-2.0): https://github.com/Mesutcydev/vamp-suite
 
-## Products
+Vamp Sync is the macOS menu-bar host. Share a selected app window with a
+verified Vamp Control device over authenticated WebRTC. Screen Recording
+enables video. Keyboard and pointer control require the website edition of
+Sync and the user’s Accessibility approval. The Mac App Store edition of Sync
+shares existing app windows in view-only mode.
 
-- Vamp Sync: the macOS menu-bar host. Share a selected app window with a verified
-  Control or Stream client over authenticated WebRTC. Screen Recording enables
-  video; Accessibility enables keyboard and pointer control.
-- Vamp Control: Mac, iPhone and iPad client. Connect to Sync to select and control
-  a Mac app window. Assistant has a separate authenticated connection path.
-- Vamp Stream: focused iPhone/iPad client. Stream an app window through Sync,
-  or connect to Assistant or Companion through their private Remote Sessions endpoints.
-  App Stream 1.0 build 9 supports Companion QR pairing and is in TestFlight for invited testers.
-- Vamp Assistant: native macOS AI chat, local/BYOK models, Code workspaces,
-  specialist bots, and approval-gated automation. Includes its own iOS and
-  browser remote access. Runs independently; Sync is not required.
+Verify every new device’s complete fingerprint independently before approving
+it on the Mac. Keep host ports private. Vamp requires no hosted relay.
 
-- Vamp Companion: a compact Apple Silicon/macOS 15+ host for the existing
-  Vamp Assistant iOS app. Runs local MLX/GGUF and API models; its Mac window
-  contains Models, Devices, and Settings. Uses separate data and signed updates.
-  Downloads and sessions continue with the window closed. Sharing and Mac
-  control are opt-in; the Mac must remain awake and reachable.
-
-Vamp Sync, Vamp Assistant, and Vamp Companion are the current hosts. Vamp Host, Vamp
-Terminal Host, and Vamp Linux Host are discontinued. Shared transport source
-and historical technical documentation remain available in the repository.
-
-Never expose host ports directly to the public internet. Verify a new peer’s
-complete fingerprint independently before approving it. macOS permissions
-must be granted by the user. No hosted relay is required.
-
-## Documentation
-
-- Install: https://thevamp.app/sync/#download
+- Install: https://github.com/Mesutcydev/vamp-suite/blob/main/docs/INSTALL.md
 - iOS sideloading: https://github.com/Mesutcydev/vamp-suite/blob/main/docs/IOS_SIDELOAD.md
 - Security: https://github.com/Mesutcydev/vamp-suite/blob/main/SECURITY.md

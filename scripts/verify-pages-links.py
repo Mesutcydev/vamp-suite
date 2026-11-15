@@ -9,7 +9,8 @@ import re
 from urllib.parse import urlsplit, unquote
 from urllib.request import Request, urlopen
 
-ROOT = Path(__file__).resolve().parents[1] / "docs"
+REQUIRED_ASSETS = {"vamp-mini-host-dmg", "vamp-control-macos"}
+PUBLIC_ASSETS = REQUIRED_ASSETS | {"vamp-control-ios"}
 
 
 class Page(HTMLParser):
@@ -30,45 +31,39 @@ class Page(HTMLParser):
                 self.downloads.append((key, kind, attrs.get("href")))
 
 
-def validate():
-    pages = {path: Page(path) for path in ROOT.rglob("*.html")}
-    assets = json.loads((ROOT / "release.json").read_text())["assets"]
+def validate(root):
+    pages = {path: Page(path) for path in root.rglob("*.html")}
+    assets = json.loads((root / "release.json").read_text())["assets"]
     errors, urls = [], set()
+    if REQUIRED_ASSETS - assets.keys() or assets.keys() - PUBLIC_ASSETS:
+        errors.append("release.json: expected only Vamp Sync and Vamp Control downloads")
     for path, page in pages.items():
         for key, label in re.findall(r'<span[^>]*data-release-version="([^"]+)"[^>]*>([^<]*)</span>', path.read_text()):
-            if label != assets.get(key, {}).get("label"):
-                errors.append(f"{path.relative_to(ROOT)}: stale version label for {key}")
+            if label != assets.get(key, {}).get("label", ""):
+                errors.append(f"{path.relative_to(root)}: stale version label for {key}")
         for key, kind, href in page.downloads:
             expected = assets.get(key, {}).get("sha256Url" if kind == "sha256" else "url")
-            if href != expected or key not in assets:
-                errors.append(f"{path.relative_to(ROOT)}: stale {kind} link for {key}")
+            if href != expected or key not in PUBLIC_ASSETS:
+                errors.append(f"{path.relative_to(root)}: stale {kind} link for {key}")
         for ref in page.refs:
             url = urlsplit(ref)
             if url.netloc and url.netloc != "thevamp.app":
                 if "/releases/download/" in ref:
                     urls.add(ref)
                     if not any(ref in (a["url"], a.get("sha256Url")) for a in assets.values()):
-                        errors.append(f"{path.relative_to(ROOT)}: untracked download {ref}")
+                        errors.append(f"{path.relative_to(root)}: untracked download {ref}")
                 continue
             if url.scheme and url.scheme not in ("http", "https"):
                 continue
-            target = (ROOT / unquote(url.path).lstrip("/") if url.path.startswith("/") or url.netloc
+            target = (root / unquote(url.path).lstrip("/") if url.path.startswith("/") or url.netloc
                       else path.parent / unquote(url.path)) if url.path else path
             if target.is_dir():
                 target /= "index.html"
             target = target.resolve()
             if not target.exists():
-                errors.append(f"{path.relative_to(ROOT)}: missing {ref}")
+                errors.append(f"{path.relative_to(root)}: missing {ref}")
             elif url.fragment and target.suffix == ".html" and unquote(url.fragment) not in pages[target].ids:
-                errors.append(f"{path.relative_to(ROOT)}: missing anchor {ref}")
-    feed = json.loads((ROOT / "apps.json").read_text())
-    for app in feed["apps"]:
-        for version in app.get("versions", []):
-            urls.add(version["downloadURL"])
-        key = {"Vamp Stream": "vamp-stream-ios", "Vamp Assistant": "vamp-assistant-ios"}.get(app["name"])
-        # ponytail: an iOS IPA absent from every release is optional, so its feed entry is not compared.
-        if key in assets and app["versions"][0]["downloadURL"] != assets[key]["url"]:
-            errors.append(f"apps.json: latest {app['name']} version needs updating")
+                errors.append(f"{path.relative_to(root)}: missing anchor {ref}")
     for asset in assets.values():
         urls.add(asset["url"])
         if asset.get("sha256Url"):
@@ -94,9 +89,10 @@ def probe(url):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--site-dir", type=Path, required=True, help="Staged Pages directory")
     parser.add_argument("--online", action="store_true")
     args = parser.parse_args()
-    errors, urls, count = validate()
+    errors, urls, count = validate(args.site_dir.resolve())
     if args.online:
         with ThreadPoolExecutor(max_workers=6) as pool:
             errors.extend(error for error in pool.map(probe, sorted(urls)) if error)

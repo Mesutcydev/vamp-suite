@@ -29,7 +29,7 @@ body .brand-tag { color: var(--accent); border-color: var(--accent); border-radi
 body .nav-links .text-button { font: 700 13px/1.2 var(--arcade-display); letter-spacing: .1em; }
 body :is(.primary-button, .secondary-button, .icon-button, .menu-button, .ArcadeButton) { border-radius: 0; transition: color 120ms, background 120ms, transform 120ms, box-shadow 120ms; }
 body :is(.primary-button, .ArcadeButton) { color: var(--arcade-cream); background: #333333; border: 1px solid var(--arcade-cream); box-shadow: 3px 3px 0 var(--arcade-bg), 5px 5px 0 var(--arcade-cyan); font: 800 17px/1.2 var(--arcade-display); letter-spacing: .075em; text-transform: uppercase; min-height: 48px; }
-body :is(.primary-button, .ArcadeButton):hover { background: #484848; transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--arcade-bg), 6px 6px 0 var(--arcade-cyan); }
+body :is(.primary-button, .ArcadeButton):hover { color: var(--arcade-cream); background: #484848; transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--arcade-bg), 6px 6px 0 var(--arcade-cyan); }
 body .secondary-button { color: var(--ink); background: var(--surface); border: 1px solid var(--accent); box-shadow: 3px 3px 0 var(--line); min-height: 48px; font: 700 16px/1.2 var(--arcade-display); letter-spacing: .055em; text-transform: uppercase; }
 body .secondary-button:hover { border-color: var(--arcade-magenta); color: var(--ink); background: var(--surface-2); transform: translateX(1px); }
 body :is(.icon-button,.menu-button) { color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); box-shadow: none; }
@@ -173,4 +173,39 @@ body :is(.family-card,.feature-card,.path-card,.gallery-card,.download-card,.sur
 }
 body :is(.family-card,.feature-card,.path-card,.gallery-card):hover {
   box-shadow: inset 0 0 0 1px var(--card-edge-light), 0 0 9px 1px var(--card-edge-halo), 4px 4px 0 var(--arcade-magenta);
+}
+
+/* Put the two downloads immediately after the homepage introduction. */
+body.suite-home .arcade-marquee { min-height: clamp(380px, 55vh, 540px); }
+body.suite-home .arcade-marquee h1 { font-size: clamp(90px, 15vw, 185px); }
+.suite-home #download, .suite-home #control, .suite-home #setup { scroll-margin-top: 100px; }
+.suite-home #download > .section-title { margin-bottom: 26px; }
+.suite-home .client-card h3 { margin-top: 0; }
+.suite-home .host-download { margin-top: 0; }
+.suite-home .platform-requirement { font-size: 13px; }
+.suite-home .release-meta { align-items: center; font-size: 12px; }
+.suite-home .checksum-link, .suite-home .product-detail-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+.suite-home .product-detail-link { align-self: flex-start; min-height: 44px; }
+body .hero-motion-toggle { min-height: 30px; font-size: 10px; }
+.suite-home .pair-section .section-lead { max-width: 66ch; margin-top: 18px; }
+.suite-home .pair-section .install-notes { max-width: 66ch; }
+.sync-destinations { grid-template-columns: minmax(0, 1fr); }
+.client-download [hidden], .client-download:has(> a[hidden]) .download-available {
+  display: none;
+}
+.client-download:has(> a[href]) .download-unavailable {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  body .site-header :is(.icon-button, .menu-button) { min-width: 44px; min-height: 44px; }
+  body .mobile-menu .text-button { min-height: 44px; }
+}
+@media (max-width: 480px) {
+  body.suite-home .arcade-marquee { min-height: 0; padding: 64px 16px 42px; }
+  body.suite-home .arcade-marquee h1 { font-size: clamp(62px, 20vw, 92px); }
 }
