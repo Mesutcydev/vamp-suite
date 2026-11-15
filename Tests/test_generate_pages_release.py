@@ -111,6 +111,14 @@ class PagesReleaseSelectionTests(unittest.TestCase):
             self.assertIn('data-release-link="vamp-control-ios" href="new"', result)
             self.assertIn('>build 2</span>', result)
 
+    def test_retired_download_keys_are_left_unchanged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "index.html"
+            markup = '<a data-release-link="vamp-assistant-macos" href="old">Download</a>'
+            path.write_text(markup)
+            pages_release.rewrite_static_links(path, {"vamp-control-macos": {"url": "new"}})
+            self.assertEqual(path.read_text(), markup)
+
     def test_pagination_reads_beyond_first_hundred_releases(self):
         with patch.object(pages_release, "fetch_json", side_effect=[[{}] * 100, [{"tag_name": "older"}]]):
             self.assertEqual(len(pages_release.fetch_releases("example/repo")), 101)

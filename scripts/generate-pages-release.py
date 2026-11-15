@@ -107,8 +107,9 @@ def rewrite_static_links(path: Path, assets: dict) -> None:
 
     def rewrite_anchor(match):
         tag, kind, key = match[0], match[1], match[2]
+        # Retired download keys (for example the Assistant page) keep their markup unchanged.
         if key not in ASSET_PATTERNS and key not in assets:
-            raise ValueError(f"{path}: unknown release key {key}")
+            return match[0]
         url = assets.get(key, {}).get("sha256Url" if kind == "sha256" else "url")
         tag = re.sub(r'\s(?:href="[^"]*"|hidden(?:="[^"]*")?)', '', tag)
         return tag[:-1] + (f' href="{url}">' if url else ' hidden>')

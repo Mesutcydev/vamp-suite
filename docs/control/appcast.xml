@@ -1,0 +1,15 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Vamp Control macOS</title>
+        <item>
+            <title>4.0.0</title>
+            <pubDate>Sun, 15 Nov 2026 13:38:54 +0300</pubDate>
+            <link>https://thevamp.app/control/</link>
+            <sparkle:version>63</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-4.0.0-build-63/VampControl-macOS-4.0.0-build-63-notarized.dmg" length="12535671" type="application/octet-stream" sparkle:edSignature="CqW1aQmXJFI+hJUjpapRF1htfYOJqxSM3pN3rBRkQCu+jPmK1HxOhS1iesIVluXR7JyPm4vXaPjtQA8DNgVjBg=="/>
+        </item>
+    </channel>
+</rss>
