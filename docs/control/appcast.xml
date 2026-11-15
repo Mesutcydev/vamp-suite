@@ -3,6 +3,15 @@
     <channel>
         <title>Vamp Control macOS</title>
         <item>
+                    <title>2.0.0</title>
+                    <pubDate>Sun, 15 Nov 2026 14:53:15 +0300</pubDate>
+                    <link>https://thevamp.app/control/</link>
+                    <sparkle:version>64</sparkle:version>
+                    <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+                    <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+                    <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-64/VampControl-macOS-2.0.0-build-64-notarized.dmg" length="12535685" type="application/octet-stream" sparkle:edSignature="Sp9BYqZRdACC9cTXNlREUsn8yfjTor8lIY9XzFMiGGgDbJYl0Je/bTz0KeZ1jtC2xFNJa4fzFbVlEZqVNrP7Bg=="/>
+                </item>
+        <item>
             <title>4.0.0</title>
             <pubDate>Sun, 15 Nov 2026 13:38:54 +0300</pubDate>
             <link>https://thevamp.app/control/</link>

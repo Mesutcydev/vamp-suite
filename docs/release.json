@@ -10,12 +10,12 @@
       "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-81/VampSync-macOS-4.0.0-build-81-notarized.dmg.sha256"
     },
     "vamp-control-macos": {
-      "name": "VampControl-macOS-4.0.0-build-63-notarized.dmg",
-      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-4.0.0-build-63/VampControl-macOS-4.0.0-build-63-notarized.dmg",
-      "label": "4.0.0 \u00b7 build 63",
-      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-control-macos-4.0.0-build-63",
-      "tag": "vamp-control-macos-4.0.0-build-63",
-      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-4.0.0-build-63/VampControl-macOS-4.0.0-build-63-notarized.dmg.sha256"
+      "name": "VampControl-macOS-2.0.0-build-64-notarized.dmg",
+      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-64/VampControl-macOS-2.0.0-build-64-notarized.dmg",
+      "label": "2.0.0 \u00b7 build 64",
+      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-control-macos-2.0.0-build-64",
+      "tag": "vamp-control-macos-2.0.0-build-64",
+      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-64/VampControl-macOS-2.0.0-build-64-notarized.dmg.sha256"
     }
   }
 }
