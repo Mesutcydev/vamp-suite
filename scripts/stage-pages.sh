@@ -9,7 +9,7 @@ mkdir -p "$destination"
 rsync -a \
   --include='/index.html' --include='/404.html' \
   --include='/about/***' --include='/contact/***' --include='/privacy/***' \
-  --include='/sync/***' --include='/mini-host/***' \
+  --include='/sync/***' --include='/control/***' --include='/mini-host/***' \
   --include='/agent-manifest.json' --include='/release.json' \
   --include='/llms.txt' --include='/robots.txt' --include='/sitemap.xml' \
   --include='/assets/' --include='/assets/site.*' --include='/assets/products.css' \
