@@ -5,6 +5,15 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         <title>Vamp Sync</title>
         <item>
             <title>4.0.0</title>
+            <pubDate>Tue, 17 Nov 2026 21:47:12 +0300</pubDate>
+            <link>https://thevamp.app/sync/</link>
+            <sparkle:version>82</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-82/VampSync-macOS-4.0.0-build-82-notarized.dmg" length="12727928" type="application/octet-stream" sparkle:edSignature="j+V5ncxCvVhKjg1FGHeNSdlUKHbsxxCXiX/FFZgUeord1GPRb2RLsPX0yOxK19oaidPJbvAcHtcJEwYnpvknBQ=="/>
+        </item>
+        <item>
+            <title>4.0.0</title>
             <pubDate>Sun, 15 Nov 2026 14:07:23 +0300</pubDate>
             <link>https://thevamp.app/sync/</link>
             <sparkle:version>81</sparkle:version>
