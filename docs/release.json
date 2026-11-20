@@ -2,20 +2,20 @@
   "repository": "Mesutcydev/vamp-suite",
   "assets": {
     "vamp-mini-host-dmg": {
-      "name": "VampSync-macOS-4.0.0-build-81-notarized.dmg",
-      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-81/VampSync-macOS-4.0.0-build-81-notarized.dmg",
-      "label": "4.0.0 \u00b7 build 81",
-      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-sync-4.0.0-build-81",
-      "tag": "vamp-sync-4.0.0-build-81",
-      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-81/VampSync-macOS-4.0.0-build-81-notarized.dmg.sha256"
+      "name": "VampSync-macOS-4.0.0-build-84-notarized.dmg",
+      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-84/VampSync-macOS-4.0.0-build-84-notarized.dmg",
+      "label": "4.0.0 \u00b7 build 84",
+      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-sync-4.0.0-build-84",
+      "tag": "vamp-sync-4.0.0-build-84",
+      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-84/VampSync-macOS-4.0.0-build-84-notarized.dmg.sha256"
     },
     "vamp-control-macos": {
-      "name": "VampControl-macOS-2.0.0-build-64-notarized.dmg",
-      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-64/VampControl-macOS-2.0.0-build-64-notarized.dmg",
-      "label": "2.0.0 \u00b7 build 64",
-      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-control-macos-2.0.0-build-64",
-      "tag": "vamp-control-macos-2.0.0-build-64",
-      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-64/VampControl-macOS-2.0.0-build-64-notarized.dmg.sha256"
+      "name": "VampControl-macOS-2.0.0-build-68-notarized.dmg",
+      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-68/VampControl-macOS-2.0.0-build-68-notarized.dmg",
+      "label": "2.0.0 \u00b7 build 68",
+      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-control-macos-2.0.0-build-68",
+      "tag": "vamp-control-macos-2.0.0-build-68",
+      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-68/VampControl-macOS-2.0.0-build-68-notarized.dmg.sha256"
     }
   }
 }

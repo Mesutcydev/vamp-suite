@@ -1,8 +1,17 @@
-<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
 --><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>Vamp Sync</title>
+        <item>
+            <title>4.0.0</title>
+            <pubDate>Fri, 20 Nov 2026 18:35:50 +0300</pubDate>
+            <link>https://thevamp.app/sync/</link>
+            <sparkle:version>84</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-84/VampSync-macOS-4.0.0-build-84-notarized.dmg" length="12728783" type="application/octet-stream" sparkle:edSignature="m9iIOCMxM8DYNvT4JUitOGnxW0urz0j+90li1vTEhleOniEfRyoZnmZ7L1LqorqWigQoInBJ22kPMlwKh6FPAw=="></enclosure>
+        </item>
         <item>
             <title>4.0.0</title>
             <pubDate>Tue, 17 Nov 2026 22:17:42 +0300</pubDate>
@@ -10,7 +19,7 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
             <sparkle:version>83</sparkle:version>
             <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-83/VampSync-macOS-4.0.0-build-83-notarized.dmg" length="12728180" type="application/octet-stream" sparkle:edSignature="UkF1kuV5qfsmDLh/rbK8UKBVJxrteFrAyM8w3HwWS0pjSYhPzu/NePHcBuX9r1inhny5Znll7pnOia5A8nYvCQ=="/>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-83/VampSync-macOS-4.0.0-build-83-notarized.dmg" length="12728180" type="application/octet-stream" sparkle:edSignature="UkF1kuV5qfsmDLh/rbK8UKBVJxrteFrAyM8w3HwWS0pjSYhPzu/NePHcBuX9r1inhny5Znll7pnOia5A8nYvCQ=="></enclosure>
         </item>
         <item>
             <title>4.0.0</title>
@@ -19,7 +28,7 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
             <sparkle:version>82</sparkle:version>
             <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-82/VampSync-macOS-4.0.0-build-82-notarized.dmg" length="12727928" type="application/octet-stream" sparkle:edSignature="j+V5ncxCvVhKjg1FGHeNSdlUKHbsxxCXiX/FFZgUeord1GPRb2RLsPX0yOxK19oaidPJbvAcHtcJEwYnpvknBQ=="/>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-82/VampSync-macOS-4.0.0-build-82-notarized.dmg" length="12727928" type="application/octet-stream" sparkle:edSignature="j+V5ncxCvVhKjg1FGHeNSdlUKHbsxxCXiX/FFZgUeord1GPRb2RLsPX0yOxK19oaidPJbvAcHtcJEwYnpvknBQ=="></enclosure>
         </item>
         <item>
             <title>4.0.0</title>
@@ -32,6 +41,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: cudhLf57t+RRrm/gt3Z7WBtrgt9nMG4kAJzLL5zQLoGNNMw7UtMpraWFUMic82bToTGua3YNbPmuNqGqhuH+Cw==
-length: 1142
+edSignature: 3Io/2eY1qz8qjX4bPuqi8UUvu/mx8ZJsrgwBlmC0CqYeR14J9VMBZ8DhxvnXARdn2G0YCj2VnS+2Jdlkgt4MAw==
+length: 3295
 -->
