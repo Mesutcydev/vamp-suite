@@ -17,8 +17,14 @@ struct MacSettingsScreen: View {
 
     // Feature toggles share the same keys the iOS client uses, so a user's
     // preference is consistent across both apps' shared logic.
-    @AppStorage("com.remotedesktop.client.filetransfer.enabled") private var fileTransferEnabled = true
+    @AppStorage(ClientFileTransferPreference.storageKey) private var fileTransferEnabled = true
     @AppStorage("client.clipboard.enabled") private var clipboardEnabled = true
+
+    // Vamp Pro tab (store builds only).
+    @StateObject private var unlock = StreamingUnlockStore()
+    @StateObject private var usage = DailyStreamingUsage()
+    @State private var showsPaywall = false
+    @State private var peerPendingForget: TrustedPeer?
 
     init(environment: ClientAppEnvironment) {
         self.environment = environment
@@ -35,8 +41,13 @@ struct MacSettingsScreen: View {
                 .tabItem { Label("Trusted Hosts", systemImage: "checkmark.shield") }
             diagnosticsTab
                 .tabItem { Label("Diagnostics", systemImage: "stethoscope") }
-            openSourceTab
-                .tabItem { Label("Open Source", systemImage: "checkmark.seal") }
+            if StreamingUnlockStore.isEnforced {
+                proTab
+                    .tabItem { Label("Vamp Pro", systemImage: "sparkles") }
+            } else {
+                openSourceTab
+                    .tabItem { Label("Open Source", systemImage: "checkmark.seal") }
+            }
         }
         // Sized to the tallest tab. At 440 the General tab overflowed into a
         // scroller and clipped the last row mid-toggle, which a macOS settings
@@ -143,8 +154,10 @@ struct MacSettingsScreen: View {
                 Toggle(isOn: $environment.showsStatsOverlay) {
                     Label("Show connection stats during sessions", systemImage: "waveform.path.ecg")
                 }
-                Toggle(isOn: $environment.prefersViewOnly) {
-                    Label("View only (don't send mouse or keyboard)", systemImage: "eye")
+                if MacDistributionPolicy.allowsRemoteChanges {
+                    Toggle(isOn: $environment.prefersViewOnly) {
+                        Label("View only (don't send mouse or keyboard)", systemImage: "eye")
+                    }
                 }
                 Toggle(isOn: $environment.lowPowerModeEnabled) {
                     Label("Low power mode (reduce refresh rate)", systemImage: "leaf")
@@ -160,19 +173,22 @@ struct MacSettingsScreen: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section {
-                Toggle(isOn: $fileTransferEnabled) {
-                    Label("File transfer", systemImage: "arrow.up.arrow.down.circle")
+            // App Store edition is View Only: file transfer and clipboard sync are website-edition features.
+            if MacDistributionPolicy.allowsRemoteChanges {
+                Section {
+                    Toggle(isOn: $fileTransferEnabled) {
+                        Label("File transfer", systemImage: "arrow.up.arrow.down.circle")
+                    }
+                    Toggle(isOn: $clipboardEnabled) {
+                        Label("Clipboard sync", systemImage: "doc.on.clipboard")
+                    }
+                } header: {
+                    Text("Features")
+                } footer: {
+                    Text("File transfer sends files to and receives files from the connected Mac. Clipboard sharing is manual: use Send Clipboard or Fetch Clipboard in the session tools.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Toggle(isOn: $clipboardEnabled) {
-                    Label("Clipboard sync", systemImage: "doc.on.clipboard")
-                }
-            } header: {
-                Text("Features")
-            } footer: {
-                Text("Send files to the host and share text both ways. Turn off to hide these controls during a session.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Section {
@@ -191,7 +207,7 @@ struct MacSettingsScreen: View {
             } header: {
                 Text("This Mac")
             } footer: {
-                Text("Your device identity is generated on-device and never leaves it. Hosts verify it before accepting a connection.")
+                Text("Your private key stays on this Mac. Your public identity and fingerprint are shared with hosts so they can verify a connection.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -249,7 +265,7 @@ struct MacSettingsScreen: View {
                                         .textSelection(.enabled)
                                 }
                                 Spacer()
-                                Button("Forget") { Task { await trustedHostsVM.forget(peer) } }
+                                Button("Forget…") { peerPendingForget = peer }
                             }
                             .padding(.vertical, 3)
                         }
@@ -264,6 +280,60 @@ struct MacSettingsScreen: View {
             }
         }
         .task { await trustedHostsVM.refresh() }
+        .confirmationDialog(
+            "Forget \(peerPendingForget?.displayName ?? "this Mac")?",
+            isPresented: Binding(get: { peerPendingForget != nil }, set: { if !$0 { peerPendingForget = nil } }),
+            presenting: peerPendingForget
+        ) { peer in
+            Button("Forget", role: .destructive) { Task { await trustedHostsVM.forget(peer) } }
+        } message: { _ in
+            Text("This Mac will ask for approval again the next time you connect.")
+        }
+    }
+
+    // MARK: - Vamp Pro (store distribution)
+
+    private var proTab: some View {
+        VStack(spacing: 18) {
+            Image(systemName: unlock.isEffectivelyUnlocked ? "checkmark.seal.fill" : "sparkles")
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(unlock.isEffectivelyUnlocked ? Color.green : Color.secondary)
+            Text(unlock.isEffectivelyUnlocked ? "Vamp Pro is unlocked" : "Stream without the daily limit")
+                .font(.title3.weight(.semibold))
+            Text(unlock.isEffectivelyUnlocked
+                 ? "Vamp Control streams without a daily limit on this Mac."
+                 : "Vamp Control streams for 15 minutes a day for free. Vamp Pro is a one-time purchase that removes the limit. No subscription.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+            if !unlock.isEffectivelyUnlocked {
+                Button("View Vamp Pro…") { showsPaywall = true }
+                    .controlSize(.large)
+            }
+            Button("Restore Purchase") { Task { await unlock.restore() } }
+                .buttonStyle(.link)
+            // The result used to be shown only inside the paywall sheet, which this button
+            // never opens, so restoring looked like it did nothing.
+            if let result = unlock.purchaseNotice ?? unlock.purchaseError {
+                Text(result)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            Link("Privacy Policy", destination: VampProductLinks.privacy)
+                .buttonStyle(.link)
+            Link("Help & Feedback", destination: VampProductLinks.support)
+                .buttonStyle(.link)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(28)
+        .task {
+            if unlock.product == nil { await unlock.refresh() }
+        }
+        .sheet(isPresented: $showsPaywall) {
+            MacStreamingPaywallView(unlock: unlock, usage: usage, onDismiss: { showsPaywall = false })
+        }
     }
 
     // MARK: - Open-source distribution
@@ -273,13 +343,17 @@ struct MacSettingsScreen: View {
             proBadge(symbol: "checkmark.seal.fill", tint: .green)
             Text("Open source. All features included.")
                 .font(.title3.weight(.semibold))
-            Text("This Apache-2.0 website build includes unlimited streaming and every supported quality preset. There are no subscriptions or in-app purchases.")
+            Text("Vamp Control includes unlimited streaming and every quality preset supported by this Mac. There are no subscriptions or in-app purchases.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 380)
             Link("Source, licenses, and release integrity",
                  destination: URL(string: "https://github.com/Mesutcydev/vamp-suite")!)
+                .buttonStyle(.link)
+            Link("Privacy Policy", destination: VampProductLinks.privacy)
+                .buttonStyle(.link)
+            Link("Help & Feedback", destination: VampProductLinks.support)
                 .buttonStyle(.link)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -119,7 +119,7 @@ enum MacInputReadiness: Equatable {
         if locked { return .locked }
         if choosingApp { return .choosingApp }
         if !receivingVideo { return .waitingForVideo }
-        return viewOnly ? .viewOnly : .ready
+        return (viewOnly || !MacDistributionPolicy.allowsRemoteChanges) ? .viewOnly : .ready
     }
 
     var canSendInput: Bool { self == .ready }

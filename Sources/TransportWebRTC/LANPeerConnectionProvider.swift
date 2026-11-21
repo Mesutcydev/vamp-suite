@@ -164,11 +164,18 @@ public final class LANPeerConnection: LANTransportSecurityConfigurable, @uncheck
     }
 
     private func receiveFrame(on conn: NWConnection) {
-        conn.receive(minimumIncompleteLength: Self.frameHeaderSize, maximumLength: Self.frameHeaderSize) { [weak self] headerData, _, _, error in
+        conn.receive(minimumIncompleteLength: Self.frameHeaderSize, maximumLength: Self.frameHeaderSize) { [weak self] headerData, _, isComplete, error in
             guard let self else { return }
             guard let headerData, headerData.count == Self.frameHeaderSize else {
-                if let error, !self.isCancellationError(error) {
-                    self.handleConnectionError(error)
+                if let error {
+                    if !self.isCancellationError(error) { self.handleConnectionError(error) }
+                } else if isComplete {
+                    // The peer closed cleanly. Network.framework reports that here and not
+                    // through the state handler, so the session used to look connected (a
+                    // frozen picture) until a liveness watchdog fired 12–30 s later.
+                    // Cancelling routes it through the normal closed/retry handling.
+                    self.logger.info("Peer closed the data connection")
+                    conn.cancel()
                 }
                 return
             }
@@ -182,6 +189,9 @@ public final class LANPeerConnection: LANTransportSecurityConfigurable, @uncheck
             guard payloadLen >= 0, payloadLen <= 16_777_216 else {
                 self.logger.error("Received invalid frame payload length: \(payloadLen)")
                 self.handleConnectionError(nil)
+                // The stream can't be re-framed after this. Close it so the normal
+                // closed/retry handling runs instead of leaving a live socket nobody reads.
+                conn.cancel()
                 return
             }
 

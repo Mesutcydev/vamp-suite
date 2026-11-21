@@ -28,6 +28,7 @@ struct MacHostsScreen: View {
     /// to an address that can't resolve without Tailscale up.
     @State private var pendingTailscaleHost: DiscoveredHostRow?
     @State private var showsAssistantPairing = false
+    @State private var confirmForgetAssistant = false
 
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
@@ -41,11 +42,19 @@ struct MacHostsScreen: View {
     /// attention before the user has any intent to type an address.
     @FocusState private var manualFieldFocused: Bool
 
-    init(environment: ClientAppEnvironment, assistant: MacAssistantSession) {
+    /// The shell's daily-limit gate. When it refuses, the shell presents Vamp Pro instead of connecting.
+    private let allowsNewSession: () -> Bool
+    private let onSessionBlocked: () -> Void
+
+    init(environment: ClientAppEnvironment, assistant: MacAssistantSession,
+         allowsNewSession: @escaping () -> Bool = { true },
+         onSessionBlocked: @escaping () -> Void = {}) {
         self.environment = environment
         self.assistant = assistant
         self.hostsVM = environment.sharedHostsViewModel
         self.coordinator = environment.sessionCoordinator
+        self.allowsNewSession = allowsNewSession
+        self.onSessionBlocked = onSessionBlocked
     }
 
     var body: some View {
@@ -122,6 +131,12 @@ struct MacHostsScreen: View {
         }
         .sheet(isPresented: $showsAssistantPairing) {
             MacAssistantPairingSheet(model: assistant)
+        }
+        .confirmationDialog("Forget the saved Assistant?", isPresented: $confirmForgetAssistant, titleVisibility: .visible) {
+            Button("Forget", role: .destructive) { assistant.disconnect(forget: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll need to pair this Mac again to use the Assistant.")
         }
         .sheet(item: $renamingHost) { row in
             MacRenameHostSheet(
@@ -225,11 +240,11 @@ struct MacHostsScreen: View {
 
     // MARK: - Get Vamp Sync
 
-    /// Canonical direct-download page for the host companion.
-    private static let hostWebsiteURL = URL(string: "https://thevamp.app/sync/")!
+    /// Compares both Vamp Sync editions and links to each download.
+    private static let hostWebsiteURL = URL(string: "https://thevamp.app/sync/#editions")!
 
-    /// Small directional card pointing users to install the free Vamp Sync on the Mac they
-    /// want to control.
+    /// Small directional card pointing users to install Vamp Sync on the Mac they
+    /// want to reach, and which edition gives them control.
     private var vampHostBox: some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: "macwindow.on.rectangle")
@@ -241,12 +256,12 @@ struct MacHostsScreen: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Don’t have Vamp Sync yet?")
                     .font(.headline)
-                Text("Control the whole desktop or choose a single app window. Install Vamp Sync on the remote Mac.")
+                Text("Install Vamp Sync on the Mac you want to reach. The free website edition allows keyboard and pointer control. The Mac App Store edition is View Only.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Link(destination: Self.hostWebsiteURL) {
-                    Label("Download from project website", systemImage: "arrow.down.circle")
+                    Label("Compare Vamp Sync editions", systemImage: "arrow.up.right")
                 }
                 .font(.callout.weight(.medium))
                 .buttonStyle(.bordered)
@@ -406,14 +421,18 @@ struct MacHostsScreen: View {
 
             if assistant.isWorking {
                 ProgressView().controlSize(.small)
+                if assistant.canCancelWork {
+                    Button("Cancel") { assistant.cancelWork() }
+                        .controlSize(.small)
+                }
             } else if assistant.savedAddress != nil {
-                Button("Reconnect") { Task { await assistant.reconnect() } }
+                Button("Reconnect") { assistant.startReconnect() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                 Menu {
                     Button("Pair a Different Mac") { showsAssistantPairing = true }
-                    Button("Forget Saved Assistant", role: .destructive) {
-                        assistant.disconnect(forget: true)
+                    Button("Forget Saved Assistant…", role: .destructive) {
+                        confirmForgetAssistant = true
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -490,14 +509,25 @@ struct MacHostsScreen: View {
         ZStack {
             Color.black.opacity(0.28).ignoresSafeArea()
             VStack(spacing: 14) {
-                ProgressView().controlSize(.large)
-                Text(connectingStatusText)
-                    .font(.title3.weight(.semibold))
-                Text("If this is the first connection, approve this Mac in the Vamp Sync window on the other computer.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 380)
+                if let confirmation = coordinator.pendingHostConfirmation {
+                    hostConfirmation(confirmation)
+                } else {
+                    ProgressView().controlSize(.large)
+                    Text(connectingStatusText)
+                        .font(.title3.weight(.semibold))
+                    Text("If this is the first connection, approve this Mac in the Vamp Sync window on the other computer.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 380)
+                    if coordinator.hostUsesLegacyHandshake {
+                        Text(ClientSessionCoordinator.legacyHostNotice)
+                            .font(.callout)
+                            .foregroundStyle(.orange)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 380)
+                    }
+                }
                 Button("Cancel") {
                     Task { await coordinator.disconnect() }
                 }
@@ -511,6 +541,37 @@ struct MacHostsScreen: View {
                 isInteractive: true
             )
         }
+    }
+
+    /// Pairing is paused until the user has compared the other Mac's fingerprint, or has
+    /// accepted a Vamp Sync too old to prove its identity. Deliberately no default-action
+    /// shortcut: Return must not confirm a fingerprint nobody looked at.
+    @ViewBuilder
+    private func hostConfirmation(_ confirmation: PendingHostConfirmation) -> some View {
+        let isOlderSync = confirmation.fingerprint == nil
+        Image(systemName: isOlderSync ? "exclamationmark.shield" : "checkmark.shield")
+            .font(.system(size: 30, weight: .light))
+            .foregroundStyle(isOlderSync ? Color.orange : Color.accentColor)
+        Text(isOlderSync ? "Older Vamp Sync on \(confirmation.hostName)" : "Is this your Mac?")
+            .font(.title3.weight(.semibold))
+        Text(isOlderSync
+             ? "It can’t prove its identity before pairing. Update Vamp Sync on that Mac, or connect anyway."
+             : "Compare this with the Host fingerprint in Vamp Sync on \(confirmation.hostName). Continue only if they match.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 380)
+        if let fingerprint = confirmation.fingerprint {
+            Text(PublicKeyFingerprint.grouped(fingerprint))
+                .font(.system(.callout, design: .monospaced))
+                .multilineTextAlignment(.center)
+                .textSelection(.enabled)
+                .accessibilityLabel("Mac fingerprint")
+                .accessibilityValue(fingerprint)
+        }
+        Button(isOlderSync ? "Connect Anyway" : "It Matches") { coordinator.confirmPendingHost() }
+            .controlSize(.large)
+            .buttonStyle(.borderedProminent)
     }
 
     private var connectingStatusText: String {
@@ -542,6 +603,10 @@ struct MacHostsScreen: View {
     }
 
     private func connect(to row: DiscoveredHostRow) {
+        guard allowsNewSession() else {
+            onSessionBlocked()
+            return
+        }
         // Remind to enable the VPN before attempting a Tailscale/relay address —
         // a ts.net / 100.x host won't resolve without Tailscale connected, so we
         // route through a warning alert instead of a doomed long-timeout connect.

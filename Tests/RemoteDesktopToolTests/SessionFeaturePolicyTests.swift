@@ -185,16 +185,69 @@ final class SessionFeaturePolicyTests: XCTestCase {
         XCTAssertEqual(scaledHEVCSmall.width, 2560)
         XCTAssertEqual(scaledHEVCSmall.height, 1440)
 
-        // Under Ultra preset, does not cap at all (returns native dimensions)
+        // Ultra keeps native dimensions while they fit the 4K-UHD pixel budget…
         let scaledUltra = StreamScaling.scaledDimensions(
+            preset: .ultra,
+            nativeWidth: 3024,
+            nativeHeight: 1964,
+            allowsHighResolution: false
+        )
+        XCTAssertEqual(scaledUltra.width, 3024)
+        XCTAssertEqual(scaledUltra.height, 1964)
+
+        // …including an ultrawide whose long edge is past 3840 (that limit is window-only)…
+        let ultrawide = StreamScaling.scaledDimensions(
+            preset: .ultra,
+            nativeWidth: 5120,
+            nativeHeight: 1440,
+            allowsHighResolution: true
+        )
+        XCTAssertEqual(ultrawide.width, 5120)
+        XCTAssertEqual(ultrawide.height, 1440)
+
+        // …and a 5K Retina panel's backing pixels (14.7 MP) shrink into the budget, still
+        // far above the 2560×1440 point size it used to stream at.
+        let retina5K = StreamScaling.scaledDimensions(
             preset: .ultra,
             nativeWidth: 5120,
             nativeHeight: 2880,
-            allowsHighResolution: false
+            allowsHighResolution: true
         )
-        XCTAssertEqual(scaledUltra.width, 5120)
-        XCTAssertEqual(scaledUltra.height, 2880)
+        XCTAssertLessThanOrEqual(retina5K.width * retina5K.height, StreamScaling.windowMaximumPixels)
+        XCTAssertGreaterThan(retina5K.width, 3800)
+        XCTAssertEqual(Double(retina5K.width) / Double(retina5K.height), 5120.0 / 2880.0, accuracy: 0.01)
+        XCTAssertEqual(retina5K.width % 2, 0)
+        XCTAssertEqual(retina5K.height % 2, 0)
     }
+
+    /// One early blip must age out of the loss reading instead of weighing on it for the
+    /// whole session (which pinned the stream on a downgraded preset).
+    func testPingLossIsJudgedOverARecentWindow() {
+        var window = PingLossWindow()
+        XCTAssertNil(window.lossPercent)
+        for _ in 0..<5 { window.record(answered: false) }
+        XCTAssertEqual(window.lossPercent, 100)
+        for _ in 0..<25 { window.record(answered: true) }
+        XCTAssertEqual(window.lossPercent ?? -1, 5.0 / 30.0 * 100, accuracy: 0.001)
+        for _ in 0..<5 { window.record(answered: true) }
+        XCTAssertEqual(window.lossPercent, 0)
+    }
+
+    #if os(macOS)
+    /// The layout sizes the encoder and `backingScale` sizes the capture surface. Both must be
+    /// backing pixels (points × scale): `CGDisplayPixelsWide` reports points on a Retina
+    /// display, which streamed every HiDPI desktop at half resolution.
+    func testDisplayLayoutReportsBackingPixels() {
+        for display in CoreGraphicsDisplayLayoutProvider().queryDisplayLayout().displays {
+            let scale = CoreGraphicsDisplayLayoutProvider.backingScale(of: CGDirectDisplayID(display.id) ?? 0)
+            XCTAssertEqual(display.scaleFactor, scale)
+            XCTAssertEqual(display.pixelSize.width, (display.frame.size.width * scale).rounded())
+            XCTAssertEqual(display.pixelSize.height, (display.frame.size.height * scale).rounded())
+        }
+        XCTAssertEqual(CoreGraphicsDisplayLayoutProvider.backingPixels(points: 1512, scale: 2), 3024)
+        XCTAssertEqual(CoreGraphicsDisplayLayoutProvider.backingPixels(points: 2560, scale: 1), 2560)
+    }
+    #endif
 
     func testPerformanceWindowFloor() {
         // A portrait window's backing (836×1812) would halve to 418×906 on
@@ -283,15 +336,15 @@ final class SessionFeaturePolicyTests: XCTestCase {
         XCTAssertLessThanOrEqual(square.width * square.height, StreamScaling.windowMaximumPixels)
         XCTAssertLessThanOrEqual(max(square.width, square.height), StreamScaling.windowMaximumLongEdge)
 
-        // Display streams keep native resolution: the display *is* the intended picture.
+        // Display streams are not long-edge limited: an ultrawide keeps its native picture.
         let display = StreamScaling.scaledDimensions(
             preset: .ultra,
             nativeWidth: 5_120,
-            nativeHeight: 2_880,
+            nativeHeight: 1_440,
             allowsHighResolution: true
         )
         XCTAssertEqual(display.width, 5_120)
-        XCTAssertEqual(display.height, 2_880)
+        XCTAssertEqual(display.height, 1_440)
 
         // Never upscales, and real hardware sizes pass through untouched: the 2560×1440 Mac
         // pair's fitted 1364-point window is 2728 px tall, under both limits.

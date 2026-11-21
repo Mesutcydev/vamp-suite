@@ -1,10 +1,13 @@
+import CryptoKit
 import XCTest
+@testable import ClientiOS
 @testable import Discovery
 @testable import HostApp
 @testable import InputControl
 @testable import Permissions
 @testable import SharedModels
 @testable import SharedProtocol
+import SharedUtilities
 @testable import TransportWebRTC
 
 final class SignedSignalingRejectionTests: XCTestCase {
@@ -163,6 +166,165 @@ final class ControlChannelAuthEnforcementTests: XCTestCase {
         await fulfillment(of: [reached], timeout: 1.0)
         XCTAssertEqual(router.commandsRejected, 0, "applicationList should not be rejected after valid auth")
         router.stopListening()
+    }
+
+    func testImmediateApplicationListReachesViewOnlyHostOverBroadcastTransport() async throws {
+        // Use the production broadcast stream: unlike ControlAuthTestSessionManager,
+        // it drops packets received before a subscriber is registered.
+        let provider = MockPeerConnectionProvider()
+        let sessionManager = WebRTCSessionManager(peerConnectionProvider: provider)
+        let sessionID = UUID()
+        let token = ConnectionSecurity.tokenToHex(ConnectionSecurity.generateSessionToken())
+        try await sessionManager.prepareSession(id: sessionID, role: .client)
+        let connection = try XCTUnwrap(provider.lastCreatedConnection)
+        let channel = MockDataChannel(label: DataChannelConfiguration.controlChannel.label)
+        connection.simulateDataChannelOpened(channel)
+        connection.simulateConnectionStateChange(.connected)
+
+        let router = HostInputCommandRouter(
+            inputService: RecordingInputInjectionService(),
+            webRTCSessionManager: sessionManager,
+            eventLogStore: RecordingEventLogStore(),
+            modeProvider: HostSessionModeController(mode: .viewOnly)
+        )
+        defer { router.stopListening() }
+        let reached = expectation(description: "immediate application list reached View Only host")
+        router.onApplicationListRequest = { _ in reached.fulfill() }
+
+        let handshake = try DataChannelEnvelope.controlAuth(
+            ControlChannelAuthMessage(sessionID: sessionID, sessionToken: token)
+        ).wireEncode()
+        let request = ApplicationListRequestMessage(sessionID: sessionID, senderDeviceID: UUID())
+        let requestData = try XCTUnwrap(
+            try DataChannelEnvelope.applicationListRequest(request).authenticated(using: token, counter: 1)
+        ).wireEncode()
+        router.onSessionStarted = { _ in
+            channel.simulateReceive(handshake)
+            channel.simulateReceive(requestData)
+        }
+
+        router.startListening(sessionID: sessionID, expectedSessionTokenHex: token)
+        await fulfillment(of: [reached], timeout: 1.0)
+        XCTAssertEqual(router.commandsRejected, 0)
+        await sessionManager.closeSession()
+    }
+
+    func testApplicationListArrivingDuringConnectionAnswerIsNotLost() async throws {
+        let services = PlaceholderHostServices()
+        let eventLog = RecordingEventLogStore()
+        let provider = MockPeerConnectionProvider()
+        let sessionManager = WebRTCSessionManager(peerConnectionProvider: provider)
+        let mode = HostSessionModeController(mode: .viewOnly)
+        let router = HostInputCommandRouter(
+            inputService: RecordingInputInjectionService(), webRTCSessionManager: sessionManager,
+            eventLogStore: eventLog, modeProvider: mode
+        )
+        let host = HostIdentity(displayName: "Test Host", modelName: "Mac", osVersion: "macOS", appVersion: "1", publicKeyFingerprint: String(repeating: "b", count: 64))
+        let clientID = UUID()
+        let clientName = "Test Stream"
+        let fingerprint = String(repeating: "a", count: 64)
+        let clientPeer = SignalingPeer(id: clientID, role: .client, displayName: clientName, publicKeyFingerprint: fingerprint)
+        let hostSignaling = InProcessSessionSignaling(role: .host, peerID: host.id, displayName: host.displayName)
+        let clientSignaling = InProcessSessionSignaling(role: .client, peerID: clientID, displayName: clientName)
+        let trustDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: trustDirectory) }
+        let trustStore = PersistentTrustedPeerStore(directory: trustDirectory)
+        try await trustStore.trustPeer(TrustedPeer(id: clientID, displayName: clientName, fingerprint: fingerprint))
+        // An up-to-date client seals its token; the host refuses a plaintext one from it.
+        let sealingKey = SessionTokenSealing.deriveKeyAgreementKey(from: P256.Signing.PrivateKey())
+        let coordinator = HostSessionCoordinator(
+            hostIdentity: host, captureEngine: services, encoderPipeline: services,
+            displayLayoutProvider: services, permissionService: services,
+            webRTCSessionManager: sessionManager, peerTrustGate: PeerTrustGate(store: trustStore),
+            streamingCoordinator: HostStreamingCoordinator(
+                encoderPipeline: services, webRTCSessionManager: sessionManager,
+                eventLogStore: eventLog, recordingService: SessionRecordingService()
+            ),
+            inputCommandRouter: router, eventLogStore: eventLog, signalingService: hostSignaling,
+            sessionModeController: mode, performanceStateController: HostPerformanceStateController(),
+            fileTransferManager: HostFileTransferManager(
+                settings: HostFileTransferSettingsStore(supportsDefaultDownloadsLocation: false),
+                store: HostFileTransferStore()
+            ),
+            productMode: .mini, runtimePolicy: MacHostRuntimePolicy(isSandboxedDistribution: true),
+            sessionTokenUnsealer: { SessionTokenSealing.open($0, with: sealingKey) }
+        )
+        let sessionID = UUID()
+        let tokenData = ConnectionSecurity.generateSessionToken()
+        let token = ConnectionSecurity.tokenToHex(tokenData)
+        let handshake = try DataChannelEnvelope.controlAuth(
+            ControlChannelAuthMessage(sessionID: sessionID, sessionToken: token)
+        ).wireEncode()
+        let request = ApplicationListRequestMessage(sessionID: sessionID, senderDeviceID: clientID)
+        let requestData = try XCTUnwrap(
+            try DataChannelEnvelope.applicationListRequest(request).authenticated(using: token, counter: 1)
+        ).wireEncode()
+        let reached = expectation(description: "application list delivered while connection answer is sent")
+        router.onApplicationListRequest = { _ in reached.fulfill() }
+        // A fast client can open the data connection and authenticate before sendAnswer returns.
+        hostSignaling.traceHandler = { event in
+            guard event == "signaling.send.host.answer",
+                  let connection = provider.lastCreatedConnection,
+                  let channel = connection.dataChannels[DataChannelConfiguration.controlChannel.label] else { return }
+            connection.simulateConnectionStateChange(.connected)
+            channel.simulateReceive(handshake)
+            channel.simulateReceive(requestData)
+        }
+
+        await coordinator.startSession()
+        try await clientSignaling.connect(host: "localhost", port: RemoteDesktopConstants.defaultSignalingPort)
+        let offer = SessionOfferMessage(
+            sessionID: sessionID, sdp: "test-offer", qualityPreset: .balanced,
+            sealedSessionToken: try SessionTokenSealing.seal(tokenData, to: sealingKey.publicKey),
+            clientCapabilities: .currentClient(isMacClient: false)
+        )
+        try await clientSignaling.send(VersionedSignalingMessage(envelope: SignalingEnvelope(
+            protocolVersion: 1, sessionID: sessionID, sender: clientPeer, event: .offer(offer)
+        )))
+        await fulfillment(of: [reached], timeout: 1.0)
+        XCTAssertEqual(router.commandsRejected, 0)
+        await coordinator.stopSession()
+        clientSignaling.disconnect()
+    }
+
+    func testStreamInventoryRetryRecoversAfterLostInitialAuthentication() async throws {
+        let sessionID = UUID()
+        let token = ConnectionSecurity.tokenToHex(ConnectionSecurity.generateSessionToken())
+        let hostProvider = MockPeerConnectionProvider()
+        let hostTransport = WebRTCSessionManager(peerConnectionProvider: hostProvider)
+        try await hostTransport.prepareSession(id: sessionID, role: .host)
+        let hostConnection = try XCTUnwrap(hostProvider.lastCreatedConnection)
+        let hostChannel = try XCTUnwrap(hostConnection.dataChannels[DataChannelConfiguration.controlChannel.label])
+        hostConnection.simulateConnectionStateChange(.connected)
+
+        let clientProvider = MockPeerConnectionProvider()
+        let clientTransport = WebRTCSessionManager(peerConnectionProvider: clientProvider)
+        try await clientTransport.prepareSession(id: sessionID, role: .host)
+        clientTransport.configureControlChannelAuth(sessionTokenHex: token)
+        let clientChannel = try XCTUnwrap(clientProvider.lastCreatedConnection?.dataChannels[DataChannelConfiguration.controlChannel.label])
+        // Reproduce an older host dropping the one-shot handshake before it subscribes.
+        hostChannel.simulateReceive(try DataChannelEnvelope.controlAuth(
+            ControlChannelAuthMessage(sessionID: sessionID, sessionToken: token)
+        ).wireEncode())
+
+        let router = HostInputCommandRouter(
+            inputService: RecordingInputInjectionService(), webRTCSessionManager: hostTransport,
+            eventLogStore: RecordingEventLogStore(), modeProvider: HostSessionModeController(mode: .viewOnly)
+        )
+        defer { router.stopListening() }
+        let reached = expectation(description: "Stream retry authenticates and loads the app list")
+        router.onApplicationListRequest = { _ in reached.fulfill() }
+        router.startListening(sessionID: sessionID, expectedSessionTokenHex: token)
+        try AppStreamViewModel.sendApplicationListRequest(
+            ApplicationListRequestMessage(sessionID: sessionID, senderDeviceID: UUID()),
+            sessionTokenHex: token, over: clientTransport
+        )
+        for packet in clientChannel.sentData { hostChannel.simulateReceive(packet) }
+
+        await fulfillment(of: [reached], timeout: 1.0)
+        XCTAssertEqual(router.commandsRejected, 0)
+        await clientTransport.closeSession()
+        await hostTransport.closeSession()
     }
 
     func testApplicationCloseReachesHandlerAfterAuth() async throws {

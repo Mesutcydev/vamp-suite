@@ -1,183 +1,156 @@
 import SwiftUI
+import SharedModels
 
-struct VampStreamHostSourceOnboarding: View {
-    var nearbyMacNames: [String] = []
-    let onContinue: (VampStreamHostSource) -> Void
-    @State private var draft: VampStreamHostSource?
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                Text(VampStreamHomeCopy.hostOnboardingTitle)
-                    .font(.title2.weight(.semibold))
-                Text(VampStreamHomeCopy.hostOnboardingDetail)
-                    .font(.subheadline)
-                    .foregroundStyle(StreamReading.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if !nearbyMacNames.isEmpty {
-                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                        Label(VampStreamHomeCopy.hostOnboardingNearbyTitle, systemImage: "network")
-                            .font(.headline)
-                        Text(nearbyMacNames.joined(separator: ", "))
-                            .font(.subheadline)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(VampStreamHomeCopy.hostOnboardingNearbyDetail)
-                            .font(.footnote)
-                            .foregroundStyle(StreamReading.secondary)
-                    }
-                    .padding(AppHostMetrics.cardPadding)
-                    .background(
-                        StreamReading.surface,
-                        in: RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous))
-                }
-                VampStreamHostSourceOptions(selection: $draft)
-            }
-            .padding(AppHostMetrics.screenInset)
-        }
-        .safeAreaInset(edge: .bottom) {
-            VStack(spacing: AppSpacing.xs) {
-                if draft == nil {
-                    Text(VampStreamHomeCopy.hostOnboardingPrompt)
-                        .font(.footnote)
-                        .foregroundStyle(StreamReading.secondary)
-                }
-                Button {
-                    if let draft { onContinue(draft) }
-                } label: {
-                    Text(VampStreamHomeCopy.hostOnboardingContinue)
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: AppHostMetrics.controlHeight)
-                        .contentShape(Rectangle())
-                }
-                .background(
-                    draft == nil ? StreamReading.surface : PR.fg,
-                    in: RoundedRectangle(cornerRadius: AppHostMetrics.controlRadius, style: .continuous))
-                .foregroundStyle(draft == nil ? StreamReading.secondary : Color(uiColor: .systemBackground))
-                .disabled(draft == nil)
-            }
-            .padding(AppHostMetrics.screenInset)
-            .background(Color(uiColor: .systemBackground))
-        }
-    }
-}
-
-/// Stream's settings: which Mac app to show, appearance, and the background artwork.
-/// Every choice applies as it is made, so there is nothing to confirm or cancel.
+/// Settings uses the same canvas and materials as home. Changes apply immediately.
 struct VampStreamSettingsSheet: View {
     @Binding var hostSource: VampStreamHostSource
     @Environment(\.dismiss) private var dismiss
     @AppStorage(VampStreamAppearance.key) private var appearance = VampStreamAppearance.dark
     @AppStorage(VampStreamAppearance.backgroundArtKey) private var showsBackgroundArt = true
+    @State private var showsEditions = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    section("Mac app") {
-                        VampStreamHostSourceOptions(selection: Binding(
-                            get: { hostSource },
-                            set: { if let source = $0 { hostSource = source } }))
+                VStack(alignment: .leading, spacing: 28) {
+                    StreamSettingsIntroduction()
+                    StreamAppIconSettings()
+                    StreamAppearanceSettings(appearance: $appearance, showsBackgroundArt: $showsBackgroundArt)
+                    VStack(alignment: .leading, spacing: 14) {
+                        StreamEyebrow(title: "YOUR MAC APPS")
+                        VampStreamHostSourceOptions(selection: Binding(get: { hostSource }, set: { if let source = $0 { hostSource = source } }))
                     }
-                    section("Appearance") {
-                        Picker("Appearance", selection: $appearance) {
-                            ForEach(VampStreamAppearance.allCases) { Text($0.title).tag($0) }
+                    VStack(alignment: .leading, spacing: 14) {
+                        StreamEyebrow(title: "GOOD TO KNOW")
+                        DisclosureGroup("Sync editions & connection privacy", isExpanded: $showsEditions) {
+                            VampStreamDistributionInfo().padding(.top, 16)
                         }
-                        .pickerStyle(.segmented)
-                    }
-                    section("Background") {
-                        Toggle(isOn: $showsBackgroundArt) {
-                            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
-                                Text("Background artwork")
-                                    .font(.headline)
-                                    .foregroundStyle(PR.fg)
-                                Text("Turn off for a plain background with solid cards.")
-                                    .font(.footnote)
-                                    .foregroundStyle(StreamReading.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .padding(AppHostMetrics.cardPadding)
-                        .appQuietSurface()
+                        .font(.subheadline.weight(.medium))
+                        .tint(StreamDesign.text)
+                        .padding(22).streamGlass()
+                        Text("Designed around your Mac. Made for your hands.")
+                            .font(.caption).foregroundStyle(StreamDesign.secondary)
+                            .frame(maxWidth: .infinity).padding(.top, 10)
                     }
                 }
-                .padding(AppHostMetrics.screenInset)
+                .frame(maxWidth: 620, alignment: .leading)
+                .padding(24).frame(maxWidth: .infinity)
             }
             .background { VampStreamEnvironmentBackdrop() }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                        .fontWeight(.semibold)
+                    Button("Done") { dismiss() }.fontWeight(.semibold).tint(StreamDesign.text)
                 }
             }
         }
-        .presentationDetents([.large])
-        // A presented sheet does not pick up the root's scheme change until it is dismissed.
         .preferredColorScheme(appearance.colorScheme)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
     }
+}
 
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            Text(title)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(StreamReading.secondary)
-                .accessibilityAddTraits(.isHeader)
-            content()
+private struct StreamSettingsIntroduction: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            StreamBrandMark().frame(width: 38, height: 38)
+            Text("Make it yours.")
+                .font(.largeTitle.weight(.medium)).tracking(-1.5).foregroundStyle(StreamDesign.text)
+            Text("A space that feels like you.")
+                .font(.body).foregroundStyle(StreamDesign.secondary)
         }
+    }
+}
+
+private struct StreamAppearanceSettings: View {
+    @Binding var appearance: VampStreamAppearance
+    @Binding var showsBackgroundArt: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            StreamEyebrow(title: "ATMOSPHERE")
+            let layout = typeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+            layout {
+                ForEach(VampStreamAppearance.allCases) { option in
+                    StreamAppearanceChoice(option: option, selected: appearance == option) { appearance = option }
+                }
+            }
+            Toggle(isOn: $showsBackgroundArt) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Ribbon background").font(.subheadline.weight(.medium)).foregroundStyle(StreamDesign.text)
+                    Text("Warm light, flowing behind the glass.")
+                        .font(.footnote).foregroundStyle(StreamDesign.secondary)
+                }
+            }
+            .tint(StreamDesign.accent).padding(22).streamGlass()
+        }
+    }
+}
+
+private struct StreamAppearanceChoice: View {
+    let option: VampStreamAppearance
+    let selected: Bool
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                ZStack(alignment: .bottom) {
+                    StreamAtmosphere().environment(\.colorScheme, option == .light ? .light : .dark)
+                    if option == .system {
+                        StreamAtmosphere().environment(\.colorScheme, .light).mask { HStack(spacing: 0) { Color.black; Color.clear } }
+                    }
+                    RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.3)).frame(height: 25).padding(10)
+                }
+                .frame(height: 90).clipShape(RoundedRectangle(cornerRadius: 16))
+                HStack(spacing: 5) {
+                    Text(option.title).font(.caption.weight(.medium))
+                    if selected { Image(systemName: "checkmark.circle.fill").font(.caption) }
+                }
+                .foregroundStyle(selected ? StreamDesign.accent : StreamDesign.secondary)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity)
+            .overlay(RoundedRectangle(cornerRadius: 23).strokeBorder(selected ? StreamDesign.accent.opacity(0.7) : StreamDesign.line, lineWidth: selected ? 1.5 : 0.5))
+            .contentShape(RoundedRectangle(cornerRadius: 23))
+        }
+        .buttonStyle(StreamPressStyle())
+        .accessibilityLabel(option.title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
 struct VampStreamHostSourceOptions: View {
     @Binding var selection: VampStreamHostSource?
-
     var body: some View {
-        VStack(spacing: AppHostMetrics.cardGap) {
+        VStack(spacing: 0) {
             ForEach(VampStreamHostSource.allCases) { source in
-                Button {
-                    selection = source
-                } label: {
-                    HStack(alignment: .top, spacing: AppSpacing.sm) {
+                Button { selection = source } label: {
+                    HStack(alignment: .center, spacing: 14) {
                         Image(systemName: source.icon)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(PR.fg)
-                            .frame(
-                                width: AppHostMetrics.providerIcon,
-                                height: AppHostMetrics.providerIcon)
-                            .prGlassSurface(
-                                in: RoundedRectangle(
-                                    cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
-                        VStack(alignment: .leading, spacing: AppSpacing.xxs) {
-                            Text(source.title)
-                                .font(.headline)
-                                .foregroundStyle(PR.fg)
-                            Text(source.detail)
-                                .font(.footnote)
-                                .foregroundStyle(StreamReading.secondary)
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
+                            .font(.system(size: 20, weight: .light))
+                            .foregroundStyle(StreamDesign.accent).frame(width: 32)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(source.title).font(.subheadline.weight(.medium)).foregroundStyle(StreamDesign.text)
+                            Text(source.detail).font(.caption).foregroundStyle(StreamDesign.secondary)
+                                .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         }
-                        Spacer(minLength: AppSpacing.xs)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         Image(systemName: selection == source ? "checkmark.circle.fill" : "circle")
-                            .font(.title3)
-                            .foregroundStyle(PR.fg)
+                            .font(.title3.weight(.light))
+                            .foregroundStyle(selection == source ? StreamDesign.accent : StreamDesign.secondary.opacity(0.6))
                     }
-                    .padding(AppHostMetrics.cardPadding)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .vampHomeLiveGlass(
-                        in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous),
-                        phaseOffset: source == .sync ? 0.2 : (source == .assistant ? 0.9 : 1.6)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
-                            .strokeBorder(selection == source ? PR.fg.opacity(0.28) : Color.clear, lineWidth: 1.5)
-                    }
+                    .padding(20).frame(minHeight: 80).contentShape(Rectangle())
                 }
-                .buttonStyle(PRGlassPressButtonStyle())
-                .accessibilityAddTraits(selection == source ? [.isSelected] : [])
-                .accessibilityLabel(source.title)
-                .accessibilityHint(source.detail)
+                .buttonStyle(StreamPressStyle())
+                .accessibilityAddTraits(selection == source ? .isSelected : [])
+                if source != VampStreamHostSource.allCases.last {
+                    Rectangle().fill(StreamDesign.line).frame(height: 0.5).padding(.leading, 65)
+                }
             }
         }
+        .streamGlass()
     }
 }

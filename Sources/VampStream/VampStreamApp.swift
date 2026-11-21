@@ -10,12 +10,15 @@ struct VampStreamApp: App {
     @StateObject private var environment: ClientAppEnvironment
     @StateObject private var appStream: AppStreamViewModel
     @StateObject private var vampAssistant: BeetCodeRemoteSessionViewModel
+    @State private var launchSplash = VampStreamSplashLifecycle(
+        previewsFullSequence: VampStreamSplashPreviewConfiguration.isEnabled
+    )
     @AppStorage(VampStreamAppearance.key) private var appearance = VampStreamAppearance.dark
     @AppStorage(VampStreamAppearance.backgroundArtKey) private var showsBackgroundArt = true
 
     init() {
         VampStreamStreamingQualityPolicy.migrateAssistantResolution()
-        let env = ClientAppEnvironment.makeDefault(clientName: "Vamp Stream")
+        let env = ClientAppEnvironment.makeDefault(clientName: "\(VampProductIdentity.streamName)")
         switch UserDefaults.standard.string(forKey: "vampstream.qualityMode") {
         case "performance": env.preferredQualityPreset = .performance
         case "quality": env.preferredQualityPreset = env.isUltraQualityEntitled ? .ultra : .quality
@@ -31,10 +34,25 @@ struct VampStreamApp: App {
 
     var body: some Scene {
         WindowGroup {
-            VampStreamRootView(environment: environment, appStream: appStream, vampAssistant: vampAssistant)
-                .vampStreamAnimatedSplash()
+            Group {
+                #if DEBUG
+                if let route = StreamDesignPreview.route {
+                    StreamDesignPreview(route: route)
+                } else {
+                    VampStreamRootView(environment: environment, appStream: appStream, vampAssistant: vampAssistant)
+                        .vampStreamAnimatedSplash(lifecycle: launchSplash)
+                }
+                #else
+                VampStreamRootView(environment: environment, appStream: appStream, vampAssistant: vampAssistant)
+                    .vampStreamAnimatedSplash(lifecycle: launchSplash)
+                #endif
+            }
                 .preferredColorScheme(appearance.colorScheme)
                 .environment(\.prSolidSurfaces, !showsBackgroundArt)
+                .environment(\.prGlassBacking, showsBackgroundArt ? StreamReading.surface : nil)
+                .environment(\.streamDesign, true)
+                .tint(StreamDesign.accent)
+                .onAppear { StreamAppIcon.synchronizeBrandMark() }
         }
     }
 }
@@ -58,9 +76,11 @@ struct VampStreamRootView: View {
     @State private var assistantTask: Task<Void, Never>?
     @State private var syncTask: Task<Void, Never>?
     @State private var showVampAssistantPairing = false
+    @State private var scannedAssistantEndpoint: BeetCodeRemoteEndpoint?
     @State private var showVampHostScanner = false
     @State private var hostScannerError: String?
     @AppStorage(VampStreamForgottenHosts.key) private var forgottenHostsRaw = ""
+    @AppStorage(VampStreamHostSourceStore.key) private var hostSourceRaw = ""
 
     init(
         environment: ClientAppEnvironment,
@@ -102,6 +122,13 @@ struct VampStreamRootView: View {
         .onChangeCompat(of: sessionCoordinator.phase) { phase in
             if phase == .error { connectingName = nil }
         }
+        .onChangeCompat(of: vampAssistant.session?.address) { address in
+            // A Companion scanned from the Sync card must remain visible after
+            // disconnecting. Change the host filter only after pairing succeeds.
+            if address != nil, hostSourceRaw == VampStreamHostSource.sync.rawValue {
+                hostSourceRaw = VampStreamHostSource.both.rawValue
+            }
+        }
         .onChangeCompat(of: sessionCoordinator.connectedHostFingerprint) { fingerprint in
             // A QR or typed address starts as an anonymous row; the Mac's real identity only
             // arrives with the handshake. Connecting is the user asking for this Mac, so a Mac
@@ -114,13 +141,18 @@ struct VampStreamRootView: View {
             }
             forgottenHostsRaw = VampStreamForgottenHosts.restoring(ids, in: forgottenHostsRaw)
         }
-        .fullScreenCover(isPresented: $showVampAssistantPairing) {
-            BeetCodePairingView(model: vampAssistant)
+        .fullScreenCover(isPresented: $showVampAssistantPairing, onDismiss: {
+            scannedAssistantEndpoint = nil
+        }) {
+            BeetCodePairingView(model: vampAssistant, initialEndpoint: scannedAssistantEndpoint)
         }
-        .sheet(isPresented: $showVampHostScanner) {
+        .sheet(isPresented: $showVampHostScanner, onDismiss: {
+            // Present only after the camera sheet finishes dismissing.
+            if scannedAssistantEndpoint != nil { showVampAssistantPairing = true }
+        }) {
             NavigationStack {
-                BeetCodeQRScannerView(source: .sync, onPayload: handleVampHostPayload)
-                    .navigationTitle("Scan Vamp Sync")
+                BeetCodeQRScannerView(source: .mac, onPayload: handleVampHostPayload)
+                    .navigationTitle("Scan Mac QR code")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
@@ -152,7 +184,7 @@ struct VampStreamRootView: View {
         )) {
             Button("OK", role: .cancel) { hostScannerError = nil }
         } message: {
-            Text(hostScannerError ?? "Scan the QR shown by Vamp Sync.")
+            Text(hostScannerError ?? "Scan a pairing QR code shown by Sync, Assistant, or Companion on your Mac.")
         }
     }
 
@@ -179,20 +211,26 @@ struct VampStreamRootView: View {
                     VampStreamMessageView(
                         icon: "macwindow.badge.plus",
                         title: "App Streaming Unavailable",
-                        message: "This Mac's Vamp Sync doesn't support App Streaming yet. It needs to be updated (macOS 14 or newer).",
+                        message: "This Mac's \(VampProductIdentity.syncName) doesn't support App Streaming yet. It needs to be updated (macOS 14 or newer).",
                         actionTitle: "Disconnect"
                     ) { Task { await sessionCoordinator.disconnect() } }
                 }
             } else {
                 // Connected, but capabilities aren't negotiated yet — keep waiting, don't
                 // misreport as unsupported.
-                VampStreamConnectingView(name: sessionCoordinator.connectedHostName ?? connectingName ?? "Mac", detail: connectionDetail, fingerprint: approvalFingerprint) {
+                VampStreamConnectingView(name: sessionCoordinator.connectedHostName ?? connectingName ?? "Mac", detail: connectionDetail, fingerprint: approvalFingerprint,
+                                         hostConfirmation: sessionCoordinator.pendingHostConfirmation,
+                                         usesOlderSync: sessionCoordinator.hostUsesLegacyHandshake,
+                                         onConfirmHost: sessionCoordinator.confirmPendingHost) {
                     syncTask?.cancel()
                     Task { await sessionCoordinator.disconnect() }
                 }
             }
         } else if isConnecting {
-            VampStreamConnectingView(name: connectingName ?? "Mac", detail: connectionDetail, fingerprint: approvalFingerprint) {
+            VampStreamConnectingView(name: connectingName ?? "Mac", detail: connectionDetail, fingerprint: approvalFingerprint,
+                                     hostConfirmation: sessionCoordinator.pendingHostConfirmation,
+                                     usesOlderSync: sessionCoordinator.hostUsesLegacyHandshake,
+                                     onConfirmHost: sessionCoordinator.confirmPendingHost) {
                 syncTask?.cancel()
                 connectingName = nil
                 Task { await sessionCoordinator.disconnect() }
@@ -201,7 +239,10 @@ struct VampStreamRootView: View {
             VampStreamConnectView(
                 environment: environment,
                 onConnect: { host in connect(to: host) },
-                onPairVampAssistant: { showVampAssistantPairing = true },
+                onPairVampAssistant: {
+                    scannedAssistantEndpoint = nil
+                    showVampAssistantPairing = true
+                },
                 onScanVampHost: { showVampHostScanner = true },
                 pairedVampAssistants: vampAssistant.savedAssistants,
                 vampAssistantAvailability: vampAssistant.availabilityByAddress,
@@ -226,14 +267,31 @@ struct VampStreamRootView: View {
     }
 
     private func handleVampHostPayload(_ payload: String) {
-        guard let pairing = VampHostPairingLink.parse(payload),
-              let host = environment.sharedHostsViewModel.addManualHost(address: pairing.address) else {
-            hostScannerError = "Scan the QR shown by Vamp Sync, then try again."
+        switch VampStreamPairingScan.parse(payload) {
+        case .assistant(let endpoint):
+            hostScannerError = nil
+            scannedAssistantEndpoint = endpoint
             showVampHostScanner = false
-            return
+        case .sync(let address, let fingerprint):
+            guard let host = environment.sharedHostsViewModel.addManualHost(address: address, scannedFingerprint: fingerprint) else {
+                rejectScannedPayload()
+                return
+            }
+            if hostSourceRaw == VampStreamHostSource.assistant.rawValue {
+                hostSourceRaw = VampStreamHostSource.both.rawValue
+            }
+            hostScannerError = nil
+            showVampHostScanner = false
+            connect(to: host)
+        case nil:
+            rejectScannedPayload()
         }
+    }
+
+    private func rejectScannedPayload() {
+        scannedAssistantEndpoint = nil
+        hostScannerError = String(localized: "Scan a pairing QR code shown by Sync, Assistant, or Companion on your Mac, then try again.")
         showVampHostScanner = false
-        connect(to: host)
     }
 
     private func reconnectAssistant(_ saved: BeetCodeRemoteSessionViewModel.SavedAssistant) {
@@ -252,9 +310,9 @@ struct VampStreamRootView: View {
 
     private var connectionDetail: String {
         switch sessionCoordinator.phase {
-        case .idle, .connecting: return "Contacting your Mac. Keep Vamp Sync open and stay on the same private network."
+        case .idle, .connecting: return "Contacting your Mac. Keep \(VampProductIdentity.syncName) open and stay on the same private network."
         case .signalingConnected: return "Mac reached. Preparing the secure connection."
-        case .negotiating: return "If Vamp Sync asks to approve this device, check that the fingerprint below matches, then approve it on your Mac."
+        case .negotiating: return "If \(VampProductIdentity.syncName) asks to approve this device, check that the fingerprint below matches, then approve it on your Mac."
         case .waitingForMedia, .receiving: return "Connected. Loading apps from your Mac."
         case .error: return "The connection could not be completed. Return to your Macs to try again."
         }

@@ -7,9 +7,29 @@ struct VampGlassActionButton: View {
     var isProminent = false
     var isDisabled = false
     let action: () -> Void
+    @Environment(\.streamDesign) private var streamDesign
 
+    @ViewBuilder
     var body: some View {
-        Button(action: action) {
+        if streamDesign && isProminent {
+            StreamPrimaryButton(title: title, symbol: systemImage ?? "arrow.right", isDisabled: isDisabled, action: action)
+        } else if streamDesign {
+            Button(action: action) {
+                HStack(spacing: 10) {
+                    if let systemImage { Image(systemName: systemImage) }
+                    Text(title)
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(StreamDesign.text)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .streamGlass(radius: 26)
+                .contentShape(Capsule())
+            }
+            .buttonStyle(StreamPressStyle())
+            .disabled(isDisabled)
+            .opacity(isDisabled ? 0.45 : 1)
+        } else {
+            Button(action: action) {
             HStack(spacing: 8) {
                 if let systemImage {
                     Image(systemName: systemImage)
@@ -32,6 +52,7 @@ struct VampGlassActionButton: View {
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.4 : 1)
         .accessibilityAddTraits(.isButton)
+        }
     }
 }
 

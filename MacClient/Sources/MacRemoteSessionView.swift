@@ -21,6 +21,7 @@ struct MacRemoteSessionView: View {
     @StateObject private var multiDisplay: MultiDisplayRenderer
     @State private var multiActive = false
     @State private var browsingApps = false
+    @State private var appStreamBlocked = false
     @State private var desktopDisplays: [DisplayDescriptor] = []
     @State private var pendingDesktopID: String?
     @StateObject private var inputController: MacRemoteInputController
@@ -35,6 +36,15 @@ struct MacRemoteSessionView: View {
 
     @State private var displaySwitchObserverTask: Task<Void, Never>?
     @State private var isTerminalPresented = false
+    /// Re-fits the Actual Size window when it moves between screens of different
+    /// backing scale (Retina → non-Retina), so 1:1 stays 1:1.
+    @State private var screenChangeObserver: NSObjectProtocol?
+    /// Actual Size is a persisted per-host preference: on a session that STARTS
+    /// in 1:1 the window was never resized to the picture (the refit used to run
+    /// only when the user *entered* the mode), leaving a 1:1 picture floating in
+    /// a bigger window. Fit the window exactly once per session, at the first
+    /// frame, so 1:1 always opens wrapped around the picture.
+    @State private var didAutoFitActualSize = false
 
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
@@ -47,6 +57,9 @@ struct MacRemoteSessionView: View {
     /// types it into the login window). Mirrors the iOS client's unlock overlay.
     @State private var unlockPasswordText = ""
     @State private var isUnlockSubmitting = false
+    /// The host never reports an unlock result, so a wrong password looked like nothing
+    /// happened. Set when the Mac is still locked after the attempt window.
+    @State private var unlockDidNotTake = false
     @FocusState private var unlockPasswordFieldFocused: Bool
     @State private var showScreenAI = false
     @State private var keyboardFocused = false
@@ -56,7 +69,7 @@ struct MacRemoteSessionView: View {
     @State private var showsQualitySettings = false
 
     @AppStorage("client.clipboard.enabled") private var clipboardEnabled = true
-    @AppStorage("com.remotedesktop.client.filetransfer.enabled") private var fileTransferEnabled = true
+    @AppStorage(ClientFileTransferPreference.storageKey) private var fileTransferEnabled = true
     @State private var preferences = MacConnectionPreferences()
     @State private var loadedPreferenceKey: String?
     private var displayMode: DisplayMappingEngine.DisplayMode {
@@ -216,7 +229,8 @@ struct MacRemoteSessionView: View {
                     environment.preferredQualityPreset = preset
                     coordinator.setPreferredQuality(preset)
                 }), supportsUltra: environment.isUltraQualityEntitled,
-                isConnected: coordinator.phase == .receiving)
+                isConnected: coordinator.phase == .receiving,
+                streamDescription: liveStreamDescription)
         }
         .sheet(isPresented: $showsKeyboardHelp) { MacKeyboardHelp(keepsDisplayShortcutsLocal: $preferences.keepsDisplayShortcutsLocal) }
         .overlay(alignment: .bottomLeading) {
@@ -239,6 +253,11 @@ struct MacRemoteSessionView: View {
             }
         }
         .onAppear(perform: startSession)
+        .alert("App windows need your local network", isPresented: $appStreamBlocked) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("In the App Store edition, app windows are shared only over Wi-Fi or Ethernet. Connect to this Mac on your local network to view them.")
+        }
         .onDisappear {
             multiDisplay.stopAll()
             appStream.stop()
@@ -283,6 +302,10 @@ struct MacRemoteSessionView: View {
         .onChange(of: displayLayoutVM.streamConfiguration) { _ in refreshMapping() }
         .onChange(of: rendererVM.frameSize) { frameSize in
             guard let frameSize else { return }
+            if displayMode == .actualSize, !didAutoFitActualSize, rendererVM.isReceiving {
+                didAutoFitActualSize = true
+                resizeWindowToActualSize()
+            }
             displayLayoutVM.noteFirstFrameAfterSwitch()
             if appStream.streamedWindow != nil || showsAppBrowser {
                 refreshMapping()
@@ -358,6 +381,21 @@ struct MacRemoteSessionView: View {
                     Button("Choose an app…", action: browseApps)
                         .keyboardShortcut("a", modifiers: [.control, .option])
                 }
+                if appStream.streamedWindow != nil, appStream.supportsAdaptiveSizing {
+                    Divider()
+                    Menu("Window Size") {
+                        Button {
+                            appStream.setSizingMode(.adaptive)
+                        } label: {
+                            Label("Adaptive resize", systemImage: appStream.sizingMode == .adaptive ? "checkmark" : "rectangle.arrowtriangle.2.inward")
+                        }
+                        Button {
+                            appStream.setSizingMode(.original)
+                        } label: {
+                            Label("Original Size", systemImage: appStream.sizingMode == .original ? "checkmark" : "1.magnifyingglass")
+                        }
+                    }
+                }
             } label: {
                 Label(isAppStreamingOnlyHost || appStream.streamedWindow != nil || showsAppBrowser ? "App" : "Desktop",
                       systemImage: isAppStreamingOnlyHost || appStream.streamedWindow != nil || showsAppBrowser ? "macwindow" : "display")
@@ -401,7 +439,7 @@ struct MacRemoteSessionView: View {
             .init(id: "quality", title: "Stream Quality…", symbol: "dial.high",
                   enabled: coordinator.phase == .receiving, perform: { showsQualitySettings = true })
         ]
-        if clipboardEnabled {
+        if clipboardEnabled && MacDistributionPolicy.allowsRemoteChanges {
             actions.append(.init(id: "sendClipboard", title: "Send Clipboard to Host", symbol: "doc.on.clipboard",
                 enabled: inputReadiness.canSendInput, shortcut: "v", perform: {
                     guard inputReadiness.canSendInput else { return }; clipboardSync.pushToHost()
@@ -413,18 +451,21 @@ struct MacRemoteSessionView: View {
         }
         actions.append(.init(id: "screenshot", title: "Save Screenshot…", symbol: "camera",
             enabled: rendererVM.isReceiving, shortcut: "s", perform: captureScreenshot))
-        if fileTransferEnabled {
+        if fileTransferEnabled && MacDistributionPolicy.allowsRemoteChanges {
             actions.append(.init(id: "file", title: "Send File…", symbol: "arrow.up.doc",
                 enabled: inputReadiness.canSendInput, perform: {
                     guard inputReadiness.canSendInput else { return }; presentSendFilePicker()
                 }))
         }
-        if coordinator.negotiatedCapabilities?.supportsTerminal == true {
+        if coordinator.negotiatedCapabilities?.supportsTerminal == true && MacDistributionPolicy.allowsRemoteChanges {
             actions.append(.init(id: "terminal", title: "Open Terminal…", symbol: "terminal",
                 enabled: inputReadiness.canSendInput, shortcut: "t", perform: { isTerminalPresented = true }))
         }
-        actions.append(.init(id: "screenAI", title: "Screen AI…", symbol: "sparkles",
-            enabled: rendererVM.isReceiving, perform: { showScreenAI = true }))
+        // Screen AI's automation agent types and presses keys on the host, so the App Store edition omits it.
+        if MacDistributionPolicy.allowsRemoteChanges {
+            actions.append(.init(id: "screenAI", title: "Screen AI…", symbol: "sparkles",
+                enabled: rendererVM.isReceiving, perform: { showScreenAI = true }))
+        }
         if coordinator.negotiatedCapabilities?.supportsAudio == true {
             actions.append(.init(id: "audio", title: audioRenderer.isMuted ? "Unmute Remote Audio" : "Mute Remote Audio",
                 symbol: audioRenderer.isMuted ? "speaker.slash" : "speaker.wave.2", perform: { audioRenderer.isMuted.toggle() }))
@@ -520,6 +561,25 @@ struct MacRemoteSessionView: View {
         return nil
     }
 
+    /// "2560×1440 @ 60 fps" for the quality sheet — the dimensions the host is
+    /// actually encoding right now, plus the measured frame rate. An app-window
+    /// stream reports the window's own size instead of the desktop display's.
+    private var liveStreamDescription: String? {
+        guard rendererVM.isReceiving else { return nil }
+        let size: DesktopSize?
+        if let window = appStream.streamedWindow {
+            size = DesktopSize(width: window.pointWidth * window.scale,
+                               height: window.pointHeight * window.scale)
+        } else {
+            size = displayLayoutVM.selectedStreamConfiguration?.streamSize
+                ?? displayLayoutVM.selectedDisplay?.pixelSize
+        }
+        guard let size, size.width > 0, size.height > 0 else { return nil }
+        let fps = statsVM.metrics.framesPerSecond.map { Int($0.rounded()) }
+        return fps.map { "Now streaming \(Int(size.width))×\(Int(size.height)) @ \($0) fps" }
+            ?? "Now streaming \(Int(size.width))×\(Int(size.height))"
+    }
+
     private func matchWindowToDisplay() {
         guard let frameSize = rendererVM.frameSize,
               frameSize.width > 0,
@@ -558,11 +618,11 @@ struct MacRemoteSessionView: View {
     /// size (Actual Size). If the stream is larger than the visible screen
     /// area, the window clamps to the largest aspect-preserving size that
     /// fits — the same fallback the content-rect mapper uses.
-    private func resizeWindowToActualSize() {
+    private func resizeWindowToActualSize(in target: NSWindow? = nil) {
         guard let frameSize = rendererVM.frameSize,
               frameSize.width > 0,
               frameSize.height > 0,
-              let window = NSApp.keyWindow,
+              let window = target ?? NSApp.keyWindow,
               let screen = window.screen ?? NSScreen.main else { return }
 
         let scale = screen.backingScaleFactor
@@ -625,6 +685,9 @@ struct MacRemoteSessionView: View {
             multiActive = false
             multiDisplay.setActive(count: 1)
             coordinator.setStreamedDisplays([primary])
+            // The picture is back on the primary display; without this, clicks kept
+            // mapping to whichever secondary had been focused.
+            refreshMapping()
         } else {
             let ordered = [primary] + displays.map(\.id).filter { $0 != primary }
             coordinator.setStreamedDisplays(ordered)
@@ -635,7 +698,23 @@ struct MacRemoteSessionView: View {
 
     private func focusDisplay(_ wireID: UInt8) {
         multiDisplay.focus(wireID)
+        // The main surface now shows a different display's stream; keep the pointer
+        // mapping on the same display, or clicks land on the previously selected one.
+        refreshMapping()
         coordinator.requestKeyframeRefresh(reason: "multi-display focus")
+    }
+
+    /// The display whose stream rides the given wire ID in multi-display mode:
+    /// wire 0 is the primary/selected display, then the remaining displays in
+    /// the same order `toggleMultiDisplay` handed the host.
+    private func multiDisplayDescriptor(forWireID wireID: UInt8) -> DisplayDescriptor? {
+        guard multiActive else { return nil }
+        let displays = displayLayoutVM.layout?.displays ?? []
+        guard displays.count > 1 else { return nil }
+        let primaryID = currentPrimaryDisplayID
+        let ordered = [primaryID].compactMap { $0 } + displays.map(\.id).filter { $0 != primaryID }
+        guard Int(wireID) < ordered.count else { return nil }
+        return displays.first { $0.id == ordered[Int(wireID)] }
     }
 
     /// Bridges the manager's optional prompt to the alert's Bool binding; a
@@ -722,6 +801,10 @@ struct MacRemoteSessionView: View {
     /// `onAppear` and the capability change.
     private func startAppStreamingIfNeeded() {
         guard isAppStreamingOnlyHost else { return }
+        guard MacDistributionPolicy.allowsAppWindowStreaming(to: coordinator.lastEndpoint) else {
+            appStreamBlocked = true
+            return
+        }
         appStream.start()
         if case .idle = appStream.status {
             appStream.requestApplicationList()
@@ -732,13 +815,11 @@ struct MacRemoteSessionView: View {
         startAppStreamingIfNeeded()
         inputController.sessionID = coordinator.activeSessionID
         inputController.isEnabled = inputReadiness.canSendInput
+        didAutoFitActualSize = false
         refreshMapping()
 
         // Reconnect: drive recovery through the session coordinator's full connect
         // flow (so phase transitions back to .receiving cleanly), mirroring iOS.
-        reconnectCoordinator.onRebuildSignaling = { [weak coordinator] sessionID, qualityPreset in
-            coordinator?.restartSignalingListener(sessionID: sessionID, qualityPreset: qualityPreset)
-        }
         reconnectCoordinator.onPerformReconnect = { [weak coordinator] in
             guard let coordinator else { throw ReconnectError.coordinatorDeallocated }
             try await coordinator.forceReconnectLast()
@@ -794,6 +875,25 @@ struct MacRemoteSessionView: View {
                 handleDisplaySwitchResult(result)
             }
         }
+        screenChangeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeScreenNotification, object: nil, queue: .main
+        ) { note in
+            MainActor.assumeIsolated {
+                // Only the window that changed screen, and only if it shows this stream. Using the
+                // key window moved whichever window the user was in (Settings, the host list).
+                guard let changed = note.object as? NSWindow, macWindowHostsRemoteStream(changed) else { return }
+                // The session view is a struct, so this closure can't weakly capture
+                // it; read live state from the class references instead, and take the
+                // display mode from the per-host preference store so a long-lived
+                // observer never acts on a stale copy.
+                guard rendererVM.isReceiving,
+                      let key = coordinator.lastEndpoint.map({ MacHostNicknameStore.key(for: $0) }),
+                      DisplayMappingEngine.DisplayMode(
+                        rawValue: MacConnectionPreferenceStore().load(for: key).displayModeRaw
+                      ) == .actualSize else { return }
+                resizeWindowToActualSize(in: changed)
+            }
+        }
     }
 
     // MARK: - Remote unlock
@@ -808,37 +908,52 @@ struct MacRemoteSessionView: View {
                 Text("Mac is locked")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(.white)
-                Text("Enter your Mac login password to unlock it remotely.")
+                Text(MacDistributionPolicy.allowsRemoteChanges
+                     ? "Enter your Mac login password to unlock it remotely."
+                     : "Unlock this Mac in person. Remote unlock is not available in the App Store edition.")
                     .font(.system(size: 13))
                     .foregroundStyle(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 300)
-                SecureField("Password", text: $unlockPasswordText)
-                    .focused($unlockPasswordFieldFocused)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 15))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .macGlassSurface(
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous),
-                        isInteractive: true
-                    )
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: 300)
-                    .onSubmit(submitUnlock)
-                Button(action: submitUnlock) {
-                    Text("Unlock")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 8)
-                        .background(
-                            Color.accentColor.opacity(unlockPasswordText.isEmpty || isUnlockSubmitting ? 0.4 : 1.0),
-                            in: Capsule()
+                if MacDistributionPolicy.allowsRemoteChanges {
+                    SecureField("Password", text: $unlockPasswordText)
+                        .focused($unlockPasswordFieldFocused)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 15))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .macGlassSurface(
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous),
+                            isInteractive: true
                         )
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: 300)
+                        .onSubmit(submitUnlock)
+                    Button(action: submitUnlock) {
+                        Text("Unlock")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 8)
+                            .background(
+                                Color.accentColor.opacity(unlockPasswordText.isEmpty || isUnlockSubmitting ? 0.4 : 1.0),
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(unlockPasswordText.isEmpty || isUnlockSubmitting)
+                    if isUnlockSubmitting {
+                        Text("Unlocking…")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.7))
+                    } else if unlockDidNotTake {
+                        Text("The Mac is still locked. Check the password and try again.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.orange)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 300)
+                    }
                 }
-                .buttonStyle(.plain)
-                .disabled(unlockPasswordText.isEmpty || isUnlockSubmitting)
             }
             .padding(36)
         }
@@ -849,6 +964,7 @@ struct MacRemoteSessionView: View {
             if newState == .unlockedActiveSession {
                 unlockPasswordText = ""
                 isUnlockSubmitting = false
+                unlockDidNotTake = false
                 unlockPasswordFieldFocused = false
             } else if newState == .lockedOrLoginWindow {
                 focusUnlockPasswordField()
@@ -857,8 +973,9 @@ struct MacRemoteSessionView: View {
     }
 
     private func submitUnlock() {
-        guard !unlockPasswordText.isEmpty, !isUnlockSubmitting else { return }
+        guard MacDistributionPolicy.allowsRemoteChanges, !unlockPasswordText.isEmpty, !isUnlockSubmitting else { return }
         isUnlockSubmitting = true
+        unlockDidNotTake = false
         let password = unlockPasswordText
         unlockPasswordText = ""
         coordinator.sendUnlockPassword(password)
@@ -866,6 +983,7 @@ struct MacRemoteSessionView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
             isUnlockSubmitting = false
             if coordinator.hostLockState == .lockedOrLoginWindow {
+                unlockDidNotTake = true
                 focusUnlockPasswordField()
             }
         }
@@ -892,8 +1010,11 @@ struct MacRemoteSessionView: View {
         fileTransferManager.stopObserving()
         displaySwitchObserverTask?.cancel()
         displaySwitchObserverTask = nil
+        if let screenChangeObserver {
+            NotificationCenter.default.removeObserver(screenChangeObserver)
+            self.screenChangeObserver = nil
+        }
         reconnectCoordinator.stopObserving()
-        reconnectCoordinator.onRebuildSignaling = nil
         reconnectCoordinator.onPerformReconnect = nil
         reconnectCoordinator.onRequestSessionDisconnect = nil
         inputController.teardown()
@@ -902,16 +1023,8 @@ struct MacRemoteSessionView: View {
     /// Preserve everything the reconnect coordinator needs to rebuild the session.
     private func recordReconnectState(sessionID: UUID) {
         reconnectCoordinator.recordSessionState(
-            sessionID: sessionID,
             displayID: displayLayoutVM.selectedDisplayID,
-            hostName: coordinator.connectedHostName,
-            qualityPreset: coordinator.activeQualityPreset,
-            sessionTokenHex: coordinator.currentSessionTokenHex
-        )
-        reconnectCoordinator.recordConnectionEndpoint(
-            hostAddress: coordinator.connectedHostAddress,
-            signalingPort: coordinator.connectedSignalingPort,
-            hostFingerprint: coordinator.connectedHostFingerprint
+            hostName: coordinator.connectedHostName
         )
     }
 
@@ -923,6 +1036,16 @@ struct MacRemoteSessionView: View {
         if let window = appStream.streamedWindow {
             inputController.updateMapping(
                 display: Self.descriptor(for: window),
+                streamConfiguration: nil
+            )
+            return
+        }
+        // Multi-display mode shows the focused display on the main surface, not
+        // the currently selected desktop — map against that display so the
+        // pointer tracks the picture that is actually on screen.
+        if let focused = multiDisplayDescriptor(forWireID: multiDisplay.focusedWireID) {
+            inputController.updateMapping(
+                display: focused,
                 streamConfiguration: nil
             )
             return
@@ -956,6 +1079,10 @@ struct MacRemoteSessionView: View {
     }
 
     private func browseApps() {
+        guard MacDistributionPolicy.allowsAppWindowStreaming(to: coordinator.lastEndpoint) else {
+            appStreamBlocked = true
+            return
+        }
         if appStream.streamedWindow == nil && !showsAppBrowser {
             desktopDisplays = displayLayoutVM.displays
         }
@@ -1411,4 +1538,13 @@ extension View {
             }
             .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
     }
+}
+
+/// Whether a window contains this session's video surface.
+private func macWindowHostsRemoteStream(_ window: NSWindow) -> Bool {
+    func contains(_ view: NSView) -> Bool {
+        if view is RemoteStreamNSView { return true }
+        return view.subviews.contains(where: contains)
+    }
+    return window.contentView.map(contains) ?? false
 }

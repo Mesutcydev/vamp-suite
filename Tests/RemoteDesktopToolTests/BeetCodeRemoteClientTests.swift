@@ -1,8 +1,74 @@
 import Foundation
 import XCTest
+import SharedProtocol
 @testable import ClientiOS
 
 final class BeetCodeRemoteClientTests: XCTestCase {
+    func testCompanionSizingRequestPreservesMeasuredPortraitViewport() throws {
+        let request = try BeetCodeAppWindowSizingRequest(
+            windowID: 42, clientViewportAspect: 390.0 / 794.0,
+            viewport: CGSize(width: 390, height: 794), sizingMode: .adaptive)
+        let body = request.wireBody()
+        let data = try JSONSerialization.data(withJSONObject: body)
+        let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(decoded["windowID"] as? Int, 42)
+        XCTAssertEqual(decoded["viewportWidth"] as? Double, 390)
+        XCTAssertEqual(decoded["viewportHeight"] as? Double, 794)
+        XCTAssertEqual(decoded["clientViewportAspect"] as? Double, 390.0 / 794.0)
+        XCTAssertEqual(decoded["sizingMode"] as? String, "adaptive")
+    }
+
+    func testOlderAssistantStillReceivesOnlyItsAspectSizingContract() throws {
+        let body = try BeetCodeAppWindowSizingRequest(
+            windowID: 42, clientViewportAspect: 0.5).wireBody()
+        XCTAssertEqual(Set(body.keys), ["windowID", "clientViewportAspect"])
+        XCTAssertNil(body["sizingMode"])
+        XCTAssertNil(body["viewportWidth"])
+        XCTAssertNil(body["viewportHeight"])
+    }
+
+    func testOriginalSizingKeepsModeIndependentOfThePortraitViewport() throws {
+        let body = try BeetCodeAppWindowSizingRequest(
+            windowID: 42, clientViewportAspect: 1.6,
+            viewport: CGSize(width: 390, height: 794), sizingMode: .original).wireBody()
+        XCTAssertEqual(body["sizingMode"] as? String, "original")
+        XCTAssertEqual(body["clientViewportAspect"] as? Double, 1.6)
+        XCTAssertEqual(body["viewportWidth"] as? Double, 390)
+        XCTAssertEqual(body["viewportHeight"] as? Double, 794)
+    }
+
+    func testCompanionSizingRejectsInvalidGeometryBeforeSending() {
+        for aspect in [Double.nan, .infinity, 0, -1, 0.1, 5] {
+            XCTAssertThrowsError(try BeetCodeAppWindowSizingRequest(windowID: 42, clientViewportAspect: aspect))
+        }
+        for viewport in [CGSize.zero, CGSize(width: 390, height: 0),
+                         CGSize(width: CGFloat.nan, height: 794), CGSize(width: 390, height: CGFloat.infinity)] {
+            XCTAssertThrowsError(try BeetCodeAppWindowSizingRequest(
+                windowID: 42, clientViewportAspect: 0.5, viewport: viewport, sizingMode: .adaptive))
+        }
+        XCTAssertThrowsError(try BeetCodeAppWindowSizingRequest(windowID: 0, clientViewportAspect: 0.5))
+    }
+
+    func testCompanionAdvertisesSizingAndAcknowledgesAcceptedMode() throws {
+        let status = try JSONDecoder().decode(BeetCodeControlStatus.self, from: Data(
+            #"{"enabled":true,"screenRecording":true,"accessibility":true,"ready":true,"supportsAdaptiveSizing":true}"#.utf8))
+        XCTAssertEqual(status.supportsAdaptiveSizing, true)
+        let application = try JSONDecoder().decode(BeetCodeRemoteApplication.self, from: Data(
+            #"{"windowID":42,"bundleIdentifier":"com.apple.Safari","name":"Safari","width":1100,"height":700,"appliedSizingMode":"original","sizingNotice":"The Mac constrained the original window size to its available space."}"#.utf8))
+        XCTAssertEqual(application.appliedSizingMode, .original)
+        XCTAssertEqual(application.sizingNotice, "The Mac constrained the original window size to its available space.")
+    }
+
+    func testOlderAssistantOmitsSizingAcknowledgment() throws {
+        let status = try JSONDecoder().decode(BeetCodeControlStatus.self, from: Data(
+            #"{"enabled":true,"screenRecording":true,"accessibility":true,"ready":true}"#.utf8))
+        let application = try JSONDecoder().decode(BeetCodeRemoteApplication.self, from: Data(
+            #"{"windowID":42,"name":"Safari","width":1100,"height":700}"#.utf8))
+        XCTAssertNil(status.supportsAdaptiveSizing)
+        XCTAssertNil(application.appliedSizingMode)
+        XCTAssertNil(application.sizingNotice)
+    }
+
     func testAssistantUnlockStatusDecodesAndOffersSecureEntry() throws {
         let data = Data(#"{"enabled":true,"screenRecording":true,"accessibility":true,"ready":false,"locked":true,"remoteUnlockEnabled":true,"remoteUnlockAvailable":true,"remoteUnlockMessage":"Enter the Mac login password.","displays":[]}"#.utf8)
 
@@ -28,6 +94,46 @@ final class BeetCodeRemoteClientTests: XCTestCase {
 
     func testEndpointRejectsPlainHTTPPublicAddress() {
         XCTAssertThrowsError(try BeetCodeRemoteEndpoint.parse(address: "http://example.com:9575")) { error in
+            XCTAssertEqual(error as? BeetCodeRemoteError, .insecurePublicAddress)
+        }
+    }
+
+    func testQRPairingPreservesAssistantAndCompanionListenerRanges() throws {
+        for port in Array(9575...9583) + Array(9675...9683) {
+            let endpoint = try BeetCodeRemoteEndpoint.parsePairingLink("http://192.168.1.20:\(port)/?pair=123456")
+            XCTAssertEqual(endpoint.url.absoluteString, "http://192.168.1.20:\(port)")
+            XCTAssertEqual(endpoint.pairingCode, "123456")
+        }
+    }
+
+    func testCompanionQRAllowsTailscaleWithoutChangingDefaultAssistantPort() throws {
+        let endpoint = try BeetCodeRemoteEndpoint.parsePairingLink("http://100.90.80.70:9675/?pair=123456")
+        XCTAssertEqual(endpoint.url.port, 9675)
+        XCTAssertEqual(try BeetCodeRemoteEndpoint.parse(address: "192.168.1.20").url.port, 9575)
+    }
+
+    func testCompanionPairingSupportsTailscaleIPv6AndMagicDNS() throws {
+        for host in ["[fd7a:115c:a1e0::1234]", "studio.tailnet-example.ts.net"] {
+            let endpoint = try BeetCodeRemoteEndpoint.parsePairingLink("http://\(host):9675/?pair=123456")
+            XCTAssertEqual(endpoint.url.port, 9675)
+            XCTAssertEqual(endpoint.pairingCode, "123456")
+        }
+        XCTAssertThrowsError(try BeetCodeRemoteEndpoint.parsePairingLink("http://[2001:4860:4860::8888]:9675/?pair=123456"))
+    }
+
+    func testQRPairingRejectsSyncPortsAndMissingCodes() {
+        for port in [9471, 9473, 9574, 9584, 9674, 9684] {
+            XCTAssertThrowsError(try BeetCodeRemoteEndpoint.parsePairingLink("http://192.168.1.20:\(port)/?pair=123456")) { error in
+                XCTAssertEqual(error as? BeetCodeRemoteError, .invalidAddress)
+            }
+        }
+        XCTAssertThrowsError(try BeetCodeRemoteEndpoint.parsePairingLink("http://192.168.1.20:9675/")) { error in
+            XCTAssertEqual(error as? BeetCodeRemoteError, .invalidPairingCode)
+        }
+    }
+
+    func testCompanionQRStillRejectsUnencryptedPublicHosts() {
+        XCTAssertThrowsError(try BeetCodeRemoteEndpoint.parsePairingLink("http://example.com:9675/?pair=123456")) { error in
             XCTAssertEqual(error as? BeetCodeRemoteError, .insecurePublicAddress)
         }
     }

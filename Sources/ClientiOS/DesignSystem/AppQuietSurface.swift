@@ -10,9 +10,18 @@ struct AppQuietSurface: ViewModifier {
     var cornerRadius: CGFloat = AppHostMetrics.cardRadius
     /// Slightly stronger fill for an interactive surface so it still reads as tappable.
     var isInteractive: Bool = false
+    @Environment(\.streamDesign) private var streamDesign
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content
+        // Clip the content, not the surface, so the card's shadow is not cut off at its edge.
+        if streamDesign {
+            content
+                .clipShape(RoundedRectangle(cornerRadius: StreamDesign.radius, style: .continuous))
+                .streamGlass()
+        } else {
+            content
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .prGlassSurface(
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
                 isInteractive: isInteractive,
@@ -22,7 +31,7 @@ struct AppQuietSurface: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(PR.border, lineWidth: 1)
             }
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
     }
 }
 

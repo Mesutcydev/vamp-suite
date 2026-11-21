@@ -69,8 +69,21 @@ struct LocalCursorOverlay: View {
     @ObservedObject var cursor: LocalCursorModel
     /// The video may be magnified, but the pointer glyph stays a stable screen-space size.
     var contentZoom: CGFloat = 1
+    /// View points per Mac desktop point. A whole Mac desktop shrinks to about a
+    /// quarter of its size on a phone; a fixed 18 pt arrow then read as four times
+    /// the Mac's own pointer. The glyph follows the picture's scale instead, within
+    /// readable limits, so it matches the desktop it points at.
+    var pointsPerDesktopPoint: Double? = nil
+
+    /// The macOS arrow is about 21 desktop points tall.
+    static func glyphHeight(pointsPerDesktopPoint: Double?, zoom: CGFloat) -> CGFloat {
+        guard let ppd = pointsPerDesktopPoint, ppd > 0 else { return 14 }
+        return min(max(21 * CGFloat(ppd) * max(zoom, 1), 11), 22)
+    }
 
     var body: some View {
+        let height = Self.glyphHeight(pointsPerDesktopPoint: pointsPerDesktopPoint, zoom: contentZoom)
+        let width = height * 2 / 3
         ZStack(alignment: .topLeading) {
             // Filler: the stack must fill the whole surface, and the arrow must anchor
             // top-leading — a bare ZStack sizes to the arrow and centers it, which made
@@ -80,12 +93,12 @@ struct LocalCursorOverlay: View {
             if let position = cursor.position {
                 CursorArrowShape()
                     .fill(Color.black)
-                    .overlay(CursorArrowShape().stroke(Color.white.opacity(0.9), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.35), radius: 1.5, x: 0.4, y: 0.8)
-                    .frame(width: 12, height: 18, alignment: .topLeading)
+                    .overlay(CursorArrowShape().stroke(Color.white, lineWidth: max(0.75, height / 22)))
+                    .shadow(color: .black.opacity(0.3), radius: height / 14, x: 0, y: height / 30)
+                    .frame(width: width, height: height, alignment: .topLeading)
                     .scaleEffect(1 / max(contentZoom, 1), anchor: .topLeading)
                     // The hotspot of a macOS arrow is its tip (top-left of the glyph).
-                    .offset(x: position.x - 1.5, y: position.y - 1)
+                    .offset(x: position.x - height * 0.06, y: position.y - height * 0.05)
                     .accessibilityHidden(true)
                     .transition(.opacity)
             }

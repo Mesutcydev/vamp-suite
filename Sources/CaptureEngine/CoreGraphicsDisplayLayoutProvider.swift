@@ -108,21 +108,16 @@ public final class CoreGraphicsDisplayLayoutProvider: DisplayLayoutObserving {
 
         let displays: [DisplayDescriptor] = activeIDs.map { cgDisplayID in
             let bounds = CGDisplayBounds(cgDisplayID)
-            let pixelWidth = CGDisplayPixelsWide(cgDisplayID)
-            let pixelHeight = CGDisplayPixelsHigh(cgDisplayID)
+            // `CGDisplayPixelsWide/High` report the mode's *point* size on a Retina display, so
+            // using them as the pixel size streamed every HiDPI display at half resolution.
+            let scaleFactor = Self.backingScale(of: cgDisplayID)
+            let pixelWidth = Self.backingPixels(points: bounds.width, scale: scaleFactor)
+            let pixelHeight = Self.backingPixels(points: bounds.height, scale: scaleFactor)
             let isPrimary = cgDisplayID == mainDisplayID
 
             let matchingScreen = screens.first { screen in
                 (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == cgDisplayID
             }
-
-            let scaleFactor: Double = {
-                if let screen = matchingScreen {
-                    return Double(screen.backingScaleFactor)
-                }
-                guard bounds.width > 0 else { return 1.0 }
-                return Double(pixelWidth) / bounds.width
-            }()
 
             let name = matchingScreen?.localizedName ?? "Display \(cgDisplayID)"
 
@@ -168,6 +163,18 @@ public final class CoreGraphicsDisplayLayoutProvider: DisplayLayoutObserving {
     private func wakeDisplay() {
         var id: IOPMAssertionID = 0
         IOPMAssertionDeclareUserActivity("Vamp display layout query" as CFString, kIOPMUserActiveLocal, &id)
+    }
+
+    /// Backing pixels per point for the display's current mode: 2 on Retina/HiDPI, 1 otherwise.
+    /// The layout (which sizes the encoder) and the capture engine both size from this one
+    /// value, so capture and encode dimensions cannot disagree.
+    static func backingScale(of displayID: CGDirectDisplayID) -> Double {
+        guard let mode = CGDisplayCopyDisplayMode(displayID), mode.width > 0, mode.pixelWidth > 0 else { return 1 }
+        return Double(mode.pixelWidth) / Double(mode.width)
+    }
+
+    static func backingPixels(points: Double, scale: Double) -> Int {
+        Int((points * scale).rounded())
     }
 }
 #endif

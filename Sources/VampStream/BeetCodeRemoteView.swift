@@ -39,6 +39,9 @@ struct BeetCodeRemoteView: View {
     }
 
     let session: BeetCodeRemoteSessionViewModel.Session
+    let clientName: String
+    let hostProductName: String
+    let presentationBackground: Color?
     let windowID: UInt32?
     let isTerminalApplication: Bool
     let streamGeometryRevision: String
@@ -91,6 +94,9 @@ struct BeetCodeRemoteView: View {
 
     init(
         session: BeetCodeRemoteSessionViewModel.Session,
+        clientName: String = VampProductIdentity.streamName,
+        hostProductName: String = "Vamp Assistant",
+        presentationBackground: Color? = nil,
         windowID: UInt32? = nil,
         isTerminalApplication: Bool = false,
         streamGeometryRevision: String = "",
@@ -104,6 +110,9 @@ struct BeetCodeRemoteView: View {
         onOriginalSizing: (() -> Void)? = nil
     ) {
         self.session = session
+        self.clientName = clientName
+        self.hostProductName = hostProductName
+        self.presentationBackground = presentationBackground
         self.windowID = windowID
         self.isTerminalApplication = isTerminalApplication
         self.streamGeometryRevision = streamGeometryRevision
@@ -126,6 +135,8 @@ struct BeetCodeRemoteView: View {
             } else if session.status.shouldOfferRemoteUnlock {
                 BeetCodeRemoteUnlockStateView(
                     message: session.status.remoteUnlockMessage,
+                    clientName: clientName,
+                    presentationBackground: presentationBackground,
                     client: session.client,
                     onRefresh: onRefresh,
                     onClose: onClose
@@ -213,15 +224,15 @@ struct BeetCodeRemoteView: View {
             Image(systemName: "lock.shield")
                 .font(.system(size: 46, weight: .light))
                 .foregroundStyle(.white.opacity(0.92))
-            Text("Mac Control is not ready")
-                .font(.title3.weight(.semibold))
+            Text("Your Mac needs a moment.")
+                .font(.title2.weight(.medium))
                 .foregroundStyle(.white)
             Text(permissionMessage)
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.78))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 34)
-            Text("On the Mac, open Vamp Assistant → Settings → Permissions. Vamp Stream cannot grant these permissions remotely.")
+            Text("On the Mac, open \(hostProductName) → Settings → Permissions. \(clientName) cannot grant these permissions remotely.")
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.56))
                 .multilineTextAlignment(.center)
@@ -233,30 +244,25 @@ struct BeetCodeRemoteView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 34)
             }
-            Button {
+            StreamPrimaryButton(title: isRefreshing ? "Checking…" : "Check again", symbol: "arrow.clockwise", isDisabled: isRefreshing) {
                 Task {
                     isRefreshing = true
                     refreshError = await onRefresh()
                     isRefreshing = false
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    if isRefreshing { ProgressView().tint(.white) }
-                    Text(isRefreshing ? "Checking…" : "Check again")
-                }
             }
-            .buttonStyle(.bordered)
-            .tint(.white)
-            .disabled(isRefreshing)
-            .accessibilityLabel(isRefreshing ? "Checking Vamp Assistant permissions" : "Check Vamp Assistant permissions again")
-            Button("Back", action: onClose)
-                .buttonStyle(.borderedProminent)
-                .tint(.white)
-                .foregroundStyle(.black)
-                .padding(.top, 6)
-                .accessibilityHint("Return to the host picker")
+            .frame(maxWidth: 340)
+            VampGlassActionButton(title: "Back to Macs", systemImage: "chevron.left", action: onClose)
+                .frame(maxWidth: 340)
+
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background { permissionBackground }
+    }
+
+    @ViewBuilder private var permissionBackground: some View {
+        if let presentationBackground { presentationBackground.ignoresSafeArea() }
+        else { StreamAtmosphere().environment(\.colorScheme, .dark) }
     }
 
     private var permissionMessage: String {
@@ -340,7 +346,8 @@ struct BeetCodeRemoteView: View {
                             // carries the viewport's zoom/pan so it stays glued to the video
                             // under magnify.
                             if usesLocalCursor {
-                                LocalCursorOverlay(cursor: cursorModel, contentZoom: viewportZoom)
+                                LocalCursorOverlay(cursor: cursorModel, contentZoom: viewportZoom,
+                                                   pointsPerDesktopPoint: input.cursorViewPointsPerDesktopPoint)
                                     .scaleEffect(viewportZoom, anchor: .center)
                                     .offset(viewportOffset)
                             }
@@ -518,6 +525,8 @@ struct BeetCodeRemoteView: View {
         // recover a stuttering stream was to wait for the automatic recovery bar to
         // decide the video had stalled, or to leave and reopen the app.
         Button("Refresh video", systemImage: "arrow.clockwise") { restartStream() }
+        Divider()
+        Button("Disconnect from Mac", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive, action: onClose)
     }
 
     /// Floating reset for the local zoom/pan, drawn like the Assistant surface's floating
@@ -568,15 +577,9 @@ struct BeetCodeRemoteView: View {
 
     private var classicChromePill: some View {
         AppStreamChromePill {
-            AppStreamChromeButton(
-                systemName: "xmark",
-                isDestructive: true,
-                accessibilityLabel: "Close remote control",
-                action: onClose)
-
             if onChooseApplication != nil {
                 AppStreamChromeButton(
-                    systemName: "chevron.left",
+                    systemName: "square.grid.2x2",
                     accessibilityLabel: "Apps",
                     accessibilityValue: "Back to the application list"
                 ) {
@@ -835,6 +838,8 @@ struct BeetCodeRemoteView: View {
 /// The password is cleared before the request starts and is never retained by the view.
 private struct BeetCodeRemoteUnlockStateView: View {
     let message: String?
+    let clientName: String
+    let presentationBackground: Color?
     let client: BeetCodeRemoteClient
     let onRefresh: () async -> String?
     let onClose: () -> Void
@@ -851,10 +856,10 @@ private struct BeetCodeRemoteUnlockStateView: View {
                     .foregroundStyle(.white.opacity(0.92))
 
                 Text("Mac is locked")
-                    .font(.title3.weight(.semibold))
+                    .font(.largeTitle.weight(.medium))
                     .foregroundStyle(.white)
 
-                Text(message ?? "Enter the Mac login password to resume Vamp Stream.")
+                Text(message ?? "Enter the Mac login password to resume \(clientName).")
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.78))
                     .multilineTextAlignment(.center)
@@ -877,22 +882,8 @@ private struct BeetCodeRemoteUnlockStateView: View {
                     .frame(maxWidth: 340)
                     .onSubmit(submitUnlock)
 
-                Button(action: submitUnlock) {
-                    HStack(spacing: 8) {
-                        if isSubmitting {
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(.white)
-                        }
-                        Text(isSubmitting ? "Unlocking…" : "Unlock Mac")
-                    }
-                    .font(.body.weight(.semibold))
-                    .frame(maxWidth: 312)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.white)
-                .foregroundStyle(.black)
-                .disabled(password.isEmpty || isSubmitting)
+                StreamPrimaryButton(title: isSubmitting ? "Unlocking…" : "Unlock Mac", symbol: "lock.open", isDisabled: password.isEmpty || isSubmitting, action: submitUnlock)
+                    .frame(maxWidth: 340)
 
                 Text("Available only through the encrypted Tailscale connection. The password is sent once, then cleared from this field.")
                     .font(.caption)
@@ -908,9 +899,8 @@ private struct BeetCodeRemoteUnlockStateView: View {
                         .frame(maxWidth: 340)
                 }
 
-                Button("Back", action: onClose)
-                    .buttonStyle(.bordered)
-                    .tint(.white)
+                VampGlassActionButton(title: "Back to Macs", systemImage: "chevron.left", action: onClose)
+                    .frame(maxWidth: 340)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 32)
@@ -918,6 +908,10 @@ private struct BeetCodeRemoteUnlockStateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .scrollDismissesKeyboard(.interactively)
+        .background {
+            if let presentationBackground { presentationBackground.ignoresSafeArea() }
+            else { StreamAtmosphere().environment(\.colorScheme, .dark) }
+        }
     }
 
     private func submitUnlock() {

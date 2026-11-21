@@ -25,10 +25,10 @@ struct VampAssistantAppStreamView: View {
     @State private var sizingRecoveryFailed = false
     @State private var sizingIntent = AppStreamSizingIntent()
     @State private var sizingActionID = UUID()
-    @State private var adaptive = false
+    @State private var adaptive = true
     @State private var sizingRequested = false
     @State private var streamRevision = 0
-    @State private var viewportAspect = 9.0 / 19.5
+    @State private var viewportSize = CGSize.zero
 
     var body: some View {
         GeometryReader { proxy in
@@ -101,11 +101,15 @@ struct VampAssistantAppStreamView: View {
                 guard !Task.isCancelled else { return }
                 let revision = selectionRevision
                 let aspect = requestedAspect(for: application)
+                let supportsSizing = session.status.supportsAdaptiveSizing == true
+                let viewport = supportsSizing && viewportSize != .zero ? viewportSize : nil
+                let mode: AppWindowSizingMode? = supportsSizing ? (adaptive ? .adaptive : .original) : nil
                 let operation = Task { @MainActor in
                     sizingIntent.markSent(intent)
                     do {
                         let resized = try await session.client.resizeApplication(
-                            windowID: windowID, clientViewportAspect: aspect)
+                            windowID: windowID, clientViewportAspect: aspect,
+                            viewport: viewport, sizingMode: mode)
                         guard sizingIntent.accepts(intent), revision == selectionRevision, selectedApplication?.windowID == windowID else { return }
                         present(resized)
                         updateSizingNotice(resized, requestedAspect: aspect)
@@ -148,14 +152,12 @@ struct VampAssistantAppStreamView: View {
     }
 
     private var resizeTaskID: String {
-        "\(selectedApplication?.windowID ?? 0)-\(adaptive ? viewportAspect : 0)-\(adaptive)-\(sizingRequested)-\(sizingActionID)-\(session.status.ready)-\(session.address)"
+        "\(selectedApplication?.windowID ?? 0)-\(adaptive ? viewportSize.width : 0)-\(adaptive ? viewportSize.height : 0)-\(adaptive)-\(sizingRequested)-\(sizingActionID)-\(session.status.ready)-\(session.status.supportsAdaptiveSizing == true)-\(session.address)"
     }
 
     private func updateViewport(_ size: CGSize) {
-        guard size.width > 0, size.height > 0 else { return }
-        let aspect = Double(size.width / size.height)
-        guard aspect.isFinite, (0.25...4).contains(aspect) else { return }
-        viewportAspect = aspect
+        guard let measured = AppStreamViewModel.measuredViewport(size: size, previous: viewportSize) else { return }
+        viewportSize = measured.size
     }
 
     private func loadApplications() async {
@@ -209,7 +211,7 @@ struct VampAssistantAppStreamView: View {
         launchingName = application.name
         errorMessage = nil
         defer { if revision == selectionRevision { launchingName = nil } }
-        adaptive = true
+        // Like Sync, keep the user's sizing choice when they switch app windows.
         sizingRequested = true
         sizingActionID = UUID()
         sizingRecoveryFailed = false
@@ -252,46 +254,23 @@ struct VampAssistantAppStreamView: View {
     }
 
     private func requestedAspect(for application: BeetCodeRemoteApplication) -> Double {
-        let size = adaptiveSize(for: application)
-        return size.width / max(size.height, 1)
+        if adaptive {
+            return viewportSize == .zero ? 9.0 / 19.5 : Double(viewportSize.width / viewportSize.height)
+        }
+        let original = application.windowID.flatMap { originalApplications[$0] } ?? application
+        return min(max(original.width / max(original.height, 1), 0.25), 4)
     }
 
     private func updateSizingNotice(_ application: BeetCodeRemoteApplication, requestedAspect: Double) {
-        if !adaptive {
+        if application.appliedSizingMode != nil {
+            errorMessage = application.sizingNotice
+        } else if !adaptive {
             errorMessage = "Original proportions restored. This Assistant API cannot restore exact window dimensions."
-        } else {
-            let expected = adaptiveSize(for: application)
-            let actualAspect = application.width / max(application.height, 1)
-            if abs(actualAspect - expected.width / max(expected.height, 1)) > 0.05 {
-                errorMessage = "The Mac kept a different window shape. Zoom or pan for a closer view."
-            }
+        } else if AppStreamViewModel.windowShapeMismatch(
+            appliedWidth: application.width, appliedHeight: application.height,
+            desiredAspect: requestedAspect) {
+            errorMessage = "The Mac kept a different window shape. Zoom or pan for a closer view."
         }
-    }
-
-    /// The shape this client asked the Mac to produce, using the same shared policy the
-    /// Sync host applies server-side. Notices compare against this, not the raw viewport.
-    private func adaptiveSize(for application: BeetCodeRemoteApplication) -> DesktopSize {
-        let original = application.windowID.flatMap { originalApplications[$0] } ?? application
-        guard adaptive else {
-            return DesktopSize(width: max(original.width, 1), height: max(original.height, 1))
-        }
-        // Assistant exposes aspect-only resizing, not exact dimensions or window screen ID.
-        // Use the smallest reported screen to avoid promising width the server cannot retain.
-        let widths = session.status.displays?.map(\.width) ?? []
-        let heights = session.status.displays?.map(\.height) ?? []
-        guard let width = widths.min() ?? session.status.displayWidth,
-              let height = heights.min() ?? session.status.displayHeight else {
-            // No usable display bounds from the Assistant host: still ask for the phone's
-            // shape. Falling back to `max(viewportAspect, originalAspect)` here kept a
-            // landscape Mac window landscape, which is exactly the letterboxed strip this
-            // resize exists to avoid. Only the aspect matters to the Assistant API.
-            return DesktopSize(width: viewportAspect * 1000, height: 1000)
-        }
-        return AdaptiveWindowSizing.size(
-            original: DesktopSize(width: original.width, height: original.height),
-            available: DesktopSize(width: max(width - 48, 1), height: max(height - 76, 1)),
-            viewport: DesktopSize(width: viewportAspect, height: 1),
-            bundleIdentifier: original.bundleIdentifier ?? "")
     }
 
     private func apply(_ applications: [BeetCodeRemoteApplication]) {
@@ -319,6 +298,7 @@ private struct VampAssistantApplicationBrowser: View {
     @State private var closeChoice: BeetCodeRemoteApplication?
 
     @State private var searchText = ""
+    @State private var libraryFilter = StreamLibraryFilter.all
     // Favourites and recents are shared with the Sync browser: both key on the bundle
     // identifier, so a Mac app you starred stays starred whichever kind of Mac it is on.
     // This browser previously had neither.
@@ -368,10 +348,13 @@ private struct VampAssistantApplicationBrowser: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VampAssistantApplicationHeader(macName: macName, onClose: onClose)
+            StreamLibraryHeader(macName: macName, onClose: onClose)
             VampAppSearchField(text: $searchText)
-                .padding(.horizontal, 18)
+                .padding(.horizontal, StreamDesign.inset)
                 .padding(.bottom, 14)
+            StreamLibraryFilters(selection: $libraryFilter)
+                .padding(.horizontal, StreamDesign.inset)
+                .padding(.bottom, 10)
             ScrollView {
                 LazyVStack(spacing: 12) {
                     if let errorMessage {
@@ -386,49 +369,39 @@ private struct VampAssistantApplicationBrowser: View {
                             Spacer()
                         }
                         .padding(14)
-                        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
+                        .streamGlass()
                     }
                     if runningApplications.isEmpty, installedApplications.isEmpty {
                         VampStreamAppListEmptyHint(
-                            title: isLoading ? "Loading applications…" : "No applications found",
+                            title: isLoading ? "Loading applications…" : (errorMessage == nil ? "No applications found" : "Couldn’t load applications"),
                             isLoading: isLoading,
-                            actionTitle: isLoading ? nil : "Refresh",
+                            actionTitle: isLoading ? nil : (errorMessage == nil ? "Refresh" : "Retry"),
                             action: isLoading ? nil : onRefresh
                         )
                     } else {
-                        let runningMatches = runningApplications.filter(matches)
-                        let installedMatches = installedApplications.filter(matches)
-                        if runningMatches.isEmpty, installedMatches.isEmpty {
-                            VampStreamAppListEmptyHint(title: "No apps match")
+                        let visible = allApplications.filter { app in
+                            matches(app) && (libraryFilter == .all
+                                || (libraryFilter == .running && app.isRunning)
+                                || (libraryFilter == .favorites && favoriteIDs.contains(app.id)))
+                        }
+                        if visible.isEmpty {
+                            StreamLibraryEmptyState(filter: libraryFilter, isSearching: !searchText.isEmpty)
                         } else {
-                            // Same order as the Sync browser: Favorites, Recent, Running, All Apps.
-                            let favorites = shortlist(favoriteIDs)
-                            let recents = searchText.isEmpty
-                                ? shortlist(
-                                    AppStreamAppShortlists.decode(recentStorage),
-                                    excluding: Set(favoriteIDs))
-                                : []
-                            if !favorites.isEmpty {
-                                section("Favorites", favorites)
-                            }
-                            if !recents.isEmpty {
-                                section("Recent", recents)
-                            }
-                            if !runningMatches.isEmpty {
-                                section("Running", runningMatches)
-                            }
-                            if !installedMatches.isEmpty {
-                                section("All Apps", installedMatches)
-                            }
+                            section(libraryFilter == .all ? "On your Mac" : libraryFilter.title, visible)
+                            Text("Touch and hold an app for favorites and more.")
+                                .font(.caption).foregroundStyle(StreamDesign.secondary)
+                                .padding(.top, 12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
-                .padding(.horizontal, 18)
+                .padding(.horizontal, StreamDesign.inset)
                 .padding(.bottom, 28)
             }
             .scrollDismissesKeyboard(.interactively)
             .refreshable { onRefresh() }
         }
+        .frame(maxWidth: StreamDesign.maxWidth)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background { VampStreamEnvironmentBackdrop() }
         .confirmationDialog(
@@ -449,45 +422,6 @@ private struct VampAssistantApplicationBrowser: View {
     }
 }
 
-private struct VampAssistantApplicationHeader: View {
-    let macName: String
-    let onClose: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: AppSpacing.sm) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Apps")
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(PR.fg)
-                // The selected Mac's actual name is the primary context; the provider is secondary.
-                Text(macName)
-                    .font(.subheadline)
-                    .foregroundStyle(PR.fg2)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
-
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.footnote.weight(.bold))
-                    .foregroundStyle(PR.fg2)
-                    .frame(
-                        width: AppHostMetrics.iconControlTarget,
-                        height: AppHostMetrics.iconControlTarget)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(PRGlassPressButtonStyle())
-            .accessibilityLabel("Close")
-            .accessibilityHint("Return to the Vamp Assistant picker")
-        }
-        .padding(.horizontal, AppHostMetrics.screenInset)
-        .padding(.top, AppSpacing.lg)
-        .padding(.bottom, AppSpacing.sm)
-    }
-}
-
 private struct VampAssistantApplicationSection: View {
     let title: LocalizedStringKey
     let applications: [BeetCodeRemoteApplication]
@@ -499,12 +433,7 @@ private struct VampAssistantApplicationSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.xs) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(PR.fg2)
-                .padding(.horizontal, 4)
-                .padding(.top, 6)
-                .accessibilityAddTraits(.isHeader)
+            StreamLibrarySectionHeading(title: title, count: applications.count)
             // One quiet grouped surface per section with inset separators, instead of a glass
             // border around every row. Repeated per-row glass made each app look like an equally
             // important floating control.
@@ -584,12 +513,12 @@ private struct VampAssistantApplicationRow: View {
                 Text(name)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(PR.fg)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let detail {
                     Text(detail)
                         .font(.caption)
                         .foregroundStyle(isActive ? PR.fg : PR.fg2)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -597,7 +526,7 @@ private struct VampAssistantApplicationRow: View {
             if isFavorite {
                 Image(systemName: "star.fill")
                     .font(.caption)
-                    .foregroundStyle(PR.accent)
+                    .foregroundStyle(StreamDesign.accent)
                     .accessibilityLabel("Favorite")
             }
 
@@ -615,7 +544,8 @@ private struct VampAssistantApplicationRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(name)
-        .accessibilityValue(detail ?? (isRunning ? "Running" : "Installed"))
+        .accessibilityValue(Text(verbatim: detail ?? (isRunning ? String(localized: "Running") : String(localized: "Installed")))
+            + (isFavorite ? Text(", Favorite") : Text("")))
         .accessibilityHint(isRunning ? "Stream this Mac application" : "Open and stream this Mac application")
     }
 
@@ -648,6 +578,6 @@ private struct VampAssistantApplicationError: View {
                 .foregroundStyle(PR.fg)
         }
         .padding(14)
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
+        .streamGlass()
     }
 }

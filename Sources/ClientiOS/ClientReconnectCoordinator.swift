@@ -16,8 +16,6 @@ final class ClientReconnectCoordinator: ObservableObject {
     @Published var isReconnecting: Bool = false
     @Published var blockedPermissions: [PermissionState]?
 
-    /// Callback invoked when signaling is about to be rebuilt during reconnect.
-    var onRebuildSignaling: ((UUID, StreamQualityPreset) -> Void)?
     var onPerformReconnect: (() async throws -> Void)?
 
     let reconnectManager: ReconnectManager
@@ -41,14 +39,8 @@ final class ClientReconnectCoordinator: ObservableObject {
     var signalingService: any SessionCoordinatorSignaling { _signalingService }
 
     /// Preserved session state for recovery.
-    private(set) var lastSessionID: UUID?
     private(set) var lastSelectedDisplayID: String?
     private(set) var lastHostName: String?
-    private(set) var lastHostAddress: String?
-    private(set) var lastSignalingPort: UInt16?
-    private(set) var lastHostFingerprint: String?
-    private(set) var lastQualityPreset: StreamQualityPreset = .balanced
-    private(set) var lastSessionTokenHex: String?
 
     init(
         webRTCSessionManager: any WebRTCSessionManaging,
@@ -71,18 +63,9 @@ final class ClientReconnectCoordinator: ObservableObject {
 
     // MARK: - Session State Preservation
 
-    func recordSessionState(sessionID: UUID, displayID: String?, hostName: String?, qualityPreset: StreamQualityPreset, sessionTokenHex: String?) {
-        lastSessionID = sessionID
+    func recordSessionState(displayID: String?, hostName: String?) {
         lastSelectedDisplayID = displayID
         lastHostName = hostName
-        lastQualityPreset = qualityPreset
-        lastSessionTokenHex = sessionTokenHex
-    }
-
-    func recordConnectionEndpoint(hostAddress: String?, signalingPort: UInt16?, hostFingerprint: String?) {
-        lastHostAddress = hostAddress
-        lastSignalingPort = signalingPort
-        lastHostFingerprint = hostFingerprint
     }
 
     // MARK: - Observation
@@ -206,23 +189,6 @@ private final class ClientReconnectDelegate: ReconnectDelegate, @unchecked Senda
         self.coordinator = coordinator
     }
 
-    private func normalizedHostAndPort(host: String, fallbackPort: UInt16) -> (host: String, port: UInt16) {
-        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return (host, fallbackPort)
-        }
-
-        let parseInput = trimmed.contains("://") ? trimmed : "rdt://\(trimmed)"
-        if let components = URLComponents(string: parseInput),
-           let parsedHost = components.host?.trimmingCharacters(in: CharacterSet(charactersIn: "[]")),
-           !parsedHost.isEmpty {
-            let parsedPort = components.port.flatMap(UInt16.init) ?? fallbackPort
-            return (parsedHost, parsedPort)
-        }
-
-        return (trimmed, fallbackPort)
-    }
-
     func performReconnect(attempt: Int) async throws {
         guard let coord = await MainActor.run(body: { coordinator }) else {
             throw ReconnectError.coordinatorDeallocated
@@ -232,85 +198,10 @@ private final class ClientReconnectDelegate: ReconnectDelegate, @unchecked Senda
             return
         }
 
-        let preservedSessionID = await MainActor.run { coord.lastSessionID }
-        let sessionID = preservedSessionID ?? UUID()
-
-        let manager = await MainActor.run { coord.sessionManager }
-        let sigService = await MainActor.run { coord.signalingService }
-        let qualityPreset = await MainActor.run { coord.lastQualityPreset }
-        let sessionTokenHex = await MainActor.run { coord.lastSessionTokenHex }
-        let displayID = await MainActor.run { coord.lastSelectedDisplayID }
-        let hostName = await MainActor.run { coord.lastHostName }
-        let hostAddress = await MainActor.run { coord.lastHostAddress }
-        let signalingPort = await MainActor.run { coord.lastSignalingPort }
-        let hostFingerprint = await MainActor.run { coord.lastHostFingerprint }
-        let clientProductRole = await MainActor.run { coord.clientProductRole }
-        let isMacClient = await MainActor.run { coord.isMacClient }
-
-        // Rebuild signaling first so reconnect does not depend on a stale TCP socket.
-        guard let hostAddress, !hostAddress.isEmpty, let signalingPort, signalingPort > 0 else {
-            throw ReconnectError.noSessionToRecover
-        }
-        let target = normalizedHostAndPort(host: hostAddress, fallbackPort: signalingPort)
-        sigService.disconnect()
-        try await withTimeout(seconds: RemoteDesktopConstants.signalingConnectTimeout) {
-            try await sigService.connect(host: target.host, port: target.port)
-        }
-
-        await MainActor.run {
-            coord.onRebuildSignaling?(sessionID, qualityPreset)
-        }
-
-        // Close existing session and prepare a fresh one.
-        await manager.closeSession()
-        try await manager.prepareSession(id: sessionID, role: .client)
-
-        var offer = try await manager.createOffer(
-            sessionID: sessionID,
-            qualityPreset: qualityPreset,
-            displayID: displayID
-        )
-        let effectiveToken = sessionTokenHex ?? ConnectionSecurity.tokenToHex(ConnectionSecurity.generateSessionToken())
-        offer.sessionToken = effectiveToken
-        offer.clientCapabilities = .currentClient(isMacClient: isMacClient)
-        offer.clientProductRole = clientProductRole
-        // Reconnect must preserve the normal SDR default. HDR is an explicit
-        // session choice, not an implicit side effect of the Ultra preset.
-        offer.preferredDynamicRange = ClientVideoDynamicRangePolicy.preferredDynamicRange(
-            qualityPreset: qualityPreset,
-            clientCapabilities: offer.clientCapabilities,
-            hdrExplicitlyEnabled: false
-        )
-        manager.configureControlChannelAuth(sessionTokenHex: effectiveToken)
-
-        // Send the offer to the host via signaling.
-        try await sigService.sendOffer(offer, to: HostIdentity(
-            displayName: hostName ?? "Host",
-            modelName: "Mac",
-            osVersion: "",
-            appVersion: "",
-            publicKeyFingerprint: hostFingerprint ?? ""
-        ))
-
-        await MainActor.run {
-            coord.logger.info("Stream request sent during reconnect")
-        }
-
-        // Only mark reconnect as successful once transport is truly connected.
-        try await withTimeout(seconds: RemoteDesktopConstants.negotiationTimeout) {
-            for await state in manager.connectionStateUpdates() {
-                if state == .connected {
-                    await MainActor.run {
-                        coord.logger.info("Stream socket connected after reconnect")
-                    }
-                    return
-                }
-                if state == .failed {
-                    throw ReconnectError.connectionFailed
-                }
-            }
-            throw ReconnectError.connectionDidNotRecover
-        }
+        // Reconnect goes only through the session coordinator's connect flow, which
+        // authenticates the host and seals a fresh token. Without one attached there is
+        // nothing safe to recover with: an offer is never rebuilt here with a kept token.
+        throw ReconnectError.noSessionToRecover
     }
 
     func reconnectDidSucceed() async {

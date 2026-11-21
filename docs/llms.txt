@@ -18,9 +18,17 @@ License: Apache-2.0
 
 - Vamp Sync: the macOS menu-bar host. Share a selected app window with a verified
   Control or Stream client over authenticated WebRTC. Screen Recording enables
-  video; Accessibility enables keyboard and pointer control.
+  video; Accessibility enables keyboard and pointer control. The website edition
+  adds keyboard and pointer control, window resizing, app launch and close, and
+  optional Remote Unlock. The Mac App Store edition is View Only: it shares open
+  app windows and requests Screen Recording only, with no input, resizing, app
+  launch or close, Remote Unlock, or terminal commands.
 - Vamp Control: Mac, iPhone and iPad client. Connect to Sync to select and control
-  a Mac app window. Assistant has a separate authenticated connection path.
+  a Mac app window (website edition). The Mac App Store edition is View Only: no
+  input, remote unlock, terminal, file transfer, or clipboard sync to the host;
+  app-window streaming is allowed only over Wi-Fi or Ethernet, while viewing the
+  desktop over Tailscale is still allowed. Assistant has a separate authenticated
+  connection path.
 - Vamp Stream: focused iPhone/iPad client. Stream an app window through Sync,
   or connect to Assistant through its private Remote Sessions endpoint.
 - Vamp Assistant: native macOS AI chat, local/BYOK models, Code workspaces,

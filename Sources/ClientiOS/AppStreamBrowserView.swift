@@ -9,10 +9,19 @@ import UIKit
 /// Vamp Stream's core screen: the Mac's applications. Tap one to stream just that app's window
 /// (reusing the shared video renderer + input via `MirrorScreen`). All state comes from
 /// `AppStreamViewModel` — never a fake "connected" while frozen.
+/// Which surface wraps the shared app-streaming engine. Vamp Stream keeps its own library; Vamp
+/// Control draws the same list and launch state in its design language. The stream surface, input,
+/// and session handling are identical for both.
+enum AppStreamChrome {
+    case stream
+    case control
+}
+
 @available(iOS 16.1, *)
 struct AppStreamBrowserView: View {
     let environment: ClientAppEnvironment
     @ObservedObject var vm: AppStreamViewModel
+    let chrome: AppStreamChrome
     @ObservedObject private var sessionCoordinator: ClientSessionCoordinator
     /// Disconnect / leave this Mac.
     var onClose: () -> Void
@@ -26,6 +35,7 @@ struct AppStreamBrowserView: View {
     @AppStorage("vampstream.qualityMode") private var qualityMode = "quality"
     @AppStorage("vampstream.didShowGestureHelp") private var didShowGestureHelp = false
     @State private var searchText = ""
+    @State private var libraryFilter = StreamLibraryFilter.all
     @State private var closeChoice: RemoteApplication?
     @State private var showsHelp = false
     @State private var expiredSizingNotice: String?
@@ -46,9 +56,11 @@ struct AppStreamBrowserView: View {
     @StateObject private var bluetoothInput = BluetoothInputController()
     @State private var showsBluetoothStatus = false
 
-    init(environment: ClientAppEnvironment, vm: AppStreamViewModel, onClose: @escaping () -> Void) {
+    init(environment: ClientAppEnvironment, vm: AppStreamViewModel, chrome: AppStreamChrome = .stream,
+         onClose: @escaping () -> Void) {
         self.environment = environment
         self.vm = vm
+        self.chrome = chrome
         self.onClose = onClose
         self.sessionCoordinator = environment.sessionCoordinator
         _rendererVM = StateObject(
@@ -154,7 +166,7 @@ struct AppStreamBrowserView: View {
                 if case .streaming = vm.status { rendererVM.startReceiving() }
             }
         }
-        .sheet(isPresented: $showsHelp) { AppStreamGestureHelpView() }
+        .sheet(isPresented: $showsHelp) { AppStreamGestureHelpView(isViewOnly: isViewOnly) }
         .sheet(isPresented: $showsBluetoothStatus) {
             BluetoothInputStatusView(controller: bluetoothInput) { showsBluetoothStatus = false }
         }
@@ -189,7 +201,11 @@ struct AppStreamBrowserView: View {
         AppStreamVideoHealth.isStalled(lastDecodedAt: rendererVM.lastDecodedAt, now: videoHealthCheckTime)
     }
 
-    private var canInteract: Bool {
+    private var isViewOnly: Bool { sessionCoordinator.sessionMode == .viewOnly }
+
+    private var canInteract: Bool { !isViewOnly && isVideoReady }
+
+    private var isVideoReady: Bool {
         scenePhase == .active && !hostIsLocked && !vm.isResizing && !vm.isGeometryChanging && !videoStalled
             && rendererVM.latestPixelBuffer != nil && rendererVM.isReceiving
     }
@@ -207,7 +223,7 @@ struct AppStreamBrowserView: View {
     /// macOS cursor from the frames does this surface draw its own local pointer. An
     /// older host still captures the cursor, and drawing on top of it would double it.
     private var usesLocalCursor: Bool {
-        sessionCoordinator.negotiatedCapabilities?.supportsCursorlessCapture == true
+        !isViewOnly && sessionCoordinator.negotiatedCapabilities?.supportsCursorlessCapture == true
     }
     private var favoriteIDs: [String] { AppStreamAppShortlists.decode(favoriteStorage) }
     private var matchingApps: [RemoteApplication] {
@@ -233,96 +249,111 @@ struct AppStreamBrowserView: View {
 
     // MARK: - Browser
 
-    private var browser: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: AppSpacing.sm) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Apps")
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(PR.fg)
-                    // The selected Mac's actual name is the primary context, not the provider.
-                    Text(macName)
-                        .font(.subheadline)
-                        .foregroundStyle(PR.fg2)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .combine)
+    private var libraryApps: [RemoteApplication] {
+        let apps: [RemoteApplication]
+        switch libraryFilter {
+        case .all: apps = matchingApps
+        case .running: apps = matchingApps.filter(\.isRunning)
+        case .favorites: apps = favorites
+        }
+        return apps.sorted {
+            if $0.isActive != $1.isActive { return $0.isActive }
+            if $0.isRunning != $1.isRunning { return $0.isRunning }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
 
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.footnote.weight(.bold))
-                        .foregroundStyle(PR.fg2)
-                        .frame(
-                            width: AppHostMetrics.iconControlTarget,
-                            height: AppHostMetrics.iconControlTarget)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(PRGlassPressButtonStyle())
-                .accessibilityLabel("Close")
-                .accessibilityHint("Return to the Mac picker")
+    @ViewBuilder private var browser: some View {
+        #if VAMP_CONTROL_APP
+        if chrome == .control {
+            controlLibrary
+        } else {
+            streamLibrary
+        }
+        #else
+        streamLibrary
+        #endif
+    }
+
+    #if VAMP_CONTROL_APP
+    private var controlLibrary: some View {
+        ControlAppLibrary(
+            macName: macName,
+            apps: libraryApps,
+            isLoading: vmIsLoading,
+            failure: bannerReason,
+            isViewOnly: isViewOnly,
+            favoriteIDs: favoriteIDs,
+            leaveTitle: canReturnToDesktop ? "Desktop" : "Macs",
+            leaveSymbol: canReturnToDesktop ? "display" : "chevron.left",
+            searchText: $searchText,
+            filter: $libraryFilter,
+            onOpen: { app, windowID in open(app, windowID: windowID) },
+            onToggleFavorite: { app in
+                favoriteStorage = AppStreamAppShortlists.toggled(app.id, in: favoriteStorage)
+            },
+            onRequestClose: { app in closeChoice = app },
+            onRefresh: { vm.requestApplicationList() },
+            onLeave: onClose
+        )
+    }
+
+    /// Vamp Sync keeps the desktop available beside app windows; an app-only host has no desktop
+    /// to return to, so leaving the apps ends the session there.
+    private var canReturnToDesktop: Bool {
+        guard let capabilities = sessionCoordinator.negotiatedCapabilities else { return false }
+        return capabilities.supportsMultiDisplay && !sessionCoordinator.appStreamingOnlySession
+    }
+    #endif
+
+    private var streamLibrary: some View {
+        let apps = libraryApps
+        return VStack(alignment: .leading, spacing: 0) {
+            StreamLibraryHeader(macName: macName, onClose: onClose)
+            VStack(spacing: 14) {
+                VampAppSearchField(text: $searchText)
+                StreamLibraryFilters(selection: $libraryFilter)
             }
-            .padding(.horizontal, AppHostMetrics.screenInset)
-            .padding(.top, AppSpacing.lg)
-            .padding(.bottom, AppSpacing.sm)
-
-            VampAppSearchField(text: $searchText)
-                .padding(.horizontal, AppHostMetrics.screenInset)
-                .padding(.bottom, AppSpacing.sm)
+            .padding(.horizontal, StreamDesign.inset)
+            .padding(.bottom, 10)
+            if isViewOnly {
+                VampStreamViewOnlyNotice()
+                    .padding(.horizontal, StreamDesign.inset)
+                    .padding(.vertical, 12)
+            }
             ScrollView {
-                LazyVStack(spacing: AppHostMetrics.cardGap) {
+                LazyVStack(spacing: 12) {
                     if let reason = bannerReason { banner(reason) }
-
                     if vm.applications.isEmpty {
                         loadingOrEmpty
+                    } else if apps.isEmpty {
+                        StreamLibraryEmptyState(filter: libraryFilter, isSearching: !searchText.isEmpty)
                     } else {
-                        if !favorites.isEmpty { section("Favorites", favorites) }
-                        if searchText.isEmpty, !recent.isEmpty { section("Recent", recent) }
-                        if matchingApps.isEmpty {
-                            VampStreamAppListEmptyHint(title: "No apps match")
+                        StreamLibrarySectionHeading(title: libraryFilter == .all ? "On your Mac" : libraryFilter.title,
+                                                    count: apps.count)
+                        LazyVStack(spacing: 0) {
+                            ForEach(apps) { app in
+                                appRow(app)
+                                if app.id != apps.last?.id {
+                                    Rectangle().fill(StreamDesign.line).frame(height: 0.5).padding(.leading, 80)
+                                }
+                            }
                         }
-                        if !running.isEmpty {
-                            section("Running", running)
-                        }
-                        if !installed.isEmpty {
-                            section("All Apps", installed)
-                        }
+                        .appQuietSurface(isInteractive: true)
+                        Text("Touch and hold an app for windows and favorites.")
+                            .font(.caption).foregroundStyle(StreamDesign.secondary)
+                            .padding(.top, 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 24)
+                .padding(.horizontal, StreamDesign.inset)
+                .padding(.bottom, 28)
             }
             .scrollDismissesKeyboard(.interactively)
             .refreshable { vm.requestApplicationList() }
         }
+        .frame(maxWidth: StreamDesign.maxWidth)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    }
-
-    /// One quiet grouped surface per section with inset separators, matching the Assistant picker
-    /// so the two providers do not look like separate mini-apps. Sentence-case headings instead of
-    /// wide all-caps utility labels.
-    private func section(_ title: String, _ apps: [RemoteApplication]) -> some View {
-        VStack(alignment: .leading, spacing: AppSpacing.xs) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(PR.fg2)
-                .padding(.horizontal, 4)
-                .padding(.top, 6)
-                .accessibilityAddTraits(.isHeader)
-            // Stays lazy: "All Apps" can hold hundreds of installed applications, and an eager
-            // VStack would build every row up front.
-            LazyVStack(spacing: 0) {
-                ForEach(Array(apps.enumerated()), id: \.element.id) { index, app in
-                    if index > 0 {
-                        Divider()
-                            .padding(.leading, AppHostMetrics.cardPadding + AppHostMetrics.appIcon + AppSpacing.sm)
-                    }
-                    appRow(app)
-                }
-            }
-            .appQuietSurface(isInteractive: true)
-        }
     }
 
     private func appRow(_ app: RemoteApplication) -> some View {
@@ -343,7 +374,7 @@ struct AppStreamBrowserView: View {
                    systemImage: favoriteIDs.contains(app.id) ? "star.slash" : "star") {
                 favoriteStorage = AppStreamAppShortlists.toggled(app.id, in: favoriteStorage)
             }
-            if app.isRunning, ApplicationClosePolicy.canClose(app.bundleIdentifier) {
+            if !isViewOnly, app.isRunning, ApplicationClosePolicy.canClose(app.bundleIdentifier) {
                 Button("Close \(app.name)", systemImage: "xmark.app", role: .destructive) {
                     closeChoice = app
                 }
@@ -368,14 +399,14 @@ struct AppStreamBrowserView: View {
                 .foregroundStyle(PR.fg)
         }
         .padding(14)
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
+        .streamGlass()
     }
 
     @ViewBuilder private var loadingOrEmpty: some View {
         VampStreamAppListEmptyHint(
-            title: vmIsLoading ? "Loading applications…" : "No applications found",
+            title: vmIsLoading ? "Loading applications…" : (bannerReason == nil ? "No applications found" : "Couldn’t load applications"),
             isLoading: vmIsLoading,
-            actionTitle: vmIsLoading ? nil : "Refresh",
+            actionTitle: vmIsLoading ? nil : (bannerReason == nil ? "Refresh" : "Retry"),
             action: vmIsLoading ? nil : { vm.requestApplicationList() }
         )
     }
@@ -387,7 +418,19 @@ struct AppStreamBrowserView: View {
 
     // MARK: - Launching / streaming
 
-    private func launching(name: String) -> some View {
+    @ViewBuilder private func launching(name: String) -> some View {
+        #if VAMP_CONTROL_APP
+        if chrome == .control {
+            ControlAppLaunching(name: name) { vm.backToApps() }
+        } else {
+            streamLaunching(name: name)
+        }
+        #else
+        streamLaunching(name: name)
+        #endif
+    }
+
+    private func streamLaunching(name: String) -> some View {
         VStack(spacing: 16) {
             ProgressView().tint(PR.fg).controlSize(.large)
             Text("Launching \(name)…")
@@ -396,7 +439,7 @@ struct AppStreamBrowserView: View {
             VampGlassActionButton(title: "Cancel", action: { vm.backToApps() })
         }
         .padding(22)
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
+        .streamGlass()
         .padding(.horizontal, 28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -432,7 +475,7 @@ struct AppStreamBrowserView: View {
                     // pipeline as Vamp Control. Coordinates map through the streamed window's
                     // synthetic display descriptor (see configureInteraction).
                     AppStreamGestureView(
-                        allowsViewportAdjustment: adjustsViewport,
+                        allowsViewportAdjustment: adjustsViewport || isViewOnly,
                         viewportZoom: viewportZoom,
                         viewportOffset: viewportOffset,
                         viewSize: picture,
@@ -498,12 +541,13 @@ struct AppStreamBrowserView: View {
                         // picture is magnified. It sits inside the picture's frame, before
                         // the anchoring below, so a cover-crop cannot offset it.
                         if usesLocalCursor {
-                            LocalCursorOverlay(cursor: cursorModel, contentZoom: viewportZoom)
+                            LocalCursorOverlay(cursor: cursorModel, contentZoom: viewportZoom,
+                                               pointsPerDesktopPoint: input.cursorViewPointsPerDesktopPoint)
                                 .scaleEffect(viewportZoom, anchor: .center)
                                 .offset(viewportOffset)
                         }
                     }
-                    .allowsHitTesting(!keyboardActive && !annotationStore.isVisible && canInteract)
+                    .allowsHitTesting(!keyboardActive && !annotationStore.isVisible && isVideoReady)
                     // Placement happens last: covering makes the picture's height exactly the
                     // surface's, so it cannot creep under the deck that sits at that edge.
                     .frame(width: videoArea.width, height: videoArea.height, alignment: .top)
@@ -553,7 +597,7 @@ struct AppStreamBrowserView: View {
                         // deck's height changes.
                         .padding(
                             .bottom,
-                            AppStreamChromeBar.reservedBand(safeAreaBottom: 0) + AppSpacing.xs)
+                            AppStreamChromeBar.reservedBand(safeAreaBottom: 0, height: deckHeight) + AppSpacing.xs)
                         .allowsHitTesting(false)
                         .transition(.opacity)
                 }
@@ -668,7 +712,7 @@ struct AppStreamBrowserView: View {
             Text("Balanced").tag("auto")
             Text("Lower bandwidth").tag("performance")
         }
-        if let streamed = vm.streamedApplication,
+        if !isViewOnly, let streamed = vm.streamedApplication,
            ApplicationClosePolicy.canClose(streamed.bundleIdentifier) {
             Button("Close \(streamed.name)", systemImage: "xmark.app", role: .destructive) {
                 closeChoice = streamed
@@ -685,6 +729,8 @@ struct AppStreamBrowserView: View {
             sessionCoordinator.requestKeyframeRefresh(reason: "User requested video refresh")
         }
         Button("Reconnect", systemImage: "wifi") { Task { await sessionCoordinator.reconnectLast() } }
+        Divider()
+        Button("Disconnect from Mac", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive, action: onClose)
     }
 
     /// Floating reset for the local zoom/pan, drawn like the Assistant surface's floating
@@ -713,78 +759,94 @@ struct AppStreamBrowserView: View {
         .accessibilityValue("Currently zoomed to \(Int(viewportZoom * 100)) percent")
     }
 
-    /// The bottom control deck, drawn as the Vamp Assistant control bar: a machined pearl
-    /// housing of keycap controls in the Assistant's order — close, apps, markup, keyboard,
-    /// adjust view, Mac-window sizing, options, divider, hide. There is no separate top bar.
+    /// The same floating glass dock as the Assistant path: apps, markup, keyboard, view,
+    /// sizing and options. Disconnect lives in the options menu; hide stays pinned.
     ///
     /// The sizing cluster is deliberately *two* choices — Adaptive resize and Original Size.
     /// Local picture modes (fit/fill, zoom presets) were removed: they never fixed a window the
     /// Mac had not reshaped, and four sizing-looking controls in one deck made it unclear which
     /// one actually changed the Mac.
-    private var streamChromePill: some View {
-        AppStreamChromePill {
-            AppStreamChromeButton(
-                systemName: "xmark",
-                isDestructive: true,
-                accessibilityLabel: "Close remote control",
-                action: onClose)
+    /// Vamp Control's dock shows a caption under each control; Vamp Stream keeps compact glyphs.
+    private var labelsChrome: Bool { chrome == .control }
 
-            AppStreamChromeButton(
-                systemName: "chevron.left",
-                accessibilityLabel: "Apps",
-                accessibilityValue: "Back to the Mac app list"
-            ) {
-                vm.backToApps()
+    private var deckHeight: CGFloat {
+        labelsChrome ? AppStreamChromeBar.labelledHeight : AppStreamChromeBar.height
+    }
+
+    private var streamChromePill: some View {
+        AppStreamChromePill(height: deckHeight) {
+            // Vamp Control gets a labelled way back; Vamp Stream keeps its established glyph.
+            if chrome == .control {
+                AppStreamChromeBackButton(title: "Apps") {
+                    vm.backToApps()
+                }
+            } else {
+                AppStreamChromeButton(
+                    systemName: "square.grid.2x2",
+                    accessibilityLabel: "Apps",
+                    accessibilityValue: "Back to the Mac app list"
+                ) {
+                    vm.backToApps()
+                }
             }
 
             AppStreamChromeButton(
                 systemName: annotationStore.isVisible ? "pencil.slash" : "pencil.tip",
                 isActive: annotationStore.isVisible,
                 accessibilityLabel: "Markup",
-                accessibilityValue: annotationStore.isVisible ? "On" : "Off"
+                accessibilityValue: annotationStore.isVisible ? "On" : "Off",
+                title: labelsChrome ? "Markup" : nil
             ) {
                 annotationStore.isVisible.toggle()
             }
 
-            AppStreamChromeButton(
-                systemName: keyboardActive ? "keyboard.chevron.compact.down" : "keyboard",
-                isActive: keyboardActive,
-                accessibilityLabel: keyboardActive ? "Hide remote keyboard" : "Show remote keyboard",
-                accessibilityValue: keyboardActive ? "Visible" : "Hidden"
-            ) {
-                if !keyboardActive, isStreamingTerminal { input.focusTerminal() }
-                keyboardActive.toggle()
+            if !isViewOnly {
+                AppStreamChromeButton(
+                    systemName: keyboardActive ? "keyboard.chevron.compact.down" : "keyboard",
+                    isActive: keyboardActive,
+                    accessibilityLabel: keyboardActive ? "Hide remote keyboard" : "Show remote keyboard",
+                    accessibilityValue: keyboardActive ? "Visible" : "Hidden",
+                    title: labelsChrome ? "Keyboard" : nil
+                ) {
+                    if !keyboardActive, isStreamingTerminal { input.focusTerminal() }
+                    keyboardActive.toggle()
+                }
             }
 
             AppStreamChromeButton(
                 systemName: adjustsViewport ? "checkmark" : "viewfinder",
                 isActive: adjustsViewport,
                 accessibilityLabel: adjustsViewport ? "Done adjusting" : "Adjust view",
-                accessibilityValue: adjustsViewport ? "Adjusting" : "Controlling"
+                accessibilityValue: adjustsViewport ? "Adjusting" : (isViewOnly ? "View Only" : "Controlling"),
+                title: labelsChrome ? (adjustsViewport ? "Done" : "Adjust") : nil
             ) {
                 if input.dragLocked { input.releaseDragLock() }
                 adjustsViewport.toggle()
             }
 
-            AppStreamChromeMenu(
-                systemName: "aspectratio",
-                isActive: vm.sizingMode == .original,
-                isDimmed: !vm.supportsAdaptiveSizing,
-                accessibilityLabel: "Mac window sizing",
-                accessibilityValue: vm.sizingMode == .adaptive ? "Adaptive resize" : "Original Size"
-            ) {
-                Button("Adaptive resize", systemImage: "rectangle.arrowtriangle.2.inward") {
-                    vm.setSizingMode(.adaptive)
-                }
-                Button("Original Size", systemImage: "arrow.up.left.and.arrow.down.right") {
-                    vm.setSizingMode(.original)
+            if !isViewOnly {
+                AppStreamChromeMenu(
+                    systemName: "aspectratio",
+                    isActive: vm.sizingMode == .original,
+                    isDimmed: !vm.supportsAdaptiveSizing,
+                    accessibilityLabel: "Mac window sizing",
+                    accessibilityValue: vm.sizingMode == .adaptive ? "Adaptive resize" : "Original Size",
+                    title: labelsChrome ? "Size" : nil
+                ) {
+                    Button("Adaptive resize", systemImage: "rectangle.arrowtriangle.2.inward") {
+                        vm.setSizingMode(.adaptive)
+                    }
+                    Button("Original Size", systemImage: "arrow.up.left.and.arrow.down.right") {
+                        vm.setSizingMode(.original)
+                    }
                 }
             }
 
             AppStreamChromeMenu(
                 systemName: input.dragLocked ? "lock.fill" : "ellipsis",
                 isActive: input.dragLocked,
-                accessibilityLabel: input.dragLocked ? "Stream options, drag lock on" : "Stream options"
+                accessibilityLabel: input.dragLocked ? "Stream options, drag lock on" : "Stream options",
+                title: labelsChrome ? "More" : nil
             ) {
                 streamOptionsMenu
             }
@@ -795,7 +857,8 @@ struct AppStreamBrowserView: View {
             AppStreamChromeButton(
                 systemName: "eye.slash",
                 isDimmed: true,
-                accessibilityLabel: "Hide controls"
+                accessibilityLabel: "Hide controls",
+                title: labelsChrome ? "Hide" : nil
             ) {
                 withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82)) {
                     keyboardActive = false
@@ -817,15 +880,15 @@ struct AppStreamBrowserView: View {
     /// laid out underneath it. Reserving the band keeps the streamed app's own bottom controls (a
     /// send button, a toolbar) clear of the deck, and makes the Mac match the area the picture is
     /// actually drawn in instead of one taller than the phone can show.
-    private static func controlDeckBand(safeAreaBottom: CGFloat) -> CGFloat {
-        AppStreamChromeBar.reservedBand(safeAreaBottom: safeAreaBottom)
+    private func controlDeckBand(safeAreaBottom: CGFloat) -> CGFloat {
+        AppStreamChromeBar.reservedBand(safeAreaBottom: safeAreaBottom, height: deckHeight)
     }
 
     /// The unobstructed part of the surface: the area the streamed picture may occupy.
     private func videoViewport(in size: CGSize, safeAreaBottom: CGFloat) -> CGSize {
         CGSize(
             width: max(size.width, 1),
-            height: max(size.height - Self.controlDeckBand(safeAreaBottom: safeAreaBottom), 1))
+            height: max(size.height - controlDeckBand(safeAreaBottom: safeAreaBottom), 1))
     }
 
     /// How the streamed picture is sized and anchored inside `area`, and therefore the geometry
@@ -947,82 +1010,43 @@ private struct AppStreamLockedStateView: View {
             VStack(spacing: 16) {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 42, weight: .light))
-                    .foregroundStyle(PR.accent)
+                    .foregroundStyle(StreamDesign.accent)
 
                 Text("Mac is locked")
-                    .font(.title3.weight(.semibold))
+                    .font(.largeTitle.weight(.medium))
                     .foregroundStyle(PR.fg)
 
-                Text("Enter your Mac login password to unlock remotely. Vamp Stream will load your applications when the Mac unlocks.")
+                Text(sessionCoordinator.canOfferRemoteUnlock ? "Enter your Mac login password to unlock remotely." : "Unlock your Mac in person to view its app windows here.")
                     .font(.subheadline)
-                    .foregroundStyle(PR.fg2)
+                    .foregroundStyle(StreamDesign.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 340)
 
-                SecureField("Password", text: $password)
-                    .textContentType(.password)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.go)
-                    .privacySensitive()
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .foregroundStyle(PR.fg)
-                    .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
-                    .frame(maxWidth: 340)
-                    .onSubmit(submitUnlock)
-                    .accessibilityLabel("Mac login password")
-
-                Button(action: submitUnlock) {
-                    HStack(spacing: 8) {
-                        if isSubmitting {
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(PR.bg)
-                        }
-                        Text(isSubmitting ? "Unlocking…" : "Unlock")
-                    }
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(PR.bg)
-                    .frame(maxWidth: 312)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous)
-                            .fill(PR.fg)
-                    )
-                }
-                .buttonStyle(PRGlassPressButtonStyle())
-                .disabled(password.isEmpty || isSubmitting)
-                .opacity(password.isEmpty || isSubmitting ? 0.4 : 1)
-
-                Text("Turn on Remote Unlock in Vamp Sync on your Mac.")
-                    .font(.caption)
-                    .foregroundStyle(PR.dim)
-
-                HStack(spacing: 12) {
-                    Button("Check connection") {
-                        sessionCoordinator.sendConnectionProbe()
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(PR.fg)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .prGlassSurface(
-                        in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous),
-                        isInteractive: true
-                    )
-                    .buttonStyle(PRGlassPressButtonStyle())
-
-                    Button("Disconnect", action: onDisconnect)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(PR.fg)
-                        .frame(maxWidth: .infinity)
+                if sessionCoordinator.canOfferRemoteUnlock {
+                    SecureField("Password", text: $password)
+                        .textContentType(.password)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.go)
+                        .privacySensitive()
+                        .padding(.horizontal, 14)
                         .padding(.vertical, 12)
-                        .prGlassSurface(
-                            in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous),
-                            isInteractive: true
-                        )
-                        .buttonStyle(PRGlassPressButtonStyle())
+                        .foregroundStyle(PR.fg)
+                        .streamGlass(radius: 20)
+                        .frame(maxWidth: 340)
+                        .onSubmit(submitUnlock)
+                        .accessibilityLabel("Mac login password")
+
+                    StreamPrimaryButton(title: isSubmitting ? "Unlocking…" : "Unlock Mac", symbol: "lock.open", isDisabled: password.isEmpty || isSubmitting, action: submitUnlock)
+                        .frame(maxWidth: 340)
+
+                    Text("Turn on Remote Unlock in \(VampProductIdentity.syncName) on your Mac.")
+                        .font(.caption)
+                        .foregroundStyle(StreamDesign.secondary)
+                }
+                VStack(spacing: 12) {
+                    VampGlassActionButton(title: "Check connection", systemImage: "arrow.clockwise") { sessionCoordinator.sendConnectionProbe() }
+                    VampGlassActionButton(title: "Back to Macs", systemImage: "chevron.left", action: onDisconnect)
                 }
                 .frame(maxWidth: 340)
             }
@@ -1035,7 +1059,7 @@ private struct AppStreamLockedStateView: View {
     }
 
     private func submitUnlock() {
-        guard !password.isEmpty, !isSubmitting else { return }
+        guard sessionCoordinator.canOfferRemoteUnlock, !password.isEmpty, !isSubmitting else { return }
         isSubmitting = true
         let submittedPassword = password
         password = ""
@@ -1051,7 +1075,7 @@ private struct AppStreamLockedStateView: View {
 /// One app row. Compact, on a quiet grouped surface, with a consistent icon/name/context/affordance
 /// column layout. The supplied icon is drawn at its own aspect inside a fixed box — never stretched
 /// — and gets no ornamental frame of its own.
-private struct AppStreamApplicationRow: View {
+struct AppStreamApplicationRow: View {
     let application: RemoteApplication
     let isFavorite: Bool
     let onOpen: () -> Void
@@ -1120,12 +1144,12 @@ private struct AppStreamApplicationRow: View {
                     Text(application.name)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(PR.fg)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let contextLine {
                         Text(contextLine)
                             .font(.caption)
                             .foregroundStyle(PR.fg2)
-                            .lineLimit(1)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1133,7 +1157,7 @@ private struct AppStreamApplicationRow: View {
                 if isFavorite {
                     Image(systemName: "star.fill")
                         .font(.caption)
-                        .foregroundStyle(PR.accent)
+                        .foregroundStyle(StreamDesign.accent)
                         .accessibilityLabel("Favorite")
                 }
                 if hasWindowChoices {
@@ -1150,7 +1174,8 @@ private struct AppStreamApplicationRow: View {
         }
         .buttonStyle(PRGlassPressButtonStyle())
         .accessibilityLabel(application.name)
-        .accessibilityValue(contextLine ?? "Installed")
+        .accessibilityValue(Text(verbatim: contextLine ?? String(localized: "Installed"))
+            + (isFavorite ? Text(", Favorite") : Text("")))
         .accessibilityHint(
             hasWindowChoices
                 ? "Opens the app. Long-press for more actions, including choosing a window."
@@ -1158,164 +1183,5 @@ private struct AppStreamApplicationRow: View {
     }
 }
 
-/// Read frame freshness at render time, rather than caching a stale Boolean between polls.
-enum AppStreamVideoHealth {
-    static func isStalled(lastDecodedAt: TimeInterval?, now: TimeInterval) -> Bool {
-        guard let lastDecodedAt else { return true }
-        return now - lastDecodedAt > 5
-    }
-
-    static func needsRecovery(lastDecodedAt: TimeInterval?, startedAt: TimeInterval, now: TimeInterval) -> Bool {
-        now - startedAt > 5 && isStalled(lastDecodedAt: lastDecodedAt, now: now)
-    }
-}
-
-struct AppStreamVideoRecoveryBar: View {
-    let onRetry: () -> Void
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                Label("Video delayed", systemImage: "wifi.exclamationmark")
-                    .font(.subheadline)
-                Spacer(minLength: 8)
-                Button("Retry video", action: onRetry)
-                    .font(.subheadline.weight(.semibold))
-                    .frame(minHeight: 44)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Label("Video delayed", systemImage: "wifi.exclamationmark")
-                Button("Retry video", action: onRetry).frame(minHeight: 44)
-            }
-            .font(.subheadline)
-        }
-        .padding(.horizontal, 14)
-        .frame(maxWidth: 560)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: PR.rCard))
-    }
-}
-
-struct AppStreamGestureHelpView: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    Text("Your Mac, at your fingertips.")
-                        .font(.subheadline)
-                        .foregroundStyle(PR.fg2)
-                    AppStreamControlHelpSection()
-                    AppStreamPictureHelpSection()
-                }
-                .frame(maxWidth: 560)
-                .padding(20)
-                .frame(maxWidth: .infinity)
-            }
-            .background(PR.bg.ignoresSafeArea())
-            .navigationTitle("Stream controls")
-            .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                // Styled inside the label with a plain style: styling the Button from outside let
-                // the system's default button treatment render the solid fill as a washed-out grey.
-                Button { dismiss() } label: {
-                    Text("Done")
-                        .font(.headline)
-                        .foregroundStyle(PR.bg)
-                        .frame(maxWidth: 560, minHeight: AppHostMetrics.controlHeight)
-                        .background(
-                            PR.fg,
-                            in: RoundedRectangle(cornerRadius: AppHostMetrics.controlRadius, style: .continuous))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, AppHostMetrics.screenInset)
-                .padding(.vertical, AppSpacing.sm)
-                .background(.regularMaterial)
-            }
-        }
-        // Uses the app's own surfaces, so it follows the chosen appearance like everything else.
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-    }
-}
-
-private struct AppStreamControlHelpSection: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Control the Mac")
-                .font(.title3.weight(.semibold))
-                .accessibilityAddTraits(.isHeader)
-            VStack(spacing: 20) {
-                AppStreamHelpRow(symbol: "hand.tap", title: "Click", detail: "Tap once to click. Tap twice to double-click.")
-                AppStreamHelpRow(symbol: "hand.point.up.left", title: "Right-click", detail: "Tap with two fingers.")
-                AppStreamHelpRow(symbol: "arrow.up.arrow.down", title: "Scroll", detail: "Slide two fingers up or down.")
-                AppStreamHelpRow(symbol: "hand.draw", title: "Drag", detail: "Touch and hold, then move. Lift to release.")
-                AppStreamHelpRow(symbol: "keyboard", title: "Type", detail: "Tap the keyboard button to type in the Mac app.")
-            }
-            .padding(AppHostMetrics.cardPadding)
-            .background(
-                PR.card,
-                in: RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous)
-                    .strokeBorder(PR.border, lineWidth: 1))
-        }
-    }
-}
-
-private struct AppStreamPictureHelpSection: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Adjust the picture")
-                .font(.title3.weight(.semibold))
-                .accessibilityAddTraits(.isHeader)
-            VStack(spacing: 20) {
-                AppStreamHelpRow(symbol: "viewfinder", title: "Zoom and move", detail: "Tap Adjust view, then pinch to zoom or drag to move the picture.")
-                AppStreamHelpRow(symbol: "checkmark", title: "Return to control", detail: "Tap the checkmark when you’re done adjusting.")
-                AppStreamHelpRow(symbol: "1.circle", title: "Back to actual size", detail: "Tap 1× at the top to undo any zoom and re-centre the picture.")
-                AppStreamHelpRow(symbol: "aspectratio", title: "Reshape the Mac window", detail: "Use the sizing button in the bottom bar: Adaptive resize fits the window to your phone, Original Size leaves it as it is on the Mac.")
-            }
-            .padding(AppHostMetrics.cardPadding)
-            .background(
-                PR.card,
-                in: RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: AppHostMetrics.cardRadius, style: .continuous)
-                    .strokeBorder(PR.border, lineWidth: 1))
-            Text("Adjust view and 1× move the picture on this device. Only the sizing button changes the window on the Mac.")
-                .font(.footnote)
-                .foregroundStyle(PR.fg2)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
-private struct AppStreamHelpRow: View {
-    let symbol: String
-    let title: LocalizedStringKey
-    let detail: LocalizedStringKey
-    @ScaledMetric(relativeTo: .body) private var iconSize = 24
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: symbol)
-                .font(.system(size: iconSize, weight: .medium))
-                .foregroundStyle(PR.fg)
-                .frame(width: iconSize + 8, height: iconSize + 8)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.headline)
-                Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(PR.fg2)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
 
 #endif

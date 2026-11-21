@@ -4737,6 +4737,7 @@
         }
       }
     },
+    "Couldn’t load applications": {},
     "Data": {
       "extractionState": "stale",
       "localizations": {

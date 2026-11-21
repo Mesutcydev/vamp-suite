@@ -39,7 +39,7 @@ bundle_ids = {
     "vamp-terminal": "com.mesutcy.remotedesktop.terminal",
     "vamp-host": "com.mesutcy.remotedesktop.host",
     "vamp-terminal-host": "com.mesutcy.remotedesktop.terminalhost",
-    "vamp-mini-host": "com.mesutcy.remotedesktop.minhost",
+    "vamp-mini-host": "com.mesutcy.remotedesktop.host",
     "vamp-stream-ios": "com.mesutcy.remotedesktop.stream",
     "vamp-control-ios": "com.mesutcy.remotedesktop.ios",
     "vamp-control-macos": "com.mesutcy.remotedesktop.macclient",
@@ -94,6 +94,14 @@ if component in {"vamp-terminal", "vamp-stream-ios"}:
         }
     )
 
+if component == "vamp-mini-host":
+    dependencies.append({
+        "type": "library", "group": "github.com/sparkle-project",
+        "name": "Sparkle", "version": "2.10.0",
+        "bom-ref": "pkg:github/sparkle-project/Sparkle@2.10.0",
+        "licenses": [{"license": {"id": "MIT"}}],
+    })
+
 payload = {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
@@ -118,8 +126,8 @@ payload = {
         },
         "properties": [
             {"name": "vamp:sourceCommit", "value": commit},
-            {"name": "vamp:codeSignature", "value": signatures[component]},
-            {"name": "vamp:appleNotarized", "value": "false"},
+            {"name": "vamp:codeSignature", "value": os.environ.get("VAMP_ARTIFACT_SIGNATURE", signatures[component])},
+            {"name": "vamp:appleNotarized", "value": os.environ.get("VAMP_ARTIFACT_NOTARIZED", "false")},
         ],
     },
     "components": dependencies,

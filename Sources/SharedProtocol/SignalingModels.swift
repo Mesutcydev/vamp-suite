@@ -11,6 +11,8 @@ public enum SignalingMessageKind: String, Codable, Hashable, Sendable {
     case reconnecting
     case displayLayoutChanged
     case streamRestartRequired
+    case hostKeyRequest
+    case hostKeyBundle
 }
 
 public struct SignalingPeer: Codable, Hashable, Sendable {
@@ -98,6 +100,11 @@ public enum SignalingEvent: Codable, Hashable, Sendable {
     case reconnecting(ReconnectingMessage)
     case displayLayoutChanged(DisplayLayoutChangedMessage)
     case streamRestartRequired(StreamRestartRequiredMessage)
+    /// Signed key exchange that precedes the offer. Peers that predate it fail
+    /// to decode these two events and skip them, which is what lets an updated
+    /// client detect an older host by the missing reply.
+    case hostKeyRequest(HostKeyRequestMessage)
+    case hostKeyBundle(SignedHostKeyBundle)
 
     public var kind: SignalingMessageKind {
         switch self {
@@ -119,6 +126,10 @@ public enum SignalingEvent: Codable, Hashable, Sendable {
             return .displayLayoutChanged
         case .streamRestartRequired:
             return .streamRestartRequired
+        case .hostKeyRequest:
+            return .hostKeyRequest
+        case .hostKeyBundle:
+            return .hostKeyBundle
         }
     }
 }

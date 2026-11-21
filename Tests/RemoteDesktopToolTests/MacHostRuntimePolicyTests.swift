@@ -6,6 +6,35 @@ import XCTest
 /// a light host must never expose remote input, unlock, or screen capture no
 /// matter what a peer requests. These tests pin that contract.
 final class MacHostRuntimePolicyTests: XCTestCase {
+    func testStoreRestrictionsApplyWithoutSandboxEnvironment() {
+        let policy = MacHostRuntimePolicy.resolved(distributionChannel: "app-store", environment: [:])
+        XCTAssertFalse(policy.supportsRemoteInput)
+        XCTAssertFalse(policy.canRequestAccessibilityPermission)
+        XCTAssertFalse(policy.supportsApplicationManagement)
+        XCTAssertFalse(policy.supportsWindowResizing)
+        XCTAssertFalse(policy.supportsTerminalSessions)
+        XCTAssertFalse(policy.supportsBrowserControl)
+        XCTAssertTrue(policy.supportsScreenCapture)
+        XCTAssertEqual(policy.enforcedSessionMode, .viewOnly)
+    }
+
+    func testWebsiteLabelCannotOverrideActualSandbox() {
+        let policy = MacHostRuntimePolicy.resolved(
+            distributionChannel: "website", environment: ["APP_SANDBOX_CONTAINER_ID": "test-container"])
+        XCTAssertFalse(policy.supportsRemoteInput)
+        XCTAssertFalse(policy.supportsApplicationManagement)
+        XCTAssertEqual(policy.enforcedSessionMode, .viewOnly)
+    }
+
+    func testWebsiteBuildPreservesControlAndUpdateCapabilities() {
+        let policy = MacHostRuntimePolicy.resolved(distributionChannel: "website", environment: [:])
+        XCTAssertTrue(policy.supportsRemoteInput)
+        XCTAssertTrue(policy.supportsWindowResizing)
+        XCTAssertTrue(policy.supportsApplicationManagement)
+        XCTAssertTrue(policy.supportsTerminalSessions)
+        XCTAssertTrue(policy.supportsBrowserControl)
+    }
+
     func testFullDirectDistributionHostEnablesEverything() {
         let policy = MacHostRuntimePolicy(isSandboxedDistribution: false, isTerminalOnly: false)
         XCTAssertTrue(policy.supportsRemoteInput)

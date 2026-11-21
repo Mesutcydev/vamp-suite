@@ -78,5 +78,5 @@ local development artifact. Outputs are written to `dist/VampStream/` and
 `dist/VampStreamHost/`.
 
 The Sync scheme and bundle ID retain `VampMiniHost` and
-`com.mesutcy.remotedesktop.minhost` for compatibility. The app name is Vamp Sync.
+`com.mesutcy.remotedesktop.host` for compatibility. The app name is Vamp Sync.
 Specialist Terminal and Linux instructions remain in their own guides.

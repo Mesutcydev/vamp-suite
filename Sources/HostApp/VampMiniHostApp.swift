@@ -7,22 +7,26 @@ import SharedModels
 import SharedUtilities
 import Permissions
 
-/// Storage used by the standalone Vamp Sync product. The legacy directory is
-/// intentionally retained so existing trust data remains upgrade-compatible.
-///
-/// The mini host deliberately does not share the full host's identity or peer
-/// list. Installing it should create a separate trust boundary, even though
-/// both products use the same signed signaling and authenticated transport.
-// Keep the legacy storage path so an app rename preserves existing trusted peers.
+/// The store edition updates Vamp Host in its existing sandbox and retains its
+/// identity and peer list. The website edition keeps its separate Sync identity.
 private enum VampMiniHostStorage {
-    static let identityTag = "com.mesutcy.remotedesktop.minhost.p256"
+    #if VAMP_APP_STORE
+    static let identityTag = "com.remotedesktop.host.p256"
+    #else
+    // The website edition is the old Vamp Host's successor on the same bundle ID, so it keeps that identity.
+    static let identityTag = "com.remotedesktop.host.p256"
+    #endif
 
     static var trustedPeerDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        return base
+        let directory = base
             .appendingPathComponent("RemoteDesktopTool", isDirectory: true)
-            .appendingPathComponent("Vamp Mini Host", isDirectory: true)
+        #if VAMP_APP_STORE
+        return directory
+        #else
+        return directory.appendingPathComponent("Vamp Mini Host", isDirectory: true)
+        #endif
     }
 }
 
@@ -48,17 +52,20 @@ struct VampMiniHostApp: App {
 }
 
 @MainActor
-private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSMenuItemValidation {
     private var environment: HostAppEnvironment?
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var phaseObserver: AnyCancellable?
     private var trustPromptObserver: AnyCancellable?
     private var permissionObserver: AnyCancellable?
+    private let updater = VampSyncUpdater()
     private weak var statusDotView: VampSyncMenuBarStatusDotView?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        HostWatchdogInstaller.removeLegacyAgent()
         NSApp.setActivationPolicy(.accessory)
+        updater.start()
         startRuntimeWhenReady(attempt: 0)
     }
 
@@ -91,7 +98,7 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
         if let button = item.button {
             button.image = statusImage(for: environment.sessionCoordinator.phase)
             button.image?.isTemplate = true
-            button.toolTip = "Vamp Sync"
+            button.toolTip = "\(VampProductIdentity.syncName)"
             button.target = self
             button.action = #selector(statusItemPressed(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -117,6 +124,7 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
         let controller = NSHostingController(
             rootView: VampSyncCompanionPopover(
                 environment: environment,
+                updater: updater,
                 onClose: { [weak self] in self?.closePopover() }
             )
         )
@@ -163,7 +171,7 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
             context.fillPath(using: .evenOdd)
             return true
         }
-        image.accessibilityDescription = phase == .error ? "Vamp Sync needs attention" : "Vamp Sync"
+        image.accessibilityDescription = phase == .error ? "\(VampProductIdentity.syncName) needs attention" : "\(VampProductIdentity.syncName)"
         image.isTemplate = true
         return image
     }
@@ -239,8 +247,8 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
     }
 
     private func makeContextMenu() -> NSMenu {
-        let menu = NSMenu(title: "Vamp Sync")
-        addMenuItem("Open Vamp Sync", action: #selector(openPopover), to: menu)
+        let menu = NSMenu(title: "\(VampProductIdentity.syncName)")
+        addMenuItem("Open \(VampProductIdentity.syncName)", action: #selector(openPopover), to: menu)
 
         let status = NSMenuItem(title: "Status: \(statusMenuTitle)", action: nil, keyEquivalent: "")
         status.isEnabled = false
@@ -256,10 +264,20 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
         menu.addItem(.separator())
 
         addMenuItem("Screen Recording Settings…", action: #selector(openScreenRecordingSettings), to: menu)
-        addMenuItem("Accessibility Settings…", action: #selector(openAccessibilitySettings), to: menu)
+        #if VAMP_APP_STORE
+        addMenuItem("Get the Full-Control Website Edition…", action: #selector(openWebsiteEdition), to: menu)
+        #endif
+        if environment?.runtimePolicy.canRequestAccessibilityPermission == true {
+            addMenuItem("Accessibility Settings…", action: #selector(openAccessibilitySettings), to: menu)
+        }
         menu.addItem(.separator())
 
-        addMenuItem("Quit Vamp Sync", action: #selector(quitApp), keyEquivalent: "q", to: menu)
+        let checkForUpdates = NSMenuItem(title: VampSyncUpdater.usesStoreUpdates ? "App Store Updates…" : "Check for Updates…", action: #selector(checkForUpdatesFromMenu), keyEquivalent: "")
+        checkForUpdates.target = self
+        menu.addItem(checkForUpdates)
+        menu.addItem(.separator())
+
+        addMenuItem("Quit \(VampProductIdentity.syncName)", action: #selector(quitApp), keyEquivalent: "q", to: menu)
         return menu
     }
 
@@ -307,6 +325,7 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
 
     @objc private func toggleRuntime() {
         guard let environment else { return }
+        if isRuntimeActive, !confirmEndingClientSession(verb: "Stop") { return }
         Task {
             if isRuntimeActive {
                 await environment.stopRuntime()
@@ -318,10 +337,23 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
 
     @objc private func restartRuntime() {
         guard let environment else { return }
+        guard confirmEndingClientSession(verb: "Restart") else { return }
         Task {
             await environment.stopRuntime()
             await environment.startRuntimeIfNeeded()
         }
+    }
+
+    /// Stopping or restarting while a device is connected ends its session, so ask first.
+    private func confirmEndingClientSession(verb: String) -> Bool {
+        guard let environment, environment.sessionCoordinator.connectedClientName != nil else { return true }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "\(verb) Vamp Sync?"
+        alert.informativeText = "The connected device will be disconnected."
+        alert.addButton(withTitle: verb)
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     @objc private func copyPairingAddress() {
@@ -349,8 +381,29 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
         Task { await environment.permissionsViewModel.openSettings(for: .accessibility) }
     }
 
+    @objc private func openWebsiteEdition() {
+        NSWorkspace.shared.open(VampProductLinks.syncEditions)
+    }
+
     @objc private func quitApp() {
         NSApp.terminate(nil)
+    }
+
+    @objc private func checkForUpdatesFromMenu() {
+        closePopover()
+        updater.checkForUpdates()
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(checkForUpdatesFromMenu) {
+            return updater.canCheckForUpdates
+        }
+        // Grey the item out instead of copying nothing: it needs a running host and a
+        // LAN address to hand out.
+        if menuItem.action == #selector(copyPairingAddress) {
+            return isRuntimeActive && localIPv4AddressForPairing() != nil
+        }
+        return true
     }
 
     private func closePopover() {
@@ -390,8 +443,8 @@ private enum VampSyncAppearance: String, CaseIterable, Identifiable {
     }
 }
 
-/// Window with two fang notches. The same silhouette is the menu-bar template
-/// and the panel mark — never the full-color landscape app icon.
+/// A compact window with two fang notches for the monochrome menu-bar template.
+/// The panel and application icon use the full-color VampSyncLogo artwork.
 private struct VampSyncMark: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
@@ -429,25 +482,15 @@ private struct VampSyncMark: Shape {
 
 private struct VampMiniHostMark: View {
     let size: CGFloat
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                .fill(palette.accent.opacity(0.12))
-                .overlay {
-                    RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                        .stroke(palette.accent.opacity(0.22), lineWidth: 0.5)
-                }
-            VampSyncMark()
-                .fill(palette.accent, style: FillStyle(eoFill: true))
-                .padding(size * 0.12)
-        }
-        .frame(width: size, height: size)
-        .accessibilityLabel("Vamp Sync")
+        Image("VampSyncLogo")
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+            .accessibilityLabel("\(VampProductIdentity.syncName)")
     }
-
-    private var palette: VampSyncCompanionPalette { .init(colorScheme: colorScheme) }
 }
 
 private final class VampSyncMenuBarStatusDotView: NSView {
@@ -540,6 +583,7 @@ private enum VampSyncCompanionState: Equatable {
 
 private struct VampSyncCompanionPopover: View {
     @ObservedObject var environment: HostAppEnvironment
+    let updater: VampSyncUpdater
     @ObservedObject private var permissionsViewModel: HostPermissionsViewModel
     @ObservedObject private var sessionCoordinator: HostSessionCoordinator
     let onClose: () -> Void
@@ -548,9 +592,13 @@ private struct VampSyncCompanionPopover: View {
     @State private var revokedPeers: [TrustedPeer] = []
     @State private var isRefreshing = false
     @State private var tailscaleInfo: TailscaleConnectionInfo?
+    @State private var pairingNetwork = HostPairingAddress.Network.localWiFi
+    @State private var hasRefreshedPairingNetwork = false
     @State private var copiedValue: String?
     @State private var deviceManagementError: String?
     @State private var peerToRevoke: TrustedPeer?
+    /// A stop or restart that would end a live client session, waiting for confirmation.
+    @State private var pendingHostAction: PendingHostAction?
     @State private var framesPerSecond: Int?
     @State private var contentHeight: CGFloat = 0
     @AppStorage("vampSyncAppearance") private var appearance = VampSyncAppearance.system
@@ -564,8 +612,9 @@ private struct VampSyncCompanionPopover: View {
         )
     }
 
-    init(environment: HostAppEnvironment, onClose: @escaping () -> Void) {
+    init(environment: HostAppEnvironment, updater: VampSyncUpdater, onClose: @escaping () -> Void) {
         self.environment = environment
+        self.updater = updater
         self.onClose = onClose
         _permissionsViewModel = ObservedObject(wrappedValue: environment.permissionsViewModel)
         _sessionCoordinator = ObservedObject(wrappedValue: environment.sessionCoordinator)
@@ -579,7 +628,7 @@ private struct VampSyncCompanionPopover: View {
             )
 
             ScrollView {
-                // Not lazy: there are at most five cards, and a LazyVStack only
+                // Not lazy: this is a small set of cards, and a LazyVStack only
                 // reports the height of what it has already realised — which is
                 // exactly the measurement this panel sizes itself from.
                 VStack(alignment: .leading, spacing: 14) {
@@ -598,6 +647,7 @@ private struct VampSyncCompanionPopover: View {
                             state: state,
                             framesPerSecond: activeFrameRate,
                             linkName: tailscaleInfo == nil ? "Private LAN" : "Tailscale",
+                            usesLegacyToken: sessionCoordinator.activeClientUsesLegacyToken,
                             onStart: start,
                             onStop: stop,
                             onRetry: restart
@@ -606,6 +656,8 @@ private struct VampSyncCompanionPopover: View {
 
                     if isRuntimeActive {
                         VampSyncCompanionPairingCard(
+                            network: $pairingNetwork,
+                            tailscaleAvailable: tailscaleInfo != nil,
                             pairingLink: pairingLink,
                             pairingAddress: pairingAddress,
                             fingerprint: environment.hostIdentity.publicKeyFingerprint,
@@ -614,7 +666,12 @@ private struct VampSyncCompanionPopover: View {
                         )
                     }
 
+                    #if !VAMP_APP_STORE
+                    VampSyncDistributionCard(isViewOnly: !environment.runtimePolicy.supportsRemoteInput)
+                    #endif
+
                     VampSyncCompanionAccessCard(
+                        supportsRemoteUnlock: environment.runtimePolicy.supportsRemoteUnlock,
                         statuses: permissionsViewModel.statuses,
                         remoteUnlockEnabled: $remoteUnlockEnabled,
                         isRefreshing: permissionsViewModel.isRefreshing,
@@ -631,6 +688,10 @@ private struct VampSyncCompanionPopover: View {
                         onRevoke: { peerToRevoke = $0 },
                         onPairAgain: pairAgain
                     )
+
+                    #if VAMP_APP_STORE
+                    VampSyncWebsiteEditionCard()
+                    #endif
                 }
                 .padding(.horizontal, VampSyncCompanionDesign.inset)
                 .padding(.bottom, 18)
@@ -651,6 +712,7 @@ private struct VampSyncCompanionPopover: View {
             VampSyncCompanionFooter(
                 trustedCount: trustedPeers.count,
                 isRuntimeActive: isRuntimeActive,
+                updater: updater,
                 appearance: $appearance,
                 onRefresh: { Task { await refresh() } },
                 onRestart: restart,
@@ -668,6 +730,23 @@ private struct VampSyncCompanionPopover: View {
         }
         .onChange(of: environment.pendingTrustPrompt?.id) { _ in
             Task { await refreshPeers() }
+        }
+        .confirmationDialog(
+            pendingHostAction == .restart ? "Restart Vamp Sync?" : "Stop hosting?",
+            isPresented: Binding(get: { pendingHostAction != nil }, set: { if !$0 { pendingHostAction = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button(pendingHostAction == .restart ? "Restart" : "Stop", role: .destructive) {
+                switch pendingHostAction {
+                case .restart: performRestart()
+                case .stop: Task { await environment.stopRuntime() }
+                case nil: break
+                }
+                pendingHostAction = nil
+            }
+            Button("Cancel", role: .cancel) { pendingHostAction = nil }
+        } message: {
+            Text("The connected device will be disconnected.")
         }
         .confirmationDialog(
             "Revoke \(peerToRevoke?.displayName ?? "this device")?",
@@ -693,16 +772,16 @@ private struct VampSyncCompanionPopover: View {
 
     private var state: VampSyncCompanionState {
         if sessionCoordinator.phase == .error {
-            return .error(sessionCoordinator.errorMessage ?? "Vamp Sync could not start.")
+            return .error(sessionCoordinator.errorMessage ?? "\(VampProductIdentity.syncName) could not start.")
         }
         if let application = sessionCoordinator.activeApplicationName {
             return .streaming(
                 application: application,
-                client: sessionCoordinator.connectedClientName ?? "Vamp Stream"
+                client: sessionCoordinator.connectedClientName ?? "\(VampProductIdentity.streamName)"
             )
         }
         if sessionCoordinator.phase == .streaming {
-            return .connected(client: sessionCoordinator.connectedClientName ?? "Vamp Stream")
+            return .connected(client: sessionCoordinator.connectedClientName ?? "\(VampProductIdentity.streamName)")
         }
         if let blocker = permissionsViewModel.blockers.first {
             return .permissionMissing(blocker.title)
@@ -720,17 +799,18 @@ private struct VampSyncCompanionPopover: View {
 
     private var pairingAddress: String? {
         guard isRuntimeActive else { return nil }
-        if let local = localIPv4AddressForPairing() {
-            return "\(local):\(RemoteDesktopConstants.defaultSignalingPort)"
-        }
-        return tailscaleInfo?.connectAddress
+        return HostPairingAddress.make(network: pairingNetwork,
+                                       localIPv4: localIPv4AddressForPairing(),
+                                       tailscaleIPv4: tailscaleInfo?.ipAddress,
+                                       port: RemoteDesktopConstants.defaultSignalingPort)
     }
 
     private var pairingLink: String? {
         guard let pairingAddress else { return nil }
         return VampHostPairingLink.make(
             address: pairingAddress,
-            displayName: environment.hostIdentity.displayName
+            displayName: environment.hostIdentity.displayName,
+            fingerprint: environment.hostIdentity.publicKeyFingerprint
         )
     }
 
@@ -743,11 +823,29 @@ private struct VampSyncCompanionPopover: View {
         Task { await environment.startRuntimeIfNeeded() }
     }
 
+    private enum PendingHostAction: Identifiable {
+        case stop, restart
+        var id: Self { self }
+    }
+
+    /// Stopping or restarting while a client is connected ends its session; ask first.
     private func stop() {
-        Task { await environment.stopRuntime() }
+        if case .connected = state {
+            pendingHostAction = .stop
+        } else {
+            Task { await environment.stopRuntime() }
+        }
     }
 
     private func restart() {
+        if case .connected = state {
+            pendingHostAction = .restart
+        } else {
+            performRestart()
+        }
+    }
+
+    private func performRestart() {
         Task {
             await environment.stopRuntime()
             await environment.startRuntimeIfNeeded()
@@ -772,6 +870,12 @@ private struct VampSyncCompanionPopover: View {
         }.value
         guard !Task.isCancelled else { return }
         tailscaleInfo = snapshot.info
+        if !hasRefreshedPairingNetwork {
+            hasRefreshedPairingNetwork = true
+            if localIPv4AddressForPairing() == nil, snapshot.info != nil {
+                pairingNetwork = .tailscale
+            }
+        }
         await environment.discoveryAdvertiserViewModel.updateTailscaleIdentity(
             hostname: snapshot.info?.dnsName,
             ip: snapshot.info?.ipAddress
@@ -876,10 +980,10 @@ private struct VampSyncCompanionHeader: View {
         HStack(spacing: 12) {
             VampMiniHostMark(size: 40)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Vamp Sync")
+                Text("\(VampProductIdentity.syncName)")
                     .font(.system(size: 19, weight: .semibold))
                     .tracking(-0.5)
-                Text("For Control and Stream")
+                Text(Self.subtitle)
                     .font(.caption)
                     .foregroundStyle(palette.secondary)
             }
@@ -897,7 +1001,7 @@ private struct VampSyncCompanionHeader: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("Close Vamp Sync")
+            .accessibilityLabel("Close \(VampProductIdentity.syncName)")
         }
         .padding(.horizontal, VampSyncCompanionDesign.inset)
         .padding(.top, 22)
@@ -905,6 +1009,12 @@ private struct VampSyncCompanionHeader: View {
     }
 
     private var palette: VampSyncCompanionPalette { .init(colorScheme: colorScheme) }
+
+    #if VAMP_APP_STORE
+    private static let subtitle = "View Only · Mac App Store edition"
+    #else
+    private static let subtitle = "For Control and Stream"
+    #endif
 
     private var statusLabel: String {
         switch state {
@@ -930,6 +1040,8 @@ private struct VampSyncCompanionStatusCard: View {
     let state: VampSyncCompanionState
     let framesPerSecond: Int?
     let linkName: String
+    /// The attached device sent its session token unencrypted (an app from before the signed key exchange).
+    var usesLegacyToken = false
     let onStart: () -> Void
     let onStop: () -> Void
     let onRetry: () -> Void
@@ -955,6 +1067,15 @@ private struct VampSyncCompanionStatusCard: View {
                     action
                 }
 
+                if usesLegacyToken, isClientAttached {
+                    Label("This device runs an older app that sends its session key unencrypted. Update Vamp Control or App Stream on it.",
+                          systemImage: "exclamationmark.shield")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("sync.legacyClientNotice")
+                }
+
                 if case .streaming = state {
                     Divider().overlay(palette.border)
                     HStack {
@@ -969,6 +1090,13 @@ private struct VampSyncCompanionStatusCard: View {
 
     private var palette: VampSyncCompanionPalette { .init(colorScheme: colorScheme) }
 
+    private var isClientAttached: Bool {
+        switch state {
+        case .connected, .streaming: true
+        default: false
+        }
+    }
+
     private var title: String {
         switch state {
         case .stopped: "App Stream host is off"
@@ -977,7 +1105,7 @@ private struct VampSyncCompanionStatusCard: View {
         case .connected(let client): "\(client) is connected"
         case .streaming(let application, _): "Streaming \(application)"
         case .permissionMissing(let permission): "\(permission) is required"
-        case .error: "Vamp Sync needs attention"
+        case .error: "\(VampProductIdentity.syncName) needs attention"
         }
     }
 
@@ -1082,27 +1210,64 @@ private struct VampSyncCompanionApprovalCard: View {
 }
 
 private struct VampSyncCompanionPairingCard: View {
+    @Binding var network: HostPairingAddress.Network
+    let tailscaleAvailable: Bool
     let pairingLink: String?
     let pairingAddress: String?
     let fingerprint: String
     let copiedValue: String?
     let onCopy: (String) -> Void
     @Environment(\.colorScheme) private var colorScheme
+    /// Set when Tailscale is missing, so the button says so instead of doing nothing.
+    @State private var tailscaleNotFound = false
 
     var body: some View {
         VampSyncCompanionSurface(raised: true) {
             VStack(alignment: .leading, spacing: 18) {
+                Picker("Pair over", selection: $network) {
+                    Text("Local Wi-Fi").tag(HostPairingAddress.Network.localWiFi)
+                    Text("Tailscale").tag(HostPairingAddress.Network.tailscale)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("sync-pairing-network")
+                Text(network == .tailscale
+                     ? "Connect both devices to the same private Tailscale network, then scan this code."
+                     : "Keep both devices on the same trusted Wi-Fi network, then scan this code.")
+                    .font(.system(size: 11)).foregroundStyle(palette.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if network == .tailscale, !tailscaleAvailable {
+                    Label("Connect Tailscale on this Mac to show its pairing code.", systemImage: "network")
+                        .font(.system(size: 12)).foregroundStyle(palette.secondary)
+                    Button("Open Tailscale") { tailscaleNotFound = !openTailscaleApplication() }
+                        .buttonStyle(.bordered)
+                    if tailscaleNotFound {
+                        Text("Tailscale isn’t installed on this Mac, so there is no address to pair over.")
+                            .font(.system(size: 11)).foregroundStyle(palette.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 HStack(alignment: .center, spacing: 18) {
                     if let pairingLink {
                         HostBrowserPairingQRCode(
                             pairingURL: pairingLink,
-                            accessibilityLabel: "QR code for Vamp Stream pairing",
+                            accessibilityLabel: "QR code for \(VampProductIdentity.streamName) pairing",
                             size: 116
                         )
                     } else {
-                        ProgressView().frame(width: 116, height: 116)
+                        Image(systemName: "qrcode").font(.system(size: 38, weight: .light))
+                            .foregroundStyle(palette.secondary).frame(width: 116, height: 116)
+                            .accessibilityLabel("No pairing code yet")
                     }
                     VStack(alignment: .leading, spacing: 8) {
+                        if pairingLink == nil {
+                            // The code is blank until this Mac has an address on the chosen network.
+                            Text(network == .tailscale
+                                 ? "No Tailscale address yet. Connect Tailscale on this Mac, then this code appears."
+                                 : "No Wi-Fi or Ethernet address on this Mac. Join a network, then this code appears.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(palette.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         Text("Make the connection")
                             .font(.system(size: 17, weight: .semibold))
                             .tracking(-0.35)
@@ -1177,7 +1342,97 @@ private struct VampSyncCompanionPairingCard: View {
     private var palette: VampSyncCompanionPalette { .init(colorScheme: colorScheme) }
 }
 
+private struct VampSyncDistributionCard: View {
+    let isViewOnly: Bool
+
+    var body: some View {
+        VampSyncCompanionSurface {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(isViewOnly ? "View Only" : "Remote control", systemImage: isViewOnly ? "eye" : "cursorarrow")
+                    .font(.headline)
+                Text(isViewOnly
+                     ? "This edition shares open app windows. Open and resize windows on your Mac. Screen Recording is required; Accessibility is not requested."
+                     : "The website edition supports pointer, keyboard, window resizing, and optional Remote Unlock after Accessibility approval.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Link("Compare \(VampProductIdentity.syncName) editions", destination: VampProductLinks.syncEditions)
+                    .font(.caption)
+                Link("Privacy policy", destination: VampProductLinks.privacy)
+                    .font(.caption)
+                Link("Support", destination: VampProductLinks.support)
+                    .font(.caption)
+            }
+        }
+    }
+}
+
+/// Store edition only: compares this View Only app with the website edition
+/// and links to its page. It opens the browser; it never downloads or installs.
+private struct VampSyncWebsiteEditionCard: View {
+    private static let rows: [(feature: String, store: Bool)] = [
+        ("Share open app windows", true),
+        ("Private pairing with Control and Stream", true),
+        ("Keyboard and pointer control", false),
+        ("Resize, launch, and close apps", false),
+        ("Optional Remote Unlock", false),
+    ]
+
+    var body: some View {
+        VampSyncCompanionSurface {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Two editions of Vamp Sync", systemImage: "square.split.2x1")
+                    .font(.headline)
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+                    GridRow {
+                        Color.clear.frame(height: 1)
+                        Text("This app")
+                        Text("Website")
+                    }
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    ForEach(Self.rows, id: \.feature) { row in
+                        GridRow {
+                            Text(row.feature)
+                                .font(.caption)
+                                .fixedSize(horizontal: false, vertical: true)
+                            mark(row.store).gridColumnAlignment(.center)
+                            mark(true).gridColumnAlignment(.center)
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(row.feature)
+                        .accessibilityValue(row.store ? "Included in both editions" : "Website edition only")
+                    }
+                }
+                Text("This Mac App Store edition is View Only and needs Screen Recording only. The website edition is a separate free app with full remote control after you approve Screen Recording and Accessibility.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Link(destination: VampProductLinks.syncEditions) {
+                    Label("Get the website edition", systemImage: "arrow.up.right")
+                }
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.bordered)
+                .help("https://thevamp.app/sync/#editions")
+                .accessibilityHint("Opens the Vamp Sync website in your browser")
+                HStack(spacing: 14) {
+                    Link("Privacy policy", destination: VampProductLinks.privacy)
+                    Link("Support", destination: VampProductLinks.support)
+                }
+                .font(.caption)
+            }
+        }
+    }
+
+    private func mark(_ included: Bool) -> some View {
+        Image(systemName: included ? "checkmark.circle.fill" : "minus.circle")
+            .font(.caption)
+            .foregroundStyle(included ? Color.green : Color.secondary)
+    }
+}
+
 private struct VampSyncCompanionAccessCard: View {
+    let supportsRemoteUnlock: Bool
     let statuses: [FriendlyPermissionStatus]
     @Binding var remoteUnlockEnabled: Bool
     let isRefreshing: Bool
@@ -1208,17 +1463,19 @@ private struct VampSyncCompanionAccessCard: View {
                           : "Allows touch and keyboard control from your paired device.")
                 }
 
-                Divider()
+                if supportsRemoteUnlock {
+                    Divider()
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Toggle("Remote Unlock", isOn: $remoteUnlockEnabled)
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
-                        .font(.system(size: 12, weight: .medium))
-                    Text("Let a paired device unlock this Mac with your login password. Passwords are never stored.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(palette.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Toggle("Remote Unlock", isOn: $remoteUnlockEnabled)
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Let a paired device unlock this Mac with your login password. Passwords are never stored.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(palette.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
@@ -1338,6 +1595,7 @@ private struct VampSyncCompanionDeviceRow: View {
 private struct VampSyncCompanionFooter: View {
     let trustedCount: Int
     let isRuntimeActive: Bool
+    @ObservedObject var updater: VampSyncUpdater
     @Binding var appearance: VampSyncAppearance
     let onRefresh: () -> Void
     let onRestart: () -> Void
@@ -1359,19 +1617,28 @@ private struct VampSyncCompanionFooter: View {
                 Button("Refresh status", action: onRefresh)
                 Button("Restart host", action: onRestart)
                 Divider()
+                Button(VampSyncUpdater.usesStoreUpdates ? "App Store Updates…" : "Check for Updates…", action: updater.checkForUpdates)
+                    .disabled(!updater.canCheckForUpdates)
+                if !VampSyncUpdater.usesStoreUpdates {
+                    Toggle("Check for updates automatically", isOn: Binding(
+                        get: { updater.automaticallyChecksForUpdates },
+                        set: updater.setAutomaticallyChecksForUpdates
+                    ))
+                }
+                Divider()
                 ForEach(VampSyncAppearance.allCases) { option in
                     Button { appearance = option } label: {
                         Label(option.title, systemImage: option.systemImage)
                     }
                 }
                 Divider()
-                Button("Quit Vamp Sync", action: onQuit)
+                Button("Quit \(VampProductIdentity.syncName)", action: onQuit)
             } label: {
                 Image(systemName: "gearshape").frame(width: 24, height: 24)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .accessibilityLabel("Vamp Sync settings")
+            .accessibilityLabel("\(VampProductIdentity.syncName) settings")
         }
         .padding(.horizontal, VampSyncCompanionDesign.inset)
         .padding(.vertical, 9)
@@ -1457,7 +1724,6 @@ private func vampSyncFormattedFingerprint(_ fingerprint: String) -> String {
 
 /// First usable IPv4 address on an up interface, preferring Wi-Fi and Ethernet.
 private func localIPv4AddressForPairing() -> String? {
-    var fallback: String?
     var ifaddr: UnsafeMutablePointer<ifaddrs>?
     guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else { return nil }
     defer { freeifaddrs(ifaddr) }
@@ -1479,8 +1745,7 @@ private func localIPv4AddressForPairing() -> String? {
         // can never connect.
         guard !address.hasPrefix("169.254.") else { continue }
         if interfaceName.hasPrefix("en") { return address }
-        if fallback == nil { fallback = address }
     }
-    return fallback
+    return nil
 }
 #endif

@@ -1,0 +1,15 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Vamp Sync</title>
+        <item>
+            <title>2.3.1</title>
+            <pubDate>Thu, 01 Oct 2026 19:43:45 +0300</pubDate>
+            <link>https://thevamp.app/sync/</link>
+            <sparkle:version>72</sparkle:version>
+            <sparkle:shortVersionString>2.3.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-2.3.1-build-72/VampSync-macOS-2.3.1-build-72-notarized.zip" length="14205949" type="application/octet-stream" sparkle:edSignature="2NeggpOt/KHzfVItydKABhVArHFrtwdSrg0Wa4A2hI0eOwXgOz28ZwRXMTol7xRtr1v6P2vPADcZU5P5b7FoDg=="/>
+        </item>
+    </channel>
+</rss>

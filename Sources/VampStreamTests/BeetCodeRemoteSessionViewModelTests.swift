@@ -54,6 +54,25 @@ final class BeetCodeRemoteSessionViewModelTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: "vampstream.beetcode.savedAddress"))
     }
 
+    func testAssistantAndCompanionOnTheSameMacRemainDistinct() throws {
+        let saved = [
+            BeetCodeRemoteSessionViewModel.SavedAssistant(address: "http://192.168.1.20:9575", displayName: "Vamp Assistant"),
+            BeetCodeRemoteSessionViewModel.SavedAssistant(address: "http://192.168.1.20:9675", displayName: "Vamp Companion"),
+        ]
+        defaults.set(try JSONEncoder().encode(saved), forKey: "vampstream.assistant.savedAssistants.v1")
+        let model = BeetCodeRemoteSessionViewModel(defaults: defaults)
+        XCTAssertEqual(model.savedAssistants, saved)
+        XCTAssertNotEqual(saved[0].id, saved[1].id)
+        model.forget(saved[1])
+        XCTAssertEqual(model.savedAssistants, [saved[0]])
+    }
+
+    func testScannedCompanionLinkRetainsItsSeparatePort() throws {
+        let endpoint = try BeetCodeRemoteEndpoint.parsePairingLink("http://192.168.1.20:9675/?pair=123456")
+        XCTAssertEqual(endpoint.url.port, 9675)
+        XCTAssertEqual(endpoint.pairingCode, "123456")
+    }
+
     func testForgettingOneAssistantPreservesTheOther() throws {
         let first = BeetCodeRemoteSessionViewModel.SavedAssistant(
             address: "http://192.168.1.20:9575",

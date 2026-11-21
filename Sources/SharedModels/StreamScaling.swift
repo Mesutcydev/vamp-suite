@@ -30,8 +30,9 @@ public enum StreamScaling {
     /// source's native pixels straight through — so on a 5K/6K display, or on a
     /// window grown past the phone's screen, it can build a frame the client cannot
     /// decode and the stream fails to a black picture. The ceiling only ever shrinks
-    /// a result, never upscales, and display streams (which pass `minLongEdge == 0`)
-    /// are untouched: there the display *is* the intended resolution.
+    /// a result, never upscales. The long-edge limit is window-only; the pixel budget
+    /// also bounds display streams, which now carry a Retina display's backing pixels
+    /// (a 5K panel is 14.7 MP) rather than its point size.
     public static let windowMaximumLongEdge = 3840
     public static let windowMaximumPixels = 3_840 * 2_160
 
@@ -96,17 +97,21 @@ public enum StreamScaling {
             minLongEdge: minLongEdge)
     }
 
-    /// Shrinks a *window* stream (the only caller that passes a non-zero `minLongEdge`) into
-    /// the hardware envelope of `windowMaximumLongEdge` / `windowMaximumPixels`. Preserves
-    /// aspect, keeps both axes even, and never upscales. Display streams are returned as-is.
+    /// Shrinks a stream into the hardware envelope: every stream stays within
+    /// `windowMaximumPixels`, and a *window* stream (the only caller that passes a non-zero
+    /// `minLongEdge`) also within `windowMaximumLongEdge`. Preserves aspect, keeps both axes
+    /// even, and never upscales.
+    // ponytail: one fixed 4K-UHD pixel budget for all clients; negotiate a per-client
+    // decode envelope if a Mac-to-Mac 5K/6K Ultra stream is ever wanted.
     private static func decoderCeiling(
         _ dims: (width: Int, height: Int),
         minLongEdge: Int
     ) -> (width: Int, height: Int) {
-        guard minLongEdge > 0, dims.width > 0, dims.height > 0 else { return dims }
+        guard dims.width > 0, dims.height > 0 else { return dims }
         let longEdge = max(dims.width, dims.height)
         let pixels = dims.width * dims.height
-        let edgeScale = Double(windowMaximumLongEdge) / Double(longEdge)
+        // A display keeps any long edge (a 5120×1440 ultrawide is within the budget).
+        let edgeScale = minLongEdge > 0 ? Double(windowMaximumLongEdge) / Double(longEdge) : 1
         let pixelScale = (Double(windowMaximumPixels) / Double(pixels)).squareRoot()
         let scale = min(1, edgeScale, pixelScale)
         guard scale < 1 else { return dims }

@@ -121,6 +121,7 @@ Sources/ClientiOS/StreamingPaywallView.swift
 appstore-screenshots/
 screenshots/
 project.yml
+!project.yml
 macclient-project.yml
 macclient-appstore-project.yml
 machost-appstore-project.yml
@@ -133,6 +134,11 @@ scripts/*
 !scripts/generate-pages-release.py
 !scripts/package-vamp-control-macos.sh
 !scripts/package-vamp-control-ios.sh
+!scripts/archive-vamp-app-store.sh
+!scripts/export-vamp-sync-app-store.py
+!scripts/verify-vamp-store-bundle.py
+!scripts/render-vamp-control-store-screenshots.py
+!scripts/vamp-control-screenshot-canvas.swift
 !scripts/vamp-host-watchdog
 !scripts/install-vamp-host-watchdog.sh
 
@@ -142,6 +148,13 @@ scripts/*
 !RemoteDesktopToolApps.xcodeproj/
 RemoteDesktopToolApps.xcodeproj/*
 !RemoteDesktopToolApps.xcodeproj/project.pbxproj
+!RemoteDesktopToolApps.xcodeproj/project.xcworkspace/
+RemoteDesktopToolApps.xcodeproj/project.xcworkspace/*
+!RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/
+RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/*
+!RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!RemoteDesktopToolApps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 !RemoteDesktopToolApps.xcodeproj/xcshareddata/
 RemoteDesktopToolApps.xcodeproj/xcshareddata/*
 !RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/
@@ -150,10 +163,15 @@ RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/*
 !RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/VampTerminalHost.xcscheme
 !RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/MacHost.xcscheme
 !RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/iOSRemote.xcscheme
+!RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/iOSRemoteAppStore.xcscheme
 !RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/VampMiniHost.xcscheme
+!RemoteDesktopToolApps.xcodeproj/xcshareddata/xcschemes/VampSyncAppStore.xcscheme
 
 !Configuration/
 Configuration/*
+!Configuration/VampSync-AppStore-Info.plist
+!Configuration/VampSync-AppStore.entitlements
+!Configuration/VampStream-AppStore.entitlements
 !Configuration/VampTerminal-Info.plist
 !Configuration/VampTerminal.entitlements
 !Configuration/VampTerminalHost-Info.plist
@@ -162,6 +180,7 @@ Configuration/*
 !Configuration/MacHost-AppStore.entitlements
 !Configuration/ClientiOS-Info.plist
 !Configuration/ClientiOS.entitlements
+!Configuration/ClientiOS-AppStore.entitlements
 !Configuration/ClientiOSLiveActivity-Info.plist
 !Configuration/VampStream.entitlements
 !Configuration/VampMiniHost.entitlements
@@ -183,6 +202,7 @@ Sources/HostApp/Assets.xcassets/.DS_Store
 !scripts/package-vamp-stream-ios.sh
 !scripts/verify-vamp-stream-ipa.py
 !scripts/package-vamp-mini-host.sh
+!scripts/release-vamp-sync.sh
 !scripts/install-vamp-cli.command
 !scripts/vamp
 !scripts/vamp-linux-host
@@ -197,7 +217,15 @@ MacClient/Resources/MacClient-Release.entitlements
 # Account-independent inputs for the public Vamp Control macOS build. The
 # generated Xcode project remains ignored; release packaging regenerates it.
 !macclient-project.yml
+!macclient-appstore-project.yml
+!AppStore-Metadata-MacClient.md
 !MacClient/Resources/Assets.xcassets/
 !MacClient/Resources/Assets.xcassets/**
 !MacClient/Resources/MacClient-Info.plist
 !MacClient/Resources/MacClient-Release.entitlements
+!MacClient/Resources/MacClient.entitlements
+
+# Reproducible Control icon and vector masters.
+!scripts/generate-control-brand.swift
+# Release packaging output (exported apps, caches). Never commit.
+.packaging-*/

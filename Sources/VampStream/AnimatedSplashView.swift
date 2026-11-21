@@ -1,202 +1,176 @@
 import SwiftUI
+import SharedModels
 
 struct AnimatedSplashView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let onFinish: () -> Void
-
-    @State private var showTitle = false
-    @State private var showGrid = false
-    @State private var showPortal = false
-    @State private var showMountains = false
-    @State private var showSignal = false
-    @State private var showExit = false
-    @State private var hasStarted = false
-    @State private var didFinish = false
+    let lifecycle: VampStreamSplashLifecycle
+    let reduceMotion: Bool
+    let safeArea: EdgeInsets
+    let onResize: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
-            if proxy.size.width > 1, proxy.size.height > 1,
-               proxy.size.width.isFinite, proxy.size.height.isFinite {
-                artwork(size: proxy.size)
-                    .opacity(showExit ? 0 : 1)
-                    .scaleEffect(showExit ? 1.04 : 1, anchor: .center)
-                    .animation(.easeOut(duration: SplashTiming.exitDuration), value: showExit)
+            let layout = VampStreamSplashLayout(size: proxy.size, safeArea: safeArea)
+            if layout.isValid {
+                TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { _ in
+                    let now = ProcessInfo.processInfo.systemUptime
+                    VampStreamSplashArtwork(
+                        layout: layout,
+                        elapsed: lifecycle.elapsed(at: now),
+                        reduceMotion: reduceMotion
+                    )
+                    .opacity(lifecycle.opacity(at: now))
+                }
             }
         }
-        .background(SplashTheme.background.ignoresSafeArea())
-        // The splash already swallowed taps to protect the UI underneath; it just did nothing
-        // with them. Now a tap skips — a launch animation that cannot be dismissed is a toll
-        // on every single cold start.
-        .contentShape(Rectangle())
-        .onTapGesture { skip() }
-        .accessibilityElement()
-        .accessibilityLabel("Vamp Stream")
-        .accessibilityHint("Double-tap to skip the intro")
-        .accessibilityAddTraits(.isButton)
-        .task {
-            guard !hasStarted else { return }
-            hasStarted = true
-            await runSplash()
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { oldSize, newSize in
+            if oldSize.width > 1, oldSize.height > 1, oldSize != newSize {
+                onResize()
+            }
         }
+        .clipped()
+        .accessibilityHidden(true)
+    }
+}
+
+private struct VampStreamSplashArtwork: View {
+    @AppStorage(StreamBrandMark.preferenceKey) private var usesClassic = false
+    let layout: VampStreamSplashLayout
+    let elapsed: TimeInterval
+    let reduceMotion: Bool
+
+    private var frame: VampStreamSplashMotion.Frame {
+        VampStreamSplashMotion.frame(at: elapsed, layout: layout, reduceMotion: reduceMotion)
     }
 
-    /// Leave now, on a short fade. Safe to call repeatedly and safe to race with `runSplash`.
-    private func skip() {
-        guard !didFinish else { return }
-        didFinish = true
-        withAnimation(.easeOut(duration: SplashTiming.skipDuration)) { showExit = true }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(SplashTiming.skipDuration))
-            onFinish()
+    var body: some View {
+        ZStack {
+            background
+            echoes
+            Group {
+                if usesClassic {
+                    Image("StreamIconClassic").resizable().scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                } else {
+                    StreamSymbol()
+                        .fill(LinearGradient(colors: [Color(hex: 0xFFD0B9), StreamDesign.coral],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                }
+            }
+                .frame(width: layout.markSize.width, height: layout.markSize.height)
+                .scaleEffect(frame.scale)
+                .position(frame.center)
+
+            Text(verbatim: VampProductIdentity.streamName)
+                .font(.system(size: layout.titleSize, weight: .regular))
+                .tracking(layout.tracking)
+                .foregroundStyle(Color(red: 247.0 / 255, green: 235.0 / 255, blue: 219.0 / 255))
+                .lineLimit(1)
+                .frame(width: max(1, layout.size.width - 24))
+                .position(x: layout.settledCenter.x, y: layout.titleCenterY)
+                .opacity(frame.titleOpacity)
         }
+        .frame(width: layout.size.width, height: layout.size.height)
+        .allowsHitTesting(false)
+    }
+
+    private var background: some View {
+        StreamAtmosphere()
+            .environment(\.colorScheme, .dark)
+            .frame(width: layout.size.width, height: layout.size.height)
+            .opacity(frame.backgroundOpacity)
     }
 
     @ViewBuilder
-    private func artwork(size: CGSize) -> some View {
-        let geometry = SplashGeometry(size: size)
-        let grid = SplashGrid(geometry: geometry, showGrid: showGrid, reduceMotion: reduceMotion)
-
-        ZStack {
-            // Reveal the full illustration in the existing grid / mountain stages.
-            VampStreamArtwork(size: size)
-                .mask {
-                    Rectangle()
-                        .overlay {
-                            Rectangle()
-                                .frame(width: geometry.portalRect.width, height: geometry.portalRect.height)
-                                .position(x: geometry.portalRect.midX, y: geometry.portalRect.midY)
-                                .blendMode(.destinationOut)
-                        }
-                        .compositingGroup()
-                }
-                .opacity(showGrid ? 1 : 0)
-                .animation(.easeOut(duration: SplashTiming.gridDuration), value: showGrid)
-
-            VampStreamArtwork(size: size)
-                .mask {
-                    Rectangle()
-                        .frame(width: geometry.portalRect.width, height: geometry.portalRect.height)
-                        .position(x: geometry.portalRect.midX, y: geometry.portalRect.midY)
-                }
-                .opacity(showMountains ? 1 : 0)
-                .animation(.easeOut(duration: SplashTiming.mountainDuration), value: showMountains)
-
-            grid
-                .opacity(0.30)
-                .onAppear {
-                    grid.startTravel()
-                }
-            SplashPortal(geometry: geometry, showPortal: showPortal, reduceMotion: reduceMotion)
-            SplashMountains(geometry: geometry, showMountains: showMountains, reduceMotion: reduceMotion)
-            SplashSignalPulse(geometry: geometry, showSignal: showSignal, reduceMotion: reduceMotion)
-        }
-        .frame(width: size.width, height: size.height)
-        .overlay {
-            CRTOverlay()
-                .opacity(0.25)
-        }
-        .overlay {
-            // Keep moving grid lines out of the title and footer's reading zones.
-            LinearGradient(
-                stops: [
-                    .init(color: .black.opacity(0.94), location: 0),
-                    .init(color: .black.opacity(0.90), location: 0.18),
-                    .init(color: .clear, location: 0.32),
-                    .init(color: .clear, location: 0.74),
-                    .init(color: .black.opacity(0.90), location: 0.86),
-                    .init(color: .black.opacity(0.94), location: 1)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
+    private var echoes: some View {
+        if frame.echoOpacity > 0 && !usesClassic {
+            VampStreamSplashEcho(
+                size: layout.markSize,
+                center: VampStreamSplashMotion.echoCenter(at: elapsed, delay: 0.055, layout: layout),
+                opacity: frame.echoOpacity * 0.5
             )
-            .allowsHitTesting(false)
-        }
-        .overlay {
-            SplashTypography(
-                showTitle: showTitle,
-                showSubtitle: showTitle,
-                showBottomLabel: showPortal,
-                size: size,
-                reduceMotion: reduceMotion
+            VampStreamSplashEcho(
+                size: layout.markSize,
+                center: VampStreamSplashMotion.echoCenter(at: elapsed, delay: 0.025, layout: layout),
+                opacity: frame.echoOpacity
             )
         }
     }
+}
 
-    @MainActor
-    private func runSplash() async {
-        guard !reduceMotion else {
-            // Everything already in its final state, no motion, out almost immediately.
-            showTitle = true
-            showGrid = true
-            showPortal = true
-            showMountains = true
-            try? await Task.sleep(for: SplashTiming.reducedMotionHold)
-            guard !Task.isCancelled else { return }
-            skip()
-            return
-        }
+private struct VampStreamSplashEcho: View {
+    let size: CGSize
+    let center: CGPoint
+    let opacity: Double
 
-        let start = ContinuousClock.now
-
-        guard await hold(until: SplashTiming.titleStart, from: start) else { return }
-        withAnimation(.easeOut(duration: SplashTiming.titleDuration)) { showTitle = true }
-
-        guard await hold(until: SplashTiming.gridStart, from: start) else { return }
-        withAnimation(.easeOut(duration: SplashTiming.gridDuration)) { showGrid = true }
-
-        guard await hold(until: SplashTiming.portalStart, from: start) else { return }
-        withAnimation(.easeOut(duration: SplashTiming.portalDuration)) { showPortal = true }
-
-        guard await hold(until: SplashTiming.mountainStart, from: start) else { return }
-        withAnimation(.easeOut(duration: SplashTiming.mountainDuration)) { showMountains = true }
-
-        guard await hold(until: SplashTiming.signalStart, from: start) else { return }
-        withAnimation(.easeInOut(duration: SplashTiming.signalDuration)) { showSignal = true }
-
-        guard await hold(until: SplashTiming.exitStart, from: start) else { return }
-        withAnimation(.easeOut(duration: SplashTiming.exitDuration)) { showExit = true }
-
-        guard await hold(until: SplashTiming.finishStart, from: start) else { return }
-        didFinish = true
-        onFinish()
-    }
-
-    /// Sleep until an absolute mark on the schedule. Returns false if the view went away or
-    /// the user skipped, so each stage is a single `guard` rather than a drifting interval.
-    @MainActor
-    private func hold(until mark: Duration, from start: ContinuousClock.Instant) async -> Bool {
-        do {
-            try await Task.sleep(until: start.advanced(by: mark), clock: .continuous)
-        } catch {
-            return false
-        }
-        return !Task.isCancelled && !didFinish
+    var body: some View {
+        StreamSymbol()
+            .fill(StreamDesign.coral)
+            .frame(width: size.width, height: size.height)
+            .position(center)
+            .opacity(opacity)
     }
 }
 
 private struct VampStreamSplashPresenter: ViewModifier {
-    @State private var visible = true
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var windowID = UUID()
+    let lifecycle: VampStreamSplashLifecycle
 
     func body(content: Content) -> some View {
-        // Covered content is still in the accessibility tree unless hidden, so VoiceOver could
-        // walk the home screen behind the splash.
-        content.accessibilityHidden(visible).overlay {
-            if visible {
-                AnimatedSplashView {
-                    withAnimation(.easeOut(duration: 0.02)) {
-                        visible = false
-                    }
-                }
-                .allowsHitTesting(true)
-                .zIndex(1000)
-                .transition(.opacity)
+        content
+            // Appearance is local-shell readiness, independent of discovery, pairing or network.
+            .onAppear {
+                lifecycle.prepare(owner: windowID)
+                lifecycle.rootBecameUsable(at: now)
             }
-        }
+            .overlay {
+                if lifecycle.coversRoot(for: windowID) {
+                    GeometryReader { proxy in
+                        AnimatedSplashView(
+                            lifecycle: lifecycle,
+                            reduceMotion: reduceMotion,
+                            safeArea: proxy.safeAreaInsets,
+                            onResize: { lifecycle.dismiss(at: now) }
+                        )
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture { lifecycle.dismiss(at: now) }
+                    }
+                    .zIndex(1000)
+                }
+            }
+            .onChange(of: scenePhase, initial: true) { previousPhase, phase in
+                if phase == .active {
+                    lifecycle.begin(owner: windowID, at: now, isActive: true, reduceMotion: reduceMotion)
+                } else if lifecycle.owner == windowID,
+                          previousPhase != phase || phase == .background {
+                    lifecycle.becameInactive()
+                }
+            }
+            .onChange(of: reduceMotion) { _, enabled in
+                if enabled { lifecycle.dismiss(at: now) }
+            }
+            .task(id: lifecycle.phase) {
+                guard lifecycle.owner == windowID else { return }
+                do {
+                    while let deadline = lifecycle.deadline {
+                        try await Task.sleep(for: .seconds(max(0, deadline - now)))
+                        try Task.checkCancellation()
+                        lifecycle.advance(to: now)
+                    }
+                } catch {
+                    // SwiftUI cancels the timer when the phase changes or this presenter disappears.
+                }
+            }
+            .onDisappear { lifecycle.cancel(owner: windowID) }
     }
+
+    private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 }
 
 extension View {
-    func vampStreamAnimatedSplash() -> some View {
-        modifier(VampStreamSplashPresenter())
+    func vampStreamAnimatedSplash(lifecycle: VampStreamSplashLifecycle) -> some View {
+        modifier(VampStreamSplashPresenter(lifecycle: lifecycle))
     }
 }

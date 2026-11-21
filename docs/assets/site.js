@@ -52,7 +52,7 @@
       'sync.screenCopy': "Ekran Kaydı, Sync’in seçilen uygulama penceresini eşleştirilmiş istemcinle paylaşmasını sağlar.",
       'sync.screenTitle': "Video için gerekli.",
       'sync.permissionsLead': "İzinleri doğrudan Vamp Sync’e ver. Hazır oluşu bildirir; macOS onayını asla atlamaz.",
-      'sync.permissionsTitle': "İki izin, iki net iş.",
+      'sync.permissionsTitle': "Her sürüm yalnızca ihtiyacı olan izni ister.",
       'sync.inputCopy': "Klavye ve işaretçi komutlarını yalnız güven ve Erişilebilirlik onayından sonra ilet.",
       'sync.inputTitle': "İzin verildiğinde kontrol et",
       'sync.videoCopy': "Paylaşılacak Mac uygulamasını Control veya Stream’den seç. Sync o uygulama penceresini yakalar.",

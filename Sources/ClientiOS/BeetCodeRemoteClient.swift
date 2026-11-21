@@ -2,6 +2,8 @@ import Combine
 import CoreImage
 import CoreVideo
 import Foundation
+import SharedProtocol
+import SharedUtilities
 import TransportWebRTC
 
 #if canImport(Security)
@@ -18,6 +20,20 @@ struct BeetCodeRemoteEndpoint: Equatable, Hashable, Sendable {
     let pairingCode: String?
 
     static let defaultPort = 9575
+
+    /// QR links keep Assistant/Companion separate from Sync's WebRTC pairing.
+    /// Both HTTP hosts can fall back when their preferred listener is occupied.
+    static func parsePairingLink(_ payload: String) throws -> Self {
+        let endpoint = try parse(address: payload)
+        guard let port = endpoint.url.port,
+              (9575...9583).contains(port) || (9675...9683).contains(port) else {
+            throw BeetCodeRemoteError.invalidAddress
+        }
+        guard endpoint.pairingCode != nil else {
+            throw BeetCodeRemoteError.invalidPairingCode
+        }
+        return endpoint
+    }
 
     static func parse(address: String, pairingCode: String? = nil) throws -> Self {
         let candidate = address.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -65,6 +81,7 @@ struct BeetCodeRemoteEndpoint: Equatable, Hashable, Sendable {
             || normalized.hasSuffix(".ts.net") {
             return true
         }
+        if StorePrivateNetworkConnectionPolicy.isTailscaleHost(normalized) { return true }
 
         let parts = normalized.split(separator: ".").compactMap { Int($0) }
         guard parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }) else { return false }
@@ -124,6 +141,7 @@ struct BeetCodeControlStatus: Decodable, Equatable, Sendable {
     let remoteUnlockAvailable: Bool?
     let remoteUnlockMessage: String?
     let supportsCursorlessCapture: Bool?
+    let supportsAdaptiveSizing: Bool?
     let message: String?
     let displayX: Double?
     let displayY: Double?
@@ -157,6 +175,8 @@ struct BeetCodeRemoteApplication: Decodable, Equatable, Hashable, Identifiable, 
     let isRunning: Bool
     let isActive: Bool
     var iconPNGBase64: String?
+    let appliedSizingMode: AppWindowSizingMode?
+    let sizingNotice: String?
 
     static func preservingIcons(
         in incoming: [Self],
@@ -206,6 +226,7 @@ struct BeetCodeRemoteApplication: Decodable, Equatable, Hashable, Identifiable, 
     private enum CodingKeys: String, CodingKey {
         case windowID, bundleIdentifier, name, windowTitle, width, height
         case isRunning, isActive, iconPNGBase64
+        case appliedSizingMode, sizingNotice
     }
 
     init(from decoder: Decoder) throws {
@@ -219,6 +240,8 @@ struct BeetCodeRemoteApplication: Decodable, Equatable, Hashable, Identifiable, 
         isRunning = try values.decodeIfPresent(Bool.self, forKey: .isRunning) ?? (windowID != nil)
         isActive = try values.decodeIfPresent(Bool.self, forKey: .isActive) ?? false
         iconPNGBase64 = try values.decodeIfPresent(String.self, forKey: .iconPNGBase64)
+        appliedSizingMode = try values.decodeIfPresent(AppWindowSizingMode.self, forKey: .appliedSizingMode)
+        sizingNotice = try values.decodeIfPresent(String.self, forKey: .sizingNotice)
     }
 }
 
@@ -336,6 +359,47 @@ struct BeetCodeAcceptedResponse: Decodable, Sendable {
     let queued: Bool?
 }
 
+/// Additive sizing fields let Companion use Sync's viewport and Original Size contract.
+/// Older Assistant hosts continue to receive their required aspect-only request.
+struct BeetCodeAppWindowSizingRequest {
+    let windowID: UInt32
+    let clientViewportAspect: Double
+    let viewport: CGSize?
+    let sizingMode: AppWindowSizingMode?
+
+    init(windowID: UInt32, clientViewportAspect: Double,
+         viewport: CGSize? = nil, sizingMode: AppWindowSizingMode? = nil) throws {
+        guard windowID > 0, clientViewportAspect.isFinite,
+              (0.25...4).contains(clientViewportAspect) else {
+            throw BeetCodeRemoteError.invalidResponse
+        }
+        if let viewport {
+            guard viewport.width.isFinite, viewport.height.isFinite,
+                  viewport.width > 0, viewport.height > 0,
+                  (0.25...4).contains(Double(viewport.width / viewport.height)) else {
+                throw BeetCodeRemoteError.invalidResponse
+            }
+        }
+        self.windowID = windowID
+        self.clientViewportAspect = clientViewportAspect
+        self.viewport = viewport
+        self.sizingMode = sizingMode
+    }
+
+    func wireBody() -> [String: Any] {
+        var body: [String: Any] = [
+            "windowID": windowID,
+            "clientViewportAspect": clientViewportAspect,
+        ]
+        if let viewport {
+            body["viewportWidth"] = Double(viewport.width)
+            body["viewportHeight"] = Double(viewport.height)
+        }
+        if let sizingMode { body["sizingMode"] = sizingMode.rawValue }
+        return body
+    }
+}
+
 struct BeetCodeRemoteClient: Sendable {
     let baseURL: URL
     let token: String?
@@ -396,15 +460,17 @@ struct BeetCodeRemoteClient: Sendable {
 
     func resizeApplication(
         windowID: UInt32,
-        clientViewportAspect: Double
+        clientViewportAspect: Double,
+        viewport: CGSize? = nil,
+        sizingMode: AppWindowSizingMode? = nil
     ) async throws -> BeetCodeRemoteApplication {
+        let sizing = try BeetCodeAppWindowSizingRequest(
+            windowID: windowID, clientViewportAspect: clientViewportAspect,
+            viewport: viewport, sizingMode: sizingMode)
         let response: BeetCodeRemoteApplicationResponse = try await request(
             "api/control/apps/resize",
             method: "POST",
-            body: [
-                "windowID": windowID,
-                "clientViewportAspect": clientViewportAspect,
-            ],
+            body: sizing.wireBody(),
             timeout: Self.windowResolvingTimeout)
         return response.application
     }
@@ -454,7 +520,7 @@ struct BeetCodeRemoteClient: Sendable {
                     request.timeoutInterval = 24 * 60 * 60
                     request.setValue("multipart/mixed, multipart/x-mixed-replace, video/avc", forHTTPHeaderField: "Accept")
 
-                    let events = Self.dataEvents(for: request)
+                    let events = Self.dataEvents(for: try await Self.privateStoreRequest(request))
                     var parser = BeetCodeScreenStreamParser()
                     for try await event in events {
                         try Task.checkCancellation()
@@ -510,7 +576,9 @@ struct BeetCodeRemoteClient: Sendable {
     }
 
     private func decode<Response: Decodable>(_ type: Response.Type, request: URLRequest) async throws -> Response {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let request = try await Self.privateStoreRequest(request)
+        let session = StorePrivateNetworkConnectionPolicy.requiresPrivateNetwork ? Self.storeSession : URLSession.shared
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw BeetCodeRemoteError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             let message = (try? JSONDecoder().decode(BeetCodeErrorBody.self, from: data).error)
@@ -526,12 +594,43 @@ struct BeetCodeRemoteClient: Sendable {
         case data(Data)
     }
 
+    private static func privateStoreRequest(_ request: URLRequest) async throws -> URLRequest {
+        guard StorePrivateNetworkConnectionPolicy.requiresPrivateNetwork else { return request }
+        guard let url = request.url, let host = url.host,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw StorePrivateNetworkConnectionPolicy.NotOnPrivateNetwork()
+        }
+        components.host = try await StorePrivateNetworkConnectionPolicy.validatedHost(host)
+        guard let privateURL = components.url else { throw StorePrivateNetworkConnectionPolicy.NotOnPrivateNetwork() }
+        var privateRequest = request
+        privateRequest.url = privateURL
+        return privateRequest
+    }
+
+    /// A paired peer cannot redirect Store requests to another service.
+    private final class StoreRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+        func urlSession(_ session: URLSession, task: URLSessionTask,
+                        willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                        completionHandler: @escaping (URLRequest?) -> Void) {
+            completionHandler(nil)
+        }
+    }
+
+    private static let storeSession = URLSession(
+        configuration: .ephemeral, delegate: StoreRedirectDelegate(), delegateQueue: nil)
+
     private static func dataEvents(for request: URLRequest) -> AsyncThrowingStream<DataEvent, Error> {
         AsyncThrowingStream { continuation in
             final class Receiver: NSObject, URLSessionDataDelegate, @unchecked Sendable {
                 let continuation: AsyncThrowingStream<DataEvent, Error>.Continuation
                 init(_ continuation: AsyncThrowingStream<DataEvent, Error>.Continuation) {
                     self.continuation = continuation
+                }
+
+                func urlSession(_ session: URLSession, task: URLSessionTask,
+                                willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                                completionHandler: @escaping (URLRequest?) -> Void) {
+                    completionHandler(StorePrivateNetworkConnectionPolicy.requiresPrivateNetwork ? nil : request)
                 }
 
                 func urlSession(

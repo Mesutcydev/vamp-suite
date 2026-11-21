@@ -6,7 +6,7 @@
 	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>PUH4GMFV56.com.mesutcy.remotedesktop</string>
+		<string>$(DEVELOPMENT_TEAM).com.mesutcy.remotedesktop</string>
 	</array>
 	<key>com.apple.security.device.audio-input</key>
 	<true/>

@@ -66,10 +66,6 @@ final class ClientFileTransferManager: ObservableObject {
         var hasher: SHA256
     }
 
-    private enum DefaultsKeys {
-        static let isEnabled = "com.mesutcy.remotedesktop.terminal.filetransfer.enabled"
-    }
-
     @Published var isImporterPresented = false
     @Published var isReceivedFileSavePresented = false
     @Published private(set) var activeTransfer: TransferState?
@@ -110,8 +106,8 @@ final class ClientFileTransferManager: ObservableObject {
     }
 
     var isEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: DefaultsKeys.isEnabled) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: DefaultsKeys.isEnabled) }
+        get { ClientFileTransferPreference.isEnabled() }
+        set { ClientFileTransferPreference.setEnabled(newValue) }
     }
 
     func startObserving() {

@@ -25,6 +25,11 @@ struct MacShellView: View {
     @AppStorage("client.onboarding.completed") private var onboardingCompleted = false
     @State private var showOnboarding = false
 
+    /// Free 15-minute daily allowance and the Vamp Pro unlock that removes it (store builds only).
+    @StateObject private var usage = DailyStreamingUsage()
+    @StateObject private var unlock = StreamingUnlockStore()
+    @State private var showsPaywall = false
+
     init(environment: ClientAppEnvironment) {
         self.environment = environment
         self.coordinator = environment.sessionCoordinator
@@ -52,6 +57,11 @@ struct MacShellView: View {
         }
     }
 
+    /// Store builds stop new sessions once the free 15 minutes are used; website builds are never gated.
+    private var allowsNewSession: Bool {
+        !StreamingUnlockStore.isEnforced || unlock.isEffectivelyUnlocked || usage.hasTimeRemaining
+    }
+
     private var reconnectIsActive: Bool {
         reconnectCoordinator.isReconnecting || coordinator.isReconnectInProgress
     }
@@ -74,7 +84,9 @@ struct MacShellView: View {
                     reconnectCoordinator: reconnectCoordinator
                 )
             } else {
-                MacHostsScreen(environment: environment, assistant: assistant)
+                MacHostsScreen(environment: environment, assistant: assistant,
+                               allowsNewSession: { allowsNewSession },
+                               onSessionBlocked: { showsPaywall = true })
             }
         }
         .tint(MacBrand.accent)
@@ -87,7 +99,22 @@ struct MacShellView: View {
         // Keep the title for Window menus and accessibility. The toolbar's host
         // status already names the remote Mac, so do not repeat it in the bar.
         .navigationTitle(showsStreamChrome ? windowTitle : "")
+        .sheet(isPresented: $showsPaywall) {
+            MacStreamingPaywallView(unlock: unlock, usage: usage, onDismiss: { showsPaywall = false })
+        }
+        .onChange(of: usage.secondsUsedToday) { _ in
+            // The cap ends a live session and presents Vamp Pro in its place.
+            guard StreamingUnlockStore.isEnforced, !unlock.isEffectivelyUnlocked, !usage.hasTimeRemaining,
+                  coordinator.activeSessionID != nil else { return }
+            Task { await coordinator.endSession() }
+            showsPaywall = true
+        }
         .onChange(of: coordinator.phase) { phase in
+            if phase == .receiving || phase == .waitingForMedia {
+                usage.startSession()
+            } else if !reconnectIsActive {
+                usage.stopSession()
+            }
             switch phase {
             case .receiving:
                 hasStreamedThisSession = true

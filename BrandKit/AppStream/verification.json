@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-15",
+  "builds": {
+    "sync": "pass",
+    "control-mac": "pass",
+    "control-ios": "pass",
+    "device": "pass",
+    "store": "pass"
+  },
+  "tests": {
+    "core": {
+      "passed": 686,
+      "failed": 0,
+      "engine": "native"
+    },
+    "ios": {
+      "passed": 89,
+      "failed": 0
+    }
+  },
+  "visualQA": [
+    "iPhone",
+    "iPad",
+    "light",
+    "dark",
+    "largest Dynamic Type",
+    "Increase Contrast",
+    "search and filters",
+    "dock hide and reveal",
+    "help",
+    "pairing sheets"
+  ],
+  "liveStreamingRetested": false,
+  "signed": true,
+  "releaseIncludesDesignFixtures": false,
+  "version": "1.0",
+  "build": "14",
+  "toolchain": "Xcode 27 / 27A266a",
+  "appleValidation": "passed",
+  "ipaSHA256": "cba7f01185989218369027eba7aba7bb81d41d8de7f37eaa3d28059f71f051a9",
+  "testFlightUpload": "succeeded",
+  "classicIcon": "iPhone and iPad icon switch verified; iPhone relaunch persistence verified",
+  "auditFixes": [
+    "View Only gesture help and dock announcement",
+    "Favorite VoiceOver values for both libraries",
+    "Background preference respected by shared canvas",
+    "Camera unavailable screen shares glass design and manual pairing guidance",
+    "Stable release toolchain used for TestFlight"
+  ],
+  "deliveryUUID": "b1c033fa-faba-41cc-aab3-aa3f5f114ba2",
+  "appStoreConnectAppID": "6819316114",
+  "testFlightProcessing": "VALID",
+  "testFlightInternalState": "IN_BETA_TESTING",
+  "testFlightGroup": "Internal Testers",
+  "testFlightNotesSaved": true,
+  "backgroundPreferenceRuntimeChecked": true,
+  "cameraDeniedRuntimeChecked": true
+}

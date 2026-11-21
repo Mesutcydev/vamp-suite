@@ -53,6 +53,7 @@ public struct HostAdvertisementMetadata: Codable, Hashable, Sendable {
     /// When present, the host is also listening on this port with TLS-PSK using the
     /// `publicKeyFingerprint` as the pre-shared key.  Clients that support TLS should
     /// prefer this port; older clients that don't see this key fall back to plain TCP.
+    /// The PSK is a public value, so this port is obfuscation, not authentication.
     public var secureTLSPort: UInt16?
     /// MAC address of the primary network interface, advertised for Wake-on-LAN.
     /// Format: colon-separated hex octets, e.g. "a1:b2:c3:d4:e5:f6".
@@ -76,6 +77,9 @@ public struct HostAdvertisementMetadata: Codable, Hashable, Sendable {
     /// can ECIES-seal the offer's session token so a passive observer on the
     /// plaintext signaling port cannot read it. `nil` for hosts without an
     /// identity (legacy) — clients then fall back to the plaintext token.
+    /// This copy is unsigned Bonjour TXT, so it is only a fallback for hosts
+    /// that predate the signed key bundle; updated clients take the key from
+    /// the bundle (`SessionTokenSealing.verifyKeyBundle`) instead.
     public var keyAgreementPublicKey: Data?
 
     public init(

@@ -1,0 +1,495 @@
+import SwiftUI
+
+/// Vamp Control's visual identity: black, white, and native clear glass.
+enum ControlDesign {
+    static let canvas = Color.dynamic(light: 0xF5F5F5, dark: 0x141414)
+    static let ink = Color.dynamic(light: 0x181818, dark: 0xF3F3F3)
+    static let secondary = Color.dynamic(light: 0x686868, dark: 0xAAAAAA)
+    static let accent = Color.dynamic(light: 0x181818, dark: 0xF3F3F3)
+    /// Status is the one place color appears; everything else stays monochrome.
+    static let available = Color.dynamic(light: 0x1F9D55, dark: 0x3DD07A)
+    static let caution = Color.dynamic(light: 0xB86E00, dark: 0xF2A93B)
+    static let buttonInk = Color.dynamic(light: 0xFFFFFF, dark: 0x181818)
+    static let line = Color.dynamic(light: 0x181818, dark: 0xF3F3F3, lightAlpha: 0.12, darkAlpha: 0.12)
+    static let plate = Color.dynamic(light: 0xFFFFFF, dark: 0x242424)
+    static let radius: CGFloat = 28
+    static let maxWidth: CGFloat = 720
+    /// Two-pane home from here up: the unfolded iPhone Duo panel is 951 pt wide.
+    static let wideMinWidth: CGFloat = 700
+    static let wideMaxWidth: CGFloat = 1080
+
+    static func companionMessage(_ message: String) -> String {
+        message.replacingOccurrences(of: "Vamp Assistant", with: "Vamp Companion")
+            .replacingOccurrences(of: "Vamp Stream", with: "Vamp Control")
+            .replacingOccurrences(of: "port 9575", with: "the port shown on your Mac")
+    }
+}
+
+enum ControlAppearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+    static let storageKey = "control.appearance"
+    var id: String { rawValue }
+    var title: LocalizedStringKey {
+        switch self {
+        case .system: "Automatic"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
+/// Connected windows: one identity across the toolbar, splash, and app icon.
+struct ControlSymbol: Shape {
+    func path(in rect: CGRect) -> Path {
+        let scale = min(rect.width, rect.height) / 64
+        return Path(ControlMarkGeometry.silhouette())
+            .applying(CGAffineTransform(scaleX: scale, y: scale))
+            .applying(CGAffineTransform(translationX: rect.midX - 32 * scale,
+                                       y: rect.midY - 32 * scale))
+    }
+}
+
+struct ControlWordmark: View {
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            ControlSymbol().fill(ControlDesign.accent)
+                .frame(width: 18, height: 18)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
+            Text("vamp").font(.system(size: 19, weight: .bold)).tracking(-0.7)
+            Text("CONTROL").font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(1.6)
+                .foregroundStyle(ControlDesign.secondary)
+        }
+        .foregroundStyle(ControlDesign.ink)
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Vamp Control")
+    }
+}
+
+/// The brand mark on a clear glass tile, the way the app icon reads.
+struct ControlGlassLogo: View {
+    var size: CGFloat = 56
+    var body: some View {
+        ControlSymbol().fill(ControlDesign.accent)
+            .frame(width: size * 0.44, height: size * 0.44)
+            .frame(width: size, height: size)
+            .controlGlass(radius: size * 0.3, interactive: false, emphasis: .control)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Small monospaced caps: section labels, source tags, and status meta.
+struct ControlMono: View {
+    let text: LocalizedStringKey
+    var size: CGFloat = 10
+    var color = ControlDesign.secondary
+    var body: some View {
+        Text(text).font(.system(size: size, weight: .semibold, design: .monospaced))
+            .textCase(.uppercase).tracking(1.1).foregroundStyle(color)
+    }
+}
+
+/// Ambient canvas behind clear glass: two colorless light blooms that drift slowly and a faint grid.
+struct ControlBackground: View {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var drift = false
+    var body: some View {
+        ZStack {
+            ControlDesign.canvas
+            Circle().fill(ControlDesign.ink.opacity(scheme == .dark ? 0.14 : 0.08))
+                .frame(width: 480, height: 480).blur(radius: 110)
+                .offset(x: drift ? -90 : -160, y: drift ? -220 : -280)
+            Circle().fill(ControlDesign.ink.opacity(scheme == .dark ? 0.10 : 0.055))
+                .frame(width: 420, height: 420).blur(radius: 120)
+                .offset(x: drift ? 120 : 190, y: drift ? 340 : 280)
+            Canvas { context, size in
+                var path = Path()
+                for x in stride(from: 0, through: size.width, by: 40) {
+                    path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: size.height))
+                }
+                for y in stride(from: 0, through: size.height, by: 40) {
+                    path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: size.width, y: y))
+                }
+                context.stroke(path, with: .color(ControlDesign.ink.opacity(scheme == .dark ? 0.06 : 0.045)), lineWidth: 0.5)
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 14).repeatForever(autoreverses: true)) { drift = true }
+        }
+    }
+}
+
+enum ControlGlassEmphasis {
+    /// Broad surfaces stay transparent so the backdrop reads through.
+    case surface
+    /// Compact controls keep a visible optical rim.
+    case control
+    var opacity: Double { self == .surface ? 0.55 : 0.8 }
+}
+
+private struct ControlGlass: ViewModifier {
+    var radius: CGFloat
+    var interactive: Bool
+    var emphasis: ControlGlassEmphasis
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        content
+            .background {
+                // Light mode has little to refract; a faint lift keeps surfaces off the page.
+                if scheme == .light && emphasis == .surface {
+                    shape.fill(Color.white.opacity(0.3))
+                        .shadow(color: .black.opacity(0.07), radius: 18, y: 10)
+                }
+            }
+            .background {
+                if reduceTransparency {
+                    shape.fill(ControlDesign.plate)
+                } else if #available(iOS 26, *) {
+                    // Geometry-locked so glass never changes the content's measured size.
+                    GeometryReader { proxy in
+                        Color.clear.frame(width: proxy.size.width, height: proxy.size.height)
+                            .glassEffect(interactive ? .clear.interactive() : .clear, in: .rect(cornerRadius: radius))
+                            .opacity(emphasis.opacity)
+                    }
+                } else {
+                    shape.fill(.ultraThinMaterial)
+                }
+            }
+            .overlay { shape.strokeBorder(ControlDesign.line, lineWidth: 0.6) }
+    }
+}
+
+extension View {
+    func controlGlass(radius: CGFloat = ControlDesign.radius, interactive: Bool = false,
+                      emphasis: ControlGlassEmphasis = .surface) -> some View {
+        modifier(ControlGlass(radius: radius, interactive: interactive, emphasis: emphasis))
+    }
+}
+
+struct ControlPrimaryButton: View {
+    let title: LocalizedStringKey
+    var symbol = "arrow.right"
+    var isDisabled = false
+    var fillsWidth = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Text(title)
+                Image(systemName: symbol).font(.body.weight(.semibold))
+            }
+            .font(.headline)
+            .foregroundStyle(ControlDesign.buttonInk)
+            .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: 44)
+            .padding(.horizontal, fillsWidth ? 0 : 10)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .tint(ControlDesign.accent)
+        .disabled(isDisabled)
+    }
+}
+
+/// Reports where an open foldable's crease crosses this view, in the view's own points.
+/// nil when the device has no hinge, the hinge is closed (the cover panel shows the UI),
+/// or the OS is older than iOS 27.1. The iPhone Duo's crease runs down the middle of
+/// its inner panel, so it is the window's horizontal midpoint.
+struct ControlHingeReader: UIViewRepresentable {
+    @Binding var hingeX: CGFloat?
+
+    func makeUIView(context: Context) -> HingeView {
+        let view = HingeView()
+        view.onChange = { value in if hingeX != value { hingeX = value } }
+        return view
+    }
+
+    func updateUIView(_ view: HingeView, context: Context) {
+        view.onChange = { value in if hingeX != value { hingeX = value } }
+    }
+
+    final class HingeView: UIView {
+        var onChange: ((CGFloat?) -> Void)?
+        private var isOpen = false
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            backgroundColor = .clear
+            if #available(iOS 27.1, *) {
+                addInteraction(UIHingeInteraction { [weak self] _, update in
+                    guard let self else { return }
+                    let status = update.hinge?.status
+                    self.isOpen = status == .fullyOpen || status == .partiallyOpen
+                    self.report()
+                })
+            }
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            report()
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            report()
+        }
+
+        private func report() {
+            var value: CGFloat?
+            if isOpen, let window {
+                value = (convert(CGPoint(x: window.bounds.midX, y: 0), from: window).x).rounded()
+            }
+            DispatchQueue.main.async { [weak self] in self?.onChange?(value) }
+        }
+    }
+}
+
+/// Tiles shrink slightly under the finger instead of flashing.
+struct ControlPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.975 : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .animation(.snappy(duration: 0.18), value: configuration.isPressed)
+    }
+}
+
+/// Flowing contour lines. `phase` 0→1 shifts them by one line spacing, so a
+/// repeating linear animation loops seamlessly.
+struct ControlSignalLines: Shape {
+    var phase: CGFloat
+    var animatableData: CGFloat {
+        get { phase }
+        set { phase = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let spacing: CGFloat = 19
+        for index in -2..<9 {
+            let offset = CGFloat(index) * spacing + phase * spacing
+            path.move(to: CGPoint(x: -30 + offset, y: rect.height + 20))
+            path.addCurve(to: CGPoint(x: rect.width + 30, y: -30 + offset),
+                          control1: CGPoint(x: 34 + offset, y: 20),
+                          control2: CGPoint(x: rect.width - 60, y: rect.height - 40 + offset))
+        }
+        return path
+    }
+}
+
+/// A Mac display, alive: contour lines drift, rings pulse from the Vamp mark on
+/// clear glass while the Mac is reachable. Motion stops with Reduce Motion.
+struct ControlDisplayArt: View {
+    var isOnline = true
+    var height: CGFloat = 156
+    var statusLabel: LocalizedStringKey?
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var flow: CGFloat = 0
+    @State private var pulse = false
+    @State private var float = false
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 16, style: .continuous) }
+    private var logo: CGFloat { min(60, height * 0.36) }
+
+    var body: some View {
+        ZStack {
+            shape.fill(LinearGradient(
+                colors: scheme == .dark ? [Color(hex: 0x303030), Color(hex: 0x141414)]
+                                        : [Color(hex: 0xF9F9F9), Color(hex: 0xDADADA)],
+                startPoint: .topLeading, endPoint: .bottomTrailing))
+            RadialGradient(colors: [ControlDesign.ink.opacity(scheme == .dark ? 0.18 : 0.10), .clear],
+                           center: .center, startRadius: 2, endRadius: height * 0.85)
+            ControlSignalLines(phase: flow)
+                .stroke(ControlDesign.secondary.opacity(scheme == .dark ? 0.2 : 0.16), lineWidth: 0.9)
+                .clipShape(shape)
+            if isOnline {
+                ForEach(0..<2, id: \.self) { ring in
+                    Circle().strokeBorder(ControlDesign.ink.opacity(0.25), lineWidth: 1)
+                        .frame(width: logo, height: logo)
+                        .scaleEffect(pulse ? 2.7 : 1)
+                        .opacity(pulse ? 0 : 0.8)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 2.8).repeatForever(autoreverses: false)
+                            .delay(Double(ring) * 1.4), value: pulse)
+                }
+            }
+            ControlGlassLogo(size: logo)
+                .offset(y: float ? -2.5 : 2.5)
+                .shadow(color: .black.opacity(scheme == .dark ? 0.35 : 0.12), radius: 14, y: 6)
+        }
+        .frame(height: height)
+        .frame(maxWidth: .infinity)
+        .clipShape(shape)
+        .overlay(alignment: .topTrailing) {
+            if let statusLabel {
+                HStack(spacing: 6) {
+                    ControlPulseDot(color: isOnline ? ControlDesign.available : ControlDesign.secondary, isLive: isOnline)
+                    ControlMono(text: statusLabel, size: 9, color: ControlDesign.ink.opacity(0.8))
+                }
+                .padding(.horizontal, 9).padding(.vertical, 6)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay { Capsule().strokeBorder(ControlDesign.line, lineWidth: 0.5) }
+                .padding(10)
+            }
+        }
+        .overlay { shape.strokeBorder(ControlDesign.line) }
+        .saturation(isOnline ? 1 : 0)
+        .opacity(isOnline ? 1 : 0.8)
+        .accessibilityHidden(true)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.linear(duration: 7).repeatForever(autoreverses: false)) { flow = 1 }
+            withAnimation(.easeInOut(duration: 3.2).repeatForever(autoreverses: true)) { float = true }
+            pulse = true
+        }
+    }
+}
+
+/// A status dot that breathes while something is live.
+struct ControlPulseDot: View {
+    var color: Color
+    var isLive = true
+    var size: CGFloat = 7
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var on = false
+    var body: some View {
+        Circle().fill(color).frame(width: size, height: size)
+            .background {
+                if isLive && !reduceMotion {
+                    Circle().fill(color.opacity(0.4))
+                        .scaleEffect(on ? 2.6 : 1).opacity(on ? 0 : 0.9)
+                }
+            }
+            .onAppear {
+                guard isLive, !reduceMotion else { return }
+                withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) { on = true }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Round glass control for the floating top bar.
+struct ControlGlassIconButton: View {
+    let symbol: String
+    let label: LocalizedStringKey
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(ControlDesign.ink)
+                .frame(width: 42, height: 42)
+                .contentShape(Circle())
+                .controlGlass(radius: 21, interactive: true, emphasis: .control)
+        }
+        .buttonStyle(ControlPressStyle())
+        .accessibilityLabel(Text(label))
+    }
+}
+
+/// Sections fade and rise in once, staggered. Reduce Motion skips the travel.
+struct ControlAppear: ViewModifier {
+    let shown: Bool
+    var delay: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 14)
+            .animation(.smooth(duration: 0.6).delay(delay), value: shown)
+    }
+}
+
+extension View {
+    func controlAppear(_ shown: Bool, delay: Double = 0) -> some View {
+        modifier(ControlAppear(shown: shown, delay: delay))
+    }
+}
+
+/// Original vector artwork, rather than a fake desktop screenshot or an oversized SF Symbol.
+struct ControlMacIllustration: View {
+    var compact = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(ControlDesign.line, lineWidth: 0.7).frame(width: 240, height: 240)
+            Circle().stroke(ControlDesign.line.opacity(0.6), lineWidth: 0.7).frame(width: 300, height: 300)
+
+            VStack(spacing: 0) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 13).fill(ControlDesign.plate)
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(scheme == .dark ? Color(hex: 0x303030) : Color(hex: 0xE5E5E5))
+                        .padding(7)
+                    ControlSignalArtwork().padding(7).clipShape(RoundedRectangle(cornerRadius: 8))
+                    ControlSymbol().fill(ControlDesign.accent).frame(width: 48, height: 48)
+                }
+                .frame(width: 218, height: 143)
+                .overlay { RoundedRectangle(cornerRadius: 13).strokeBorder(ControlDesign.line) }
+                .overlay(alignment: .top) {
+                    Circle().fill(ControlDesign.secondary.opacity(0.6)).frame(width: 3, height: 3).padding(.top, 2)
+                }
+                UnevenRoundedRectangle(bottomLeadingRadius: 10, bottomTrailingRadius: 10)
+                    .fill(ControlDesign.plate)
+                    .frame(width: 244, height: 7)
+                    .overlay(alignment: .top) { Rectangle().fill(ControlDesign.line).frame(height: 0.5) }
+            }
+            .rotationEffect(.degrees(-6))
+            .offset(x: -12, y: -6)
+            .shadow(color: .black.opacity(scheme == .dark ? 0.18 : 0.07), radius: 16, y: 12)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 17).fill(ControlDesign.plate)
+                RoundedRectangle(cornerRadius: 13).fill(ControlDesign.canvas).padding(4)
+                Image(systemName: "cursorarrow.rays")
+                    .font(.system(size: 24, weight: .light)).foregroundStyle(ControlDesign.accent)
+                Capsule().fill(ControlDesign.secondary.opacity(0.35)).frame(width: 23, height: 3).offset(y: 53)
+            }
+            .frame(width: 69, height: 129)
+            .overlay { RoundedRectangle(cornerRadius: 17).strokeBorder(ControlDesign.line) }
+            .rotationEffect(.degrees(9))
+            .offset(x: 98, y: compact ? 25 : 43)
+            .shadow(color: .black.opacity(0.08), radius: 10, y: 6)
+        }
+        .frame(height: compact ? 190 : 260)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .accessibilityHidden(true)
+    }
+}
+
+private struct ControlSignalArtwork: View {
+    var body: some View {
+        Canvas { context, size in
+            for index in 0..<7 {
+                let offset = CGFloat(index) * 19
+                var path = Path()
+                path.move(to: CGPoint(x: -30 + offset, y: size.height + 20))
+                path.addCurve(to: CGPoint(x: size.width + 30, y: -30 + offset),
+                              control1: CGPoint(x: 34 + offset, y: 20),
+                              control2: CGPoint(x: size.width - 60, y: size.height - 40 + offset))
+                context.stroke(path, with: .color(ControlDesign.secondary.opacity(0.14)), lineWidth: 1)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}

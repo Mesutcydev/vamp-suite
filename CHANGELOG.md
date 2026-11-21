@@ -7,6 +7,259 @@ their original product names. The format follows
 
 ## [Unreleased]
 
+### Vamp Sync 4.0.0 (build 86) and Vamp Control macOS 2.0.0 (build 70)
+
+- Pairing uses a signed key exchange. A Mac's pairing link and QR code carry its
+  fingerprint, and first contact asks you to confirm it. Macs and clients that
+  predate this use the previous handshake, and Sync shows a notice while one is
+  connected.
+- Vamp Sync removes the old Vamp Host watchdog LaunchAgent when it starts. That
+  agent relaunched Sync about 20–25 seconds after Quit.
+- Stopping or restarting Sync while a device is connected asks first.
+
+### Signed key exchange before pairing (not tested live)
+
+Vamp Sync, Vamp Control and App Stream:
+
+- The session key is no longer sent unencrypted. An app now asks the Mac for
+  its key bundle, signed by the Mac's identity key, before it sends anything
+  secret, and seals the session key to it. This used to happen only for Macs
+  found on the local network, and with an unsigned key; typed, scanned and
+  Tailscale addresses sent the key in the clear.
+- A Mac is verified before it is trusted. The first time an app connects to a
+  Mac it has not verified, it stops and shows that Mac's fingerprint to compare
+  with the Host fingerprint in Vamp Sync. Nothing is sent or saved until you
+  confirm. Scanning Vamp Sync's pairing code skips the prompt, because the code
+  now carries the fingerprint.
+- A Mac that has connected this way once cannot be pushed back to the older
+  handshake; if it stops offering the key exchange the connection is refused.
+- Older versions keep working for now. An updated Vamp Sync still accepts an
+  older app, and shows a notice while that device is connected. An updated app
+  still connects to an older Vamp Sync on the older handshake, shows a notice,
+  and asks before pairing with one for the first time. Each connect to an
+  older Vamp Sync takes about 3 seconds longer.
+- Reconnecting on the Mac app can no longer fall back to resending the
+  previous session's key unencrypted.
+
+### Audit follow-up fixes
+
+- Vamp Sync: Stop and Restart ask first when a device is connected, from the
+  panel and the menu bar. A vamphost:// link can stop, restart or reject only
+  after the user confirms.
+- Vamp Sync: a quality change no longer cancels a window the user has just
+  picked, and a queued pick the host replaces gets a reply instead of silence.
+- Vamp Sync: the host limits keyframe requests to one per second.
+- Vamp Sync: the pairing panel says why there is no code yet, and the Tailscale
+  button says when Tailscale is not installed.
+- Vamp Sync: trust decisions fail closed. An unreadable trusted-device list, or
+  an approval that cannot be saved, no longer lets a device in.
+- Vamp Sync: the signaling replay cache no longer evicts entries still inside
+  the replay window. Past its cap it refuses new envelopes until old ones age out.
+- Control: command envelopes are numbered and sent in one step, so keystrokes
+  are not dropped when sent concurrently.
+- Control macOS: only the window that changes screen is resized in Actual Size,
+  and the video layer tracks the window's backing scale.
+- Control macOS: Assistant reconnects can be cancelled, and forgetting the
+  saved Assistant asks first.
+- Control iOS: the input flush timer stops when no input is queued.
+- The browser pairing code fails closed if the system has no randomness,
+  instead of falling back to zeros.
+- Vamp Sync: for an approved device, a connection that is only a TCP connect no
+  longer replaces its live signaling connection. It takes over after a verified
+  message, and an unproven connection is dropped after 10 seconds. Devices not
+  yet approved still get the previous behaviour (the latest connection replaces
+  the live one).
+- Vamp Sync: an untrusted offer no longer releases a device's session before
+  the trust decision. The release happens after trust, and only if the slot is
+  still free.
+- Vamp Sync: a declined offer no longer changes the phase, name or settings of
+  the session that is still running. While an approved device's session is live,
+  a new connection is refused rather than cancelling one waiting to pair, and
+  one connection gets a fixed number of signed messages.
+
+### Streaming quality, reliability and security audit
+
+Vamp Sync:
+
+- Retina displays stream at their real pixel size. The desktop was sized from
+  point dimensions (`CGDisplayPixelsWide`, `SCDisplay.width`), so every HiDPI
+  display streamed at half resolution on each axis and "Performance" at a
+  quarter. Capture and encode now both size from the display mode's backing
+  scale. Not yet verified on a HiDPI display.
+- Every stream now fits a 4K-UHD pixel budget (8.3 MP). This already applied
+  to app windows; it now also bounds a display's backing pixels, so a 5K or 6K
+  panel on Ultra is scaled to about 3840×2160 rather than sent at 14.7 MP or
+  more. Displays keep any long edge (a 5120×1440 ultrawide is unchanged).
+- The encoder no longer stays at a reduced bitrate after a restart. It
+  re-applied the last adaptive bitrate to every rebuilt session while the new
+  rate controller assumed full bitrate and never raised it, so one congestion
+  dip could pin the bitrate through later quality changes, display switches,
+  window resizes and new sessions.
+- Switching displays keeps the session's quality preset instead of dropping a
+  Quality or Ultra session to Balanced.
+- Ending a client's session now stops its extra displays and its display
+  observer. Extra displays used to keep capturing after the client left, and
+  a leftover observer could start whole-display capture in a later app-window
+  session when a monitor changed. An app-window session with no window picked
+  never falls back to capturing a display.
+- A window start or display switch that fails no longer leaves capture running
+  behind the failure it reports.
+- Stop pressed while the host is still starting is honoured.
+- An offer configures the session only after the trust gate passes, and the
+  same device ID under a different key is no longer treated as the connected
+  device.
+- The Mac's clipboard is not read or written by a client while the Mac is
+  locked, and not written in view-only mode (which includes the Mac App Store
+  edition).
+- The port-conflict message no longer tells users to quit discontinued apps as
+  if they were current, and Copy Pairing Address is disabled when there is no
+  address to copy.
+
+Vamp Control (iOS and macOS):
+
+- A quality preset lowered during a network dip recovers. Recovery ignored an
+  "excellent" link, could not return to a preset it had already restored once,
+  paused while the remote screen was still, and judged loss over the whole
+  session instead of the last minute.
+- The loss estimate follows a host encoder restart instead of freezing at its
+  last value.
+- No keyframe is requested while the remote screen is simply not changing, so
+  the first frame after a pause is no longer a forced keyframe.
+- A connection the other side closed is noticed at once rather than after a
+  12 to 30 second watchdog. On iOS a lost session now reconnects after the
+  transport's own retries run out instead of showing "reconnecting…"
+  indefinitely.
+- Messages name Vamp Sync and its approval step, and drop the raw "Timeout:"
+  prefix. Remote unlock reports when the Mac is still locked.
+- iOS: the screenshot result is shown, the display button is disabled with one
+  display, and the session bar's icon buttons have accessibility labels.
+- iOS: taps follow the display on screen. The input mapping was rebuilt only
+  on a size change, so after switching displays, or focusing one in Show All
+  Displays, taps kept landing on the previous display until the phone was
+  rotated.
+- iOS: the free daily allowance stops counting when the app is backgrounded.
+- A video view draws the frame already decoded when it appears, instead of
+  staying black until the Mac's screen changes, and a decoder session that
+  failed to start is retried on the next keyframe.
+- Ending a session while a reconnect is in flight no longer brings it back on
+  the next foreground.
+- macOS: closing a remote app and forgetting a Mac ask first, Restore Purchase
+  shows its result, and the access button is disabled in the view-only edition.
+- A second quality change within ten seconds is held and sent when the host
+  will accept it. The host dropped it silently, so the picker showed a preset
+  the Mac was not using.
+- A display switch the Mac refuses (locked, or two picks within two seconds)
+  times out instead of leaving the session waiting, which on macOS kept remote
+  input off.
+- macOS: a click on the black bars around the picture no longer clicks on the
+  Mac, modifier keys are released when focus leaves the stream (Command-Tab
+  used to leave Command held on the Mac), and turning off Show All Displays
+  maps clicks back to the primary display.
+
+### Vamp Sync 4.0.0 (build 81)
+
+- The website edition uses the Vamp Host bundle ID, `com.mesutcy.remotedesktop.host`, and its
+  legacy identity. Existing Vamp Host installs can update to it in place.
+- Updates come from `https://mesut.uk/appcast.xml`, signed with the Vamp Host update key.
+- Build 80 stays published for the earlier `minhost` website edition.
+
+### Vamp Sync 4.0.0 (build 79)
+
+- Mac App Store edition: label the panel "View Only · Mac App Store edition",
+  replace the separate View Only and website-edition cards with one "Two
+  editions of Vamp Sync" comparison card, and add a menu-bar link to the
+  full-control website edition. Links open the browser only.
+
+### Vamp Control iOS 4.0.0 (build 46)
+
+- iPhone Duo polish, verified on the iOS 27.1 Duo simulator in every posture:
+  - The unfolded inner panel is two cover-sized pages. Control now detects the
+    fold with `UIHingeInteraction` and splits the home exactly at the crease,
+    so nothing straddles it, open or half-open: greeting, status, this
+    device's fingerprint, and Add a Mac on the left page; your Mac fills the
+    right page. Sheets already open on one page.
+  - Panels with no top inset (both Duo screens, landscape iPhone) get a proper
+    top margin instead of a toolbar pressed against the edge.
+- A "This iPhone" card shows the device fingerprint to match on your Mac.
+
+### Vamp Sync 4.0.0 (build 80)
+
+- Release the single-device slot when its device is gone. A phone that dropped
+  mid-setup (app switched away, updated, or cancelled) used to hold the slot
+  forever, so every later device was told "already connected to another
+  device". A different device now takes over once the old session has no live
+  transport or has been silent past the liveness timeout; a just-approved
+  session keeps the slot for 30 s while it negotiates.
+
+### Vamp Control iOS 4.0.0 (builds 44–45)
+
+- Verified on a real iPhone Duo (iOS 27.1 simulator): the unfolded panel gets
+  a tall hero that fills its height; the cover screen status line drops the
+  route instead of truncating.
+- The local pointer now follows the picture's scale (about the size of the
+  Mac's own cursor, 11–22 pt) instead of a fixed 18 pt arrow that looked huge
+  over a phone-sized desktop.
+- App Store: iPhone Duo screenshots, a 21:9 product-page header video, and a
+  3:2 search-results video.
+
+### Vamp Control iOS 4.0.0 (build 43)
+
+- Redesign Add a Mac: glass source tiles for Vamp Sync and Vamp Companion, a
+  scan tile, live nearby Macs, glass address and code fields, and a compact
+  Connect that appears only when there is something to connect to.
+- The wide hero grows into spare height on iPad and the unfolded iPhone Duo.
+- New store screenshots: real captures of the build, framed with localized
+  captions in six locales (sources in the build 43 release folder).
+
+### Vamp Control iOS 4.0.0 (build 42)
+
+- Fix pairing with Vamp Sync stalling on "Connecting" after approval: Control
+  now requests Sync's desktop stream (Sync grants it only to clients that
+  advertise desktop control), and an app-windows-only Sync gets a clear
+  update message instead of an endless wait. After approval the connecting
+  card says so and stops asking to verify.
+- Cancelling a connection no longer shows a CancellationError.
+- Premium live home: floating glass top bar with the Vamp mark, date and
+  greeting header, live status, Online/Network/Relay chips, an animated
+  display with pulse rings and a READY chip, drifting backdrop light, and a
+  staggered entrance. Motion respects Reduce Motion.
+- Clear Liquid Glass surfaces with hairline rims, mono labels, full-width
+  notices, and a grouped fingerprint that matches Vamp Sync's panel.
+- Adapt to iPhone Duo: one column on the 466 pt cover, two panes from 700 pt,
+  and a side-by-side hero on the 951 pt unfolded panel.
+- Add Mac explains Vamp Sync editions (website: keyboard and pointer control;
+  Mac App Store: View Only).
+
+### Vamp Control 4.0.0 (build 60)
+
+- Ship as Vamp Control 4.0 on the Mac App Store. The "Don't have Vamp Sync
+  yet?" card now explains the website edition (keyboard and pointer control)
+  versus the View Only Mac App Store edition and links to the comparison.
+
+### Vamp Sync 4.0.0 (build 75)
+
+- Require an embedded App Store distribution profile for delivery verification. Build 75 corrects build 74's missing-profile TestFlight warning (ITMS-90889).
+
+- Make App Sync the update to the existing Vamp : Host Mac App Store listing,
+  retaining its bundle ID, host identity, trusted peers, and session storage.
+- Keep website Sync's separate identity and shared version/build settings, and
+  enforce the existing App Sandbox, View Only, and App Store update policies.
+
+### Vamp Control macOS
+
+- Remove the black canvas from the Control icon and fit the transparent mark to
+  the app, splash, and site. Simplify the Mac launch splash around that mark.
+
+## Vamp Sync 2.3.1 (build 72) — 2026-10-01
+
+- Add Sparkle 2.10 updates, with manual checks in the menu-bar menu and popover
+  settings, an automatic-check preference, and EdDSA verification before extraction.
+- Sign and notarize the universal Intel/Apple Silicon app with Developer ID.
+- Add an account-independent release script for Xcode Organizer or notarytool,
+  with stapled-ticket validation, signed update feeds, checksums, manifests, and
+  Sparkle license and SBOM entries.
+- Recognize notarized Sync downloads in the website's release selector.
+
 ## Vamp Stream 0.1.23 (build 53) and Vamp Sync 2.3.0 (build 71) — 2026-09-23
 
 ### Added: Settings, light mode, and a plain background in Vamp Stream

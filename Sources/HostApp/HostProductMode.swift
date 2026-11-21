@@ -46,7 +46,7 @@ enum HostProductMode: String, CaseIterable, Sendable {
         case .terminalOnly:
             return "Vamp Terminal Host"
         case .mini:
-            return "Vamp Sync"
+            return "\(VampProductIdentity.syncName)"
         }
     }
 
@@ -57,7 +57,7 @@ enum HostProductMode: String, CaseIterable, Sendable {
         case .terminalOnly:
             return "A focused Mac host for Vamp Terminal."
         case .mini:
-            return "A compact menu-bar sync host for Vamp Stream."
+            return "A compact menu-bar sync host for \(VampProductIdentity.streamName)."
         }
     }
 

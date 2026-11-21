@@ -348,6 +348,7 @@ extension View {
     func vampStreamVideoSurface() -> some View {
         environment(\.colorScheme, .dark)
             .environment(\.prSolidSurfaces, false)
+            .environment(\.prGlassBacking, nil)
     }
 }
 
@@ -355,22 +356,40 @@ extension EnvironmentValues {
     /// Set when there is no artwork behind the UI. Clear glass over a flat fill has nothing to
     /// refract and reads as a missing card, so every glass surface becomes an opaque card instead.
     @Entry var prSolidSurfaces = false
+    /// A reading plate drawn under every glass surface. Set over busy artwork, where clear glass
+    /// alone leaves labels sitting on the art's lines. nil keeps pure glass.
+    @Entry var prGlassBacking: Color? = nil
 }
+
+/// Lifts a card off a light page. Dark cards already separate by fill, so it is clear there.
+private let prCardShadow = Color.dynamic(light: 0x000000, dark: 0x000000, lightAlpha: 0.07, darkAlpha: 0)
 
 private struct PRGlassSurfaceModifier<S: InsettableShape>: ViewModifier {
     let shape: S
     let role: PRGlassRole
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.prSolidSurfaces) private var solidSurfaces
+    @Environment(\.prGlassBacking) private var backing
 
     func body(content: Content) -> some View {
         if solidSurfaces {
-            content.background {
-                shape.fill(PR.card)
-                    .overlay { shape.strokeBorder(PR.border, lineWidth: 1) }
-            }
+            content.background { plate(PR.card) }
+        } else if let backing {
+            glass(content).background { plate(backing) }
         } else {
             glass(content)
+        }
+    }
+
+    /// Cards lift with a shadow and no stroke: rows and cards draw their own hairline, and a
+    /// second one on top is what made every plain card read as a grey wireframe. Controls sit
+    /// inside cards, so they keep a hairline instead of casting a smudge onto their card.
+    @ViewBuilder
+    private func plate(_ fill: Color) -> some View {
+        if role.isInteractive {
+            shape.fill(fill).overlay { shape.strokeBorder(PR.border, lineWidth: 1) }
+        } else {
+            shape.fill(fill).shadow(color: prCardShadow, radius: 12, y: 4)
         }
     }
 

@@ -116,6 +116,29 @@ Artifacts are written below `dist/`. Building an unsigned IPA does not require
 an Apple account or provisioning profile; installing it on a device does
 require re-signing by AltStore or another compatible tool.
 
+For Developer ID distribution of Vamp Sync, create a signed universal archive:
+
+```bash
+scripts/release-vamp-sync.sh --archive-only \
+  --identity "$VAMP_SYNC_SIGN_IDENTITY" --team "$VAMP_SYNC_TEAM_ID"
+```
+
+Open `.packaging-vamp-hosts/Vamp Sync.xcarchive` in Xcode Organizer and choose
+**Distribute App → Direct Distribution**. Once Apple accepts it, export the
+notarized app and package it with `scripts/release-vamp-sync.sh --exported-app
+"/path/to/Vamp Sync.app" --identity "$VAMP_SYNC_SIGN_IDENTITY"`. The script
+validates the stapled ticket, creates checksums and manifests, and signs Sparkle
+updates using the `vamp-sync` Keychain account. Initialize that account once with
+Sparkle's `generate_keys --account vamp-sync`; its public key must match
+`SUPublicEDKey` in `Configuration/VampMiniHost-Info.plist`.
+
+Publish the matching GitHub release archives before copying
+`dist/VampStreamHost/sparkle/appcast.xml` to `docs/sync/appcast.xml` and deploying
+Pages. The Xcode flow packages a stapled, notarized app; its outer DMG is unsigned.
+For a separately signed and notarized DMG, supply a `--notary-profile` stored with
+`xcrun notarytool store-credentials`. Keep signing identities and credentials out
+of the public project. Local builds can use `--allow-dirty`.
+
 ## Repository layout
 
 | Path | What belongs there |
@@ -189,3 +212,29 @@ name-use policies are documented in [GOVERNANCE.md](GOVERNANCE.md),
 Vamp Suite is independent and is not affiliated with, endorsed by, or sponsored
 by Apple Inc. Tailscale is an optional private-network transport and is not a
 hosted Vamp service.
+
+### Website and App Store editions
+
+The installed store apps are named **Vamp Sync** and **App Stream**. Their
+shared transport remains compatible with the website editions. Vamp Sync updates
+the existing **Vamp : Host** listing using `com.mesutcy.remotedesktop.host` and
+retains its pairing storage. Website Sync uses `com.mesutcy.remotedesktop.host`
+and its separate identity.
+
+Vamp Sync's website and Mac App Store targets share `VampSyncBase` in
+`project.yml`, including sources and version/build settings. The website edition
+supports remote input after Accessibility consent and uses Sparkle updates. The
+store edition uses App Sandbox, shares existing windows in View Only mode, and
+receives updates through the Mac App Store.
+
+Vamp Stream uses one source target with Release (website) and AppStore
+configurations. Both explain Sync's editions during onboarding and in Settings.
+The App Store configuration connects to the user's own Mac on the same physical
+Wi-Fi/Ethernet LAN; the website configuration retains private Tailscale support.
+Shared fixes apply to both builds, which CI verifies together. Each store release
+still needs Apple's review.
+
+Build unsigned store archives with `scripts/archive-vamp-app-store.sh all --unsigned`,
+or provide your own team at build time with `--team TEAM_ID` for signed archives.
+Listing copy, review instructions, and the remaining device/signing checks are in
+[the store release guide](AppStore-Metadata-Vamp.md).

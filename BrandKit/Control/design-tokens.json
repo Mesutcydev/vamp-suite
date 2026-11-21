@@ -1,0 +1,53 @@
+{
+  "product": "Vamp Control",
+  "theme": "Within reach",
+  "colors": {
+    "light": {
+      "canvas": "#F5F5F5",
+      "ink": "#181818",
+      "secondary": "#686868",
+      "accent": "#181818",
+      "surface": "#FFFFFF",
+      "available": "#181818",
+      "buttonText": "#FFFFFF"
+    },
+    "dark": {
+      "canvas": "#141414",
+      "ink": "#F3F3F3",
+      "secondary": "#AAAAAA",
+      "accent": "#F3F3F3",
+      "surface": "#242424",
+      "available": "#F3F3F3",
+      "buttonText": "#181818"
+    }
+  },
+  "typography": {
+    "family": "SF Pro / system",
+    "display": {
+      "size": 42,
+      "weight": "bold",
+      "tracking": -1.6,
+      "scales": "largeTitle"
+    },
+    "title": "title2 semibold",
+    "body": "body / subheadline",
+    "metadata": "caption; use monospaced digits only for codes"
+  },
+  "layout": {
+    "inset": 24,
+    "maxWidth": 720,
+    "surfaceRadius": 28,
+    "minimumTapTarget": 44
+  },
+  "materials": {
+    "iOS26+": "native clear Liquid Glass",
+    "iOS18-25": "ultraThinMaterial",
+    "reduceTransparency": "opaque adaptive surface"
+  },
+  "voice": [
+    "Short, human sentences.",
+    "Talk about your Mac, not endpoints or hosts.",
+    "Describe the actual connection state.",
+    "One primary action at a time."
+  ]
+}

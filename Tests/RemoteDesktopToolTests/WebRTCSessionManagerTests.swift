@@ -38,6 +38,7 @@ final class MockPeerConnection: PeerConnectionProtocol, @unchecked Sendable {
 
     weak var delegate: (any PeerConnectionDelegate)?
     var createdDataChannels: [String] = []
+    var dataChannels: [String: MockDataChannel] = [:]
     var addedCandidates: [ICECandidate] = []
     var isClosed = false
 
@@ -69,7 +70,9 @@ final class MockPeerConnection: PeerConnectionProtocol, @unchecked Sendable {
 
     func createDataChannel(_ config: DataChannelConfiguration) -> (any DataChannelProtocol)? {
         createdDataChannels.append(config.label)
-        return MockDataChannel(label: config.label)
+        let channel = MockDataChannel(label: config.label)
+        dataChannels[config.label] = channel
+        return channel
     }
 
     func addVideoTrack(_ track: any VideoTrackProtocol) {}

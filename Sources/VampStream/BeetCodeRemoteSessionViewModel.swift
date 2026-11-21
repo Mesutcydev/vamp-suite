@@ -1,3 +1,4 @@
+import SharedModels
 import Combine
 import Foundation
 
@@ -304,7 +305,7 @@ final class BeetCodeRemoteSessionViewModel: ObservableObject {
 
         switch URLError.Code(rawValue: nsError.code) {
         case .appTransportSecurityRequiresSecureConnection:
-            return "Vamp Stream could not open this private HTTP connection. Install the latest build and try the LAN or Tailscale address shown by Vamp Assistant."
+            return "\(VampProductIdentity.streamName) could not open this private HTTP connection. Install the latest build and try the LAN or Tailscale address shown by Vamp Assistant."
         case .cannotConnectToHost, .cannotFindHost:
             return "Vamp Assistant could not be reached. Keep it open on the Mac and confirm the private address and port 9575."
         case .timedOut:

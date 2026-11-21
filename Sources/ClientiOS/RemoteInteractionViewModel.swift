@@ -156,8 +156,15 @@ final class RemoteInteractionViewModel: ObservableObject {
         rebuildMapper()
     }
 
+    /// The display on the main surface when it is not the selected one: in Show All
+    /// Displays, tapping a thumbnail focuses another display. Input has to follow the
+    /// picture, or taps land on the display that is no longer on screen.
+    var focusedDisplayOverride: DisplayDescriptor? {
+        didSet { if oldValue != focusedDisplayOverride { rebuildMapper() } }
+    }
+
     var selectedDisplay: DisplayDescriptor? {
-        displayLayoutViewModel.selectedDisplay ?? displayLayoutViewModel.primaryDisplay
+        focusedDisplayOverride ?? displayLayoutViewModel.selectedDisplay ?? displayLayoutViewModel.primaryDisplay
     }
 
     var targetDisplayID: String? {
@@ -219,7 +226,9 @@ final class RemoteInteractionViewModel: ObservableObject {
 
         let newMapper = ViewportCoordinateMapper(
             display: display,
-            streamConfiguration: displayLayoutViewModel.selectedStreamConfiguration,
+            // The stream configuration describes the selected display, not a focused one.
+            streamConfiguration: focusedDisplayOverride == nil
+                ? displayLayoutViewModel.selectedStreamConfiguration : nil,
             viewSize: viewSize,
             viewInsets: viewInsets,
             viewPixelScale: viewPixelScale,
@@ -459,8 +468,13 @@ final class RemoteInteractionViewModel: ObservableObject {
     private func ensureFlushLink() {
         #if canImport(UIKit)
         guard flushLink == nil else { return }
-        let link = CADisplayLink(target: DisplayLinkProxy { [weak self] in self?.flushPending() },
-                                 selector: #selector(DisplayLinkProxy.tick))
+        let link = CADisplayLink(target: DisplayLinkProxy { [weak self] in
+            guard let self else { return }
+            self.flushPending()
+            // Nothing queued after this frame: park the link until the next input event. It
+            // used to run at 60–120 Hz on the main run loop for the rest of the session.
+            if self.pendingMove == nil && !self.hasPendingScroll { self.stopFlushLink() }
+        }, selector: #selector(DisplayLinkProxy.tick))
         link.add(to: .main, forMode: .common)
         flushLink = link
         #else

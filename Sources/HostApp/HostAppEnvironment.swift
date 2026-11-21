@@ -185,9 +185,8 @@ final class HostAppEnvironment: ObservableObject {
         let storedMode = runtimePolicy.enforcedSessionMode ?? preferredMode
         let storedLowPower = UserDefaults.standard.bool(forKey: Keys.lowPowerModeEnabled)
         // Terminal Mode defaults to OFF — opt-in only.
-        let storedTerminalMode = productMode.isTerminalOnly
-            ? true
-            : UserDefaults.standard.bool(forKey: Keys.terminalModeEnabled)
+        let storedTerminalMode = runtimePolicy.supportsTerminalSessions && (productMode.isTerminalOnly
+            || UserDefaults.standard.bool(forKey: Keys.terminalModeEnabled))
         // Keep-awake defaults to OFF — opt-in only.
         let storedKeepAwake = UserDefaults.standard.bool(forKey: Keys.keepAwakeEnabled)
         let canonicalHostIdentity: HostIdentity
@@ -262,7 +261,12 @@ final class HostAppEnvironment: ObservableObject {
         case .terminalOnly:
             registryProductName = "Terminal Host"
         case .mini:
+            #if VAMP_APP_STORE
+            // Vamp Sync replaces Vamp Host in the same App Store sandbox.
+            registryProductName = "Vamp Host"
+            #else
             registryProductName = "Vamp Mini Host"
+            #endif
         }
         let sessionRegistry = HostSessionRegistry(
             rootURL: HostSessionRegistry.standardRootURL(productName: registryProductName)
@@ -332,6 +336,7 @@ final class HostAppEnvironment: ObservableObject {
             performanceStateController: self.performanceStateController,
             fileTransferManager: self.fileTransferManager,
             productMode: productMode,
+            runtimePolicy: runtimePolicy,
             sessionTokenUnsealer: { [signalingService] sealed in
                 guard let bonjour = signalingService as? BonjourSignalingService,
                       let identity = bonjour.identityService else { return nil }
@@ -370,12 +375,17 @@ final class HostAppEnvironment: ObservableObject {
         #endif
         // Remote login-screen unlock uses the same Accessibility-backed input path as
         // normal control, so it stays unavailable in sandboxed builds.
-        #if os(macOS)
+        #if os(macOS) && !VAMP_APP_STORE
         if runtimePolicy.supportsRemoteUnlock {
             self.inputCommandRouter.remoteUnlockEnabled = {
                 UserDefaults.standard.object(forKey: "host.remoteUnlock.enabled") as? Bool ?? false
             }
-            let loginWindowInput = LoginWindowInputService()
+            let loginWindowInput = LoginWindowInputService(isLocked: { [weak monitor = self.lockStateMonitor] in
+                guard let monitor else { return false }
+                // Recheck before every stroke, including after each paced wait.
+                monitor.refresh()
+                return monitor.currentLockState == .lockedOrLoginWindow
+            })
             self.inputCommandRouter.onUnlockPassword = { [eventLogStore] password in
                 do {
                     try await loginWindowInput.submit(password: password)
@@ -857,6 +867,12 @@ final class HostAppEnvironment: ObservableObject {
         // never advertise `stlsp=9473` merely because the identity exists: clients must
         // only choose TLS after the actual listener has reached .ready.
         await sessionCoordinator.startSession()
+        // Stop pressed while the listeners were binding: its teardown ran before they
+        // existed, so honour it here instead of going on to listen and advertise.
+        guard runtimeStarted else {
+            await sessionCoordinator.stopSession()
+            return
+        }
         // Do not publish a discoverable or browser endpoint when the signaling listener
         // failed to bind (most commonly because the other Vamp host product owns 9471).
         // A stale advertisement makes clients attempt a secure connection to a host that
@@ -866,6 +882,11 @@ final class HostAppEnvironment: ObservableObject {
             return
         }
         await discoveryAdvertiserViewModel.startIfNeeded()
+        guard runtimeStarted else {
+            await discoveryAdvertiserViewModel.stop()
+            await sessionCoordinator.stopSession()
+            return
+        }
         #if os(macOS)
         // Keep the loopback path for Tailscale Serve and, when available,
         // allow the browser service to accept the Mac's 100.x Tailscale
@@ -873,7 +894,9 @@ final class HostAppEnvironment: ObservableObject {
         let tailscaleInfo = await Task.detached(priority: .utility) {
             getTailscaleConnectionInfo()
         }.value
-        browserControlService.start(tailscaleHost: tailscaleInfo?.ipAddress)
+        if runtimeStarted, runtimePolicy.supportsBrowserControl {
+            browserControlService.start(tailscaleHost: tailscaleInfo?.ipAddress)
+        }
         #endif
     }
 
@@ -895,6 +918,7 @@ final class HostAppEnvironment: ObservableObject {
     }
 
     func retryBrowserControl() {
+        guard runtimePolicy.supportsBrowserControl else { return }
         let tailscaleHost = getTailscaleConnectionInfo()?.ipAddress
         browserControlService.start(tailscaleHost: tailscaleHost)
     }
@@ -1065,6 +1089,7 @@ final class HostAppEnvironment: ObservableObject {
     }
 
     func setTerminalModeEnabled(_ isEnabled: Bool) {
+        guard runtimePolicy.supportsTerminalSessions else { return }
         if productMode.isTerminalOnly {
             terminalModeEnabled = true
             return

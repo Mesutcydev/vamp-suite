@@ -1,16 +1,19 @@
 import SwiftUI
 
-/// Layout metrics for the machined bar, shared by the deck and the surfaces that reserve
+/// Layout metrics for the floating glass dock, shared by the deck and the surfaces that reserve
 /// space for it. Deliberately non-generic: `AppStreamChromePill` itself is generic over its
 /// content, so call sites should not have to name `EmptyView` just to read a number.
 enum AppStreamChromeBar {
-    /// Height of the machined housing. Matches the Assistant bar's 54 pt frame: one 44 pt
-    /// keycap row, the housing's own 4 pt inside padding, and the keycap's press settle.
-    static var height: CGFloat { 54 }
+    /// 44 pt controls with breathing room inside the 60 pt lens.
+    static var height: CGFloat { 60 }
+    /// Vamp Control's dock: a caption under each control, so the bar says what it does.
+    static var labelledHeight: CGFloat { 72 }
+    static var labelledControlWidth: CGFloat { 60 }
+    static var labelledControlHeight: CGFloat { 56 }
     /// Gap between the housing and the bottom edge, on top of the safe-area floor below.
     static var bottomMargin: CGFloat { 8 }
     /// Horizontal inset of the housing from the screen edges.
-    static var edgeInset: CGFloat { 10 }
+    static var edgeInset: CGFloat { 18 }
     /// Smallest bottom gap used when the surface sits inside an ignored safe area (where the
     /// inset can read as zero). The Assistant bar uses the same 10 pt floor.
     static var bottomFloor: CGFloat { 10 }
@@ -19,24 +22,15 @@ enum AppStreamChromeBar {
     /// underneath it. It lives here, with the deck, because both host paths used to keep
     /// their own copy of the number — and when the controls change size, two separate
     /// constants would have to be found and changed together.
-    static func reservedBand(safeAreaBottom: CGFloat) -> CGFloat {
+    static func reservedBand(safeAreaBottom: CGFloat, height: CGFloat = AppStreamChromeBar.height) -> CGFloat {
         height + bottomMargin + max(safeAreaBottom, bottomFloor)
     }
 }
 
-/// The one bottom control deck Stream and its Assistant sibling share.
-///
-/// It is drawn as the Vamp Assistant control bar (`classicBottomChrome` on its Remote
-/// Control surface): a machined pearl housing of keycap icon controls that scrolls
-/// horizontally when the options outgrow the screen, with a divider before the trailing
-/// hide control. Both Stream host paths — Vamp Sync and Vamp Assistant — draw this same
-/// deck, so a Sync stream and an Assistant stream never look like two different apps.
-///
-/// `trailing` (the divider and hide control) is pinned outside the scroll area. Inside it, the
-/// hide key was the one pushed off the right edge on a 402 pt iPhone, with no scroll indicator to
-/// say it was there. Keys stay 44 pt; only the gaps between them are tight enough that the whole
-/// deck fits a standard iPhone without scrolling.
+/// One glass dock for both providers. The hide control stays pinned outside the scroll
+/// region; less-used and destructive actions live in the options menu.
 struct AppStreamChromePill<Content: View, Trailing: View>: View {
+    var height: CGFloat = AppStreamChromeBar.height
     @ViewBuilder var content: () -> Content
     @ViewBuilder var trailing: () -> Trailing
 
@@ -53,22 +47,43 @@ struct AppStreamChromePill<Content: View, Trailing: View>: View {
             trailing()
         }
         .padding(.trailing, 2)
-        .frame(height: AppStreamChromeBar.height)
+        .frame(height: height)
         .frame(maxWidth: 520)
-        .background(
-            AppStreamChromeStyle.pearl,
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(AppStreamChromeStyle.edge, lineWidth: 0.75)
-        )
-        .shadow(color: .black.opacity(0.34), radius: 12, y: 6)
+        .streamGlass(radius: 30, elevated: true)
         .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 
-/// One icon button inside `AppStreamChromePill`, rendered as a machined keycap.
+/// The way back to the app list, labelled, so it can't be mistaken for a menu. The grid glyph it
+/// replaces was easy to miss and scrolled away with the other controls.
+struct AppStreamChromeBackButton: View {
+    let title: LocalizedStringKey
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            AppHaptics.selection()
+            action()
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "chevron.backward")
+                    .font(.system(size: 14, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .foregroundStyle(.white.opacity(0.92))
+            .padding(.horizontal, 12)
+            .frame(height: AppHostMetrics.iconControlTarget)
+            .background(Capsule().fill(Color.white.opacity(0.10)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(title))
+        .accessibilityHint("Returns to the Mac's app list")
+    }
+}
+
+/// One icon button inside `AppStreamChromePill`, rendered as a glass dock control.
 struct AppStreamChromeButton: View {
     let systemName: String
     var isActive: Bool = false
@@ -76,6 +91,7 @@ struct AppStreamChromeButton: View {
     var isDestructive: Bool = false
     var accessibilityLabel: String? = nil
     var accessibilityValue: String? = nil
+    var title: LocalizedStringKey? = nil
     let action: () -> Void
 
     var body: some View {
@@ -87,7 +103,8 @@ struct AppStreamChromeButton: View {
                 systemName: systemName,
                 isActive: isActive,
                 isDimmed: isDimmed,
-                isDestructive: isDestructive)
+                isDestructive: isDestructive,
+                title: title)
         }
         .buttonStyle(AppStreamChromeKeyStyle(prominent: isDestructive, isSelected: isActive))
         .modifier(AppStreamChromeAccessibility(label: accessibilityLabel, value: accessibilityValue))
@@ -95,7 +112,7 @@ struct AppStreamChromeButton: View {
     }
 }
 
-/// A menu entry styled exactly like a deck key cap, for controls that expand into choices
+/// A circular dock menu for controls that expand into choices
 /// (window sizing, displays, stream options).
 struct AppStreamChromeMenu<MenuContent: View>: View {
     let systemName: String
@@ -103,6 +120,7 @@ struct AppStreamChromeMenu<MenuContent: View>: View {
     var isDimmed: Bool = false
     let accessibilityLabel: String
     var accessibilityValue: String? = nil
+    var title: LocalizedStringKey? = nil
     @ViewBuilder var menuContent: () -> MenuContent
 
     var body: some View {
@@ -113,7 +131,8 @@ struct AppStreamChromeMenu<MenuContent: View>: View {
                 systemName: systemName,
                 isActive: isActive,
                 isDimmed: isDimmed,
-                isDestructive: false)
+                isDestructive: false,
+                title: title)
         }
         .buttonStyle(AppStreamChromeKeyStyle(isSelected: isActive))
         .accessibilityLabel(accessibilityLabel)
@@ -134,77 +153,62 @@ struct AppStreamChromeDivider: View {
     }
 }
 
-/// The glyph on a keycap. The cap itself is drawn by `AppStreamChromeKey`.
+/// Fixed-size symbols inside generous 44 pt touch targets.
 struct AppStreamChromeLabel: View {
     let systemName: String
     var isActive: Bool = false
     var isDimmed: Bool = false
     var isDestructive: Bool = false
+    /// Caption under the glyph. Nil keeps the compact, icon-only control.
+    var title: LocalizedStringKey? = nil
 
     var body: some View {
-        Image(systemName: systemName)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(glyph)
-            // The glyph stays small and quiet, but the cap and its hit area are a full
-            // 44 pt: this deck floats over video with nothing forgiving around it, so an
-            // under-sized target means taps land on the streamed Mac instead of the control.
-            .frame(width: AppHostMetrics.iconControlTarget, height: AppHostMetrics.iconControlTarget)
-            .contentShape(Rectangle())
+        Group {
+            if let title {
+                VStack(spacing: 2) {
+                    Image(systemName: systemName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(height: 20)
+                    Text(title)
+                        .font(.system(size: 10, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .frame(width: AppStreamChromeBar.labelledControlWidth, height: AppStreamChromeBar.labelledControlHeight)
+            } else {
+                Image(systemName: systemName)
+                    .font(.system(size: 15, weight: .semibold))
+                    // A missed dock tap must never land on the streamed Mac.
+                    .frame(width: AppHostMetrics.iconControlTarget, height: AppHostMetrics.iconControlTarget)
+            }
+        }
+        .foregroundStyle(glyph)
+        .contentShape(Rectangle())
     }
 
     private var glyph: Color {
-        if isDestructive || isActive { return .white }
-        return isDimmed ? AppStreamChromeStyle.dimmedInk : AppStreamChromeStyle.ink
+        if isDestructive { return StreamDesign.coral }
+        if isActive { return StreamDesign.ink }
+        return .white.opacity(isDimmed ? 0.5 : 0.9)
     }
 }
 
-/// A stationary housing underneath a moving face: the same keycap rendering as the Vamp
-/// Assistant control surface's hardware keys, so both apps' bars feel identical under the
-/// finger.
+/// The selected control is an ivory lens; inactive controls stay clear within the dock.
 struct AppStreamChromeKey: ViewModifier {
     var isPressed = false
     var isSelected = false
     var prominent = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var engaged: Bool { isSelected || isPressed }
-    private var face: Color {
-        if prominent || isSelected { return AppStreamChromeStyle.darkInsert }
-        return isPressed ? AppStreamChromeStyle.keyFacePressed : AppStreamChromeStyle.keyFace
-    }
-
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         content
             .background {
-                shape.fill(face)
-                    .overlay {
-                        shape.strokeBorder(AppStreamChromeStyle.keySeam.opacity(0.28), lineWidth: 0.5)
-                    }
-                    .overlay(alignment: .top) {
-                        Rectangle()
-                            .fill(AppStreamChromeStyle.keyTopHighlight.opacity(engaged ? 0.12 : 0.65))
-                            .frame(height: 0.5)
-                            .padding(.horizontal, 6)
-                            .padding(.top, 0.5)
-                    }
-                    .overlay(alignment: .top) {
-                        LinearGradient(
-                            colors: [Color.black.opacity(engaged ? 0.20 : 0), .clear],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                        .frame(height: 3)
-                        .clipShape(shape)
-                    }
-                    .shadow(
-                        color: AppStreamChromeStyle.keyBottomShadow.opacity(engaged ? 0 : 0.28),
-                        radius: 0, x: 0, y: engaged ? 0 : 1)
+                Circle()
+                    .fill(isSelected ? Color(hex: 0xF1DED5) : Color.white.opacity(isPressed ? 0.14 : 0))
+                    .padding(2)
             }
-            .offset(y: engaged && !reduceMotion ? 1 : 0)
-            .padding(.bottom, 1)
-            .background(AppStreamChromeStyle.housingFoot.opacity(0.55), in: shape)
-            .animation(reduceMotion ? nil : .easeOut(duration: isPressed ? 0.08 : 0.14), value: isPressed)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isSelected)
+            .scaleEffect(isPressed && !reduceMotion ? 0.92 : 1)
+            .animation(reduceMotion ? nil : StreamDesign.spring, value: isPressed)
+            .animation(reduceMotion ? nil : StreamDesign.spring, value: isSelected)
     }
 }
 
@@ -248,38 +252,6 @@ struct AppStreamChromeRevealButton: View {
         .padding(.horizontal, 18)
         .padding(.bottom, max(bottomInset, 0) + 14)
     }
-}
-
-/// Colors and materials for the machined bar. Values are the Vamp Assistant control
-/// surface's dark-appearance hardware tokens, so the two apps' bars match surface for
-/// surface.
-enum AppStreamChromeStyle {
-    private static func hex(_ value: UInt32) -> Color {
-        Color(
-            red: Double((value >> 16) & 255) / 255,
-            green: Double((value >> 8) & 255) / 255,
-            blue: Double(value & 255) / 255)
-    }
-
-    /// The bar housing: pearl gradient, dark appearance.
-    static let pearl = LinearGradient(
-        colors: [hex(0x383838), hex(0x323232), hex(0x292929)],
-        startPoint: .top, endPoint: .bottom)
-    /// The housing's perimeter highlight.
-    static let edge = LinearGradient(
-        colors: [hex(0x595959), hex(0x444444)],
-        startPoint: .top, endPoint: .bottom)
-
-    static let keyFace = hex(0x393939)
-    static let keyFacePressed = hex(0x222222)
-    static let darkInsert = hex(0x090909)
-    static let keySeam = hex(0x0E0E0E)
-    static let keyTopHighlight = hex(0x515151)
-    static let keyBottomShadow = hex(0x0C0C0C)
-    static let housingFoot = hex(0x1A1A1A)
-
-    static let ink = hex(0xF0EFEC)
-    static let dimmedInk = hex(0xB7B5B1)
 }
 
 private struct AppStreamChromeAccessibility: ViewModifier {

@@ -152,6 +152,32 @@ final class DataChannelMessageTests: XCTestCase {
         XCTAssertEqual(decodedStatus.hostID, status.hostID)
         XCTAssertEqual(decodedStatus.connectionState, .connected)
         XCTAssertEqual(decodedStatus.activeSessionID, status.activeSessionID)
+        XCTAssertNil(decodedStatus.allowsRemoteUnlockEntry)
+    }
+
+    func testRemoteUnlockEntryUsesHostCapabilityIndependentlyOfViewOnlyMode() throws {
+        for (mode, supportsRemoteUnlock, expected) in [
+            (SessionControlMode.viewOnly, true as Bool?, true),
+            (.viewOnly, false, false),
+            (.fullControl, false, false),
+            (.viewOnly, nil, false),
+            (.fullControl, nil, true)
+        ] {
+            let status = HostStatusMessage(
+                hostID: UUID(),
+                connectionState: .connected,
+                activeSessionID: UUID(),
+                sessionMode: mode,
+                lockState: .lockedOrLoginWindow,
+                supportsRemoteUnlock: supportsRemoteUnlock
+            )
+            let decoded = try DataChannelEnvelope.wireDecode(
+                try DataChannelEnvelope.hostStatus(status).wireEncode()
+            ).decodeHostStatus()
+
+            XCTAssertEqual(decoded.supportsRemoteUnlock, supportsRemoteUnlock)
+            XCTAssertEqual(decoded.allowsRemoteUnlockEntry, expected)
+        }
     }
 
     func testDisplayLayoutRoundTrip() throws {

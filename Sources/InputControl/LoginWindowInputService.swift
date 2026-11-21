@@ -28,15 +28,14 @@ public final class LoginWindowInputService {
     private let sleep: (Duration) async throws -> Void
     private var isSubmitting = false
 
-    public convenience init() {
+    /// The host supplies its distribution-specific lock check. Keeping the query
+    /// out of this shared library prevents website-only APIs entering Store apps.
+    public convenience init(isLocked: @escaping () -> Bool) {
         // loginwindow belongs to the console's HID state, rather than the host's
         // private desktop input state. Every event still has explicit modifiers.
         let bridge = CGEventInputBridge(sourceState: .hidSystemState)
         self.init(
-            isLocked: {
-                let session = CGSessionCopyCurrentDictionary() as? [String: Any]
-                return session?["CGSSessionScreenIsLocked"] as? Bool == true
-            },
+            isLocked: isLocked,
             hasAccessibility: { AXIsProcessTrusted() },
             resolveKeys: Self.keysForCurrentLayout,
             postKey: { key, action in

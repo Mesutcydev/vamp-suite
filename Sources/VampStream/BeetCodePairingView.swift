@@ -1,4 +1,5 @@
 import SwiftUI
+import SharedModels
 
 struct BeetCodePairingView: View {
     private enum PairingField: Hashable {
@@ -16,11 +17,12 @@ struct BeetCodePairingView: View {
     @State private var pairingTask: Task<Void, Never>?
     @FocusState private var focusedField: PairingField?
 
-    init(model: BeetCodeRemoteSessionViewModel) {
+    init(model: BeetCodeRemoteSessionViewModel, initialEndpoint: BeetCodeRemoteEndpoint? = nil) {
         self.model = model
-        // Pairing adds a Mac. Existing Assistants reconnect from their own cards,
-        // so never prefill this form with another saved Mac's address.
-        _address = State(initialValue: "")
+        // Only a newly scanned QR can prefill this form; saved Macs reconnect
+        // from their own cards and must not leak their address into new pairing.
+        _address = State(initialValue: initialEndpoint?.url.absoluteString ?? "")
+        _code = State(initialValue: initialEndpoint?.pairingCode ?? "")
     }
 
     private var canPair: Bool {
@@ -60,11 +62,11 @@ struct BeetCodePairingView: View {
                     .padding(.bottom, AppSpacing.xxl)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .background { VampStreamEnvironmentBackdrop() }
                 .toolbarBackground(.hidden, for: .navigationBar)
-                .toolbarColorScheme(.dark, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
-                        Text("Vamp Assistant")
+                        Text("Assistant / Companion")
                             .font(.headline)
                             .foregroundStyle(PR.fg)
                     }
@@ -76,13 +78,6 @@ struct BeetCodePairingView: View {
                         }
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(PR.fg.opacity(0.72))
-                            .padding(.horizontal, AppSpacing.md)
-                            .frame(minHeight: 44)
-                            .background {
-                                Capsule()
-                                    .fill(Color.white.opacity(0.07))
-                                    .strokeBorder(Color.white.opacity(0.09), lineWidth: 1)
-                            }
                             .accessibilityHint("Close Vamp Assistant pairing")
                     }
                     ToolbarItemGroup(placement: .keyboard) {
@@ -93,9 +88,8 @@ struct BeetCodePairingView: View {
                     }
                 }
             }
-            .preferredColorScheme(.dark)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background { VampStreamEnvironmentBackdrop() }
         .onDisappear {
             pairingTask?.cancel()
         }
@@ -120,66 +114,15 @@ struct BeetCodePairingView: View {
         }
     }
 
-    @ViewBuilder
     private var headerBlock: some View {
-        HStack(spacing: AppSpacing.sm) {
-            LinkBadge()
-
-            Text("Pair Vamp Assistant")
-                .font(.title2.weight(.semibold))
-                .tracking(-0.4)
-                .foregroundStyle(PR.fg)
-                .lineLimit(2)
-                .minimumScaleFactor(0.9)
-        }
-        .padding(.bottom, AppSpacing.sm)
-
-        Text("Connect to your Mac securely.")
-            .font(.subheadline)
-            .foregroundStyle(StreamReading.secondary)
-            .padding(.bottom, AppSpacing.xl)
+        StreamAssistantPairingHeader()
+            .padding(.bottom, 26)
     }
 
     private var scanBlock: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            Button {
-                scanError = nil
-                showScanner = true
-            } label: {
-                HStack(spacing: AppSpacing.sm) {
-                    Image(systemName: "qrcode.viewfinder")
-                        .font(.system(size: 18, weight: .medium))
-                    Text("Scan QR Code")
-                        .font(.headline)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.center)
-                }
-                .foregroundStyle(Color.black.opacity(0.92))
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 54)
-                .background {
-                    let shape = RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
-
-                    ZStack {
-                        shape.fill(Color.white.opacity(0.90))
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.34),
-                                Color.white.opacity(0),
-                                Color.black.opacity(0.05)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .mask { shape }
-                        shape.strokeBorder(Color.white.opacity(0.32), lineWidth: 1)
-                    }
-                }
-                .contentShape(RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
-            }
-            .buttonStyle(PRGlassPressButtonStyle())
-            .accessibilityLabel("Scan pairing QR code")
-            .accessibilityHint("Scan the private Vamp Assistant QR code to fill the address and pairing code")
+        StreamPrimaryButton(title: "Scan pairing code", symbol: "qrcode.viewfinder") {
+            scanError = nil
+            showScanner = true
         }
     }
 
@@ -188,6 +131,7 @@ struct BeetCodePairingView: View {
             line.opacity(0.08)
             Text("or enter manually")
                 .font(.footnote.weight(.medium))
+                .layoutPriority(1)
                 .tracking(0.6)
                 .foregroundStyle(StreamReading.secondary)
             line.opacity(0.08)
@@ -198,14 +142,14 @@ struct BeetCodePairingView: View {
 
     private var line: some View {
         Rectangle()
-            .fill(Color.white)
+            .fill(StreamDesign.text)
             .frame(height: 1)
             .frame(maxWidth: .infinity)
     }
 
     private var addressBlock: some View {
         VStack(alignment: .leading, spacing: AppSpacing.xs) {
-            Text("PRIVATE ADDRESS")
+            Text("Private address")
                 .font(.footnote.weight(.medium))
                 .tracking(0.6)
                 .foregroundStyle(StreamReading.secondary)
@@ -221,19 +165,12 @@ struct BeetCodePairingView: View {
                 .font(.body.weight(.medium))
                 .padding(.horizontal, AppSpacing.md)
                 .frame(minHeight: 54)
-                .background {
-                    let shape = RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
-
-                    ZStack {
-                        shape.fill(Color.white.opacity(0.055))
-                        shape.strokeBorder(Color.white.opacity(0.09), lineWidth: 1)
-                    }
-                }
-                .accessibilityLabel("Vamp Assistant private address")
-                .accessibilityHint("Enter the local or Tailscale address of Vamp Assistant")
+                .streamGlass(radius: 20)
+                .accessibilityLabel("Assistant or Companion private address")
+                .accessibilityHint("Enter the local or Tailscale address of Assistant or Companion on your own Mac")
 
             VStack(alignment: .leading, spacing: AppSpacing.xxs) {
-                Text("Vamp Assistant uses port 9575.")
+                Text("Assistant uses port 9575; Companion uses port 9675.")
                 Button("Local/private network connections only.") {
                     showSecurityDetails = true
                 }
@@ -249,7 +186,7 @@ struct BeetCodePairingView: View {
 
     private var codeBlock: some View {
         VStack(alignment: .leading, spacing: AppSpacing.xs) {
-            Text("PAIRING CODE")
+            Text("One-time pairing code")
                 .font(.footnote.weight(.medium))
                 .tracking(0.6)
                 .foregroundStyle(StreamReading.secondary)
@@ -266,20 +203,9 @@ struct BeetCodePairingView: View {
                 .tracking(8)
                 .multilineTextAlignment(.center)
                 .frame(minHeight: 58)
-                .background {
-                    let shape = RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
-
-                    ZStack {
-                        shape.fill(Color.white.opacity(0.055))
-                        shape.strokeBorder(Color.white.opacity(0.09), lineWidth: 1)
-                        shape.strokeBorder(
-                            Color.white.opacity(0.12),
-                            style: StrokeStyle(lineWidth: 1, dash: [3, 3])
-                        )
-                    }
-                }
+                .streamGlass(radius: 20)
                 .accessibilityLabel("Six-digit pairing code")
-                .accessibilityHint("Enter the one-time code shown by Vamp Assistant")
+                .accessibilityHint("Enter the one-time code shown by Assistant or Companion")
         }
         .padding(.bottom, AppSpacing.md)
     }
@@ -305,50 +231,15 @@ struct BeetCodePairingView: View {
     }
 
     private var pairButton: some View {
-        Button {
-            focusedField = nil
-            pairingTask?.cancel()
-            pairingTask = Task { await model.pair(address: address, code: code) }
-        } label: {
-            HStack(spacing: AppSpacing.xs) {
-                if model.isPairing {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(Color.black.opacity(0.92))
-                }
-                Text(model.isPairing ? "Pairing…" : "Pair Mac")
-                    .font(.headline)
+        VStack(spacing: 12) {
+            if model.isPairing { ProgressView("Pairing with your Mac…").font(.footnote).tint(StreamDesign.accent) }
+            StreamPrimaryButton(title: "Pair Mac", symbol: "link", isDisabled: !canPair) {
+                focusedField = nil
+                pairingTask?.cancel()
+                pairingTask = Task { await model.pair(address: address, code: code) }
             }
-            .foregroundStyle((canPair || model.isPairing) ? Color.black.opacity(0.92) : Color.white.opacity(0.60))
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: 54)
-            .background {
-                let shape = RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
-
-                ZStack {
-                    shape.fill((canPair || model.isPairing) ? Color.white.opacity(0.90) : Color.white.opacity(0.070))
-                    if canPair {
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.30),
-                                Color.white.opacity(0),
-                                Color.black.opacity(0.06)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .mask { shape }
-                    }
-                    shape.strokeBorder(Color.white.opacity(canPair ? 0.30 : 0.10), lineWidth: 1)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
+            .accessibilityHint("Connect using the private address and one-time code")
         }
-        .buttonStyle(PRGlassPressButtonStyle())
-        .disabled(!canPair)
-        .animation(.easeOut(duration: 0.18), value: canPair)
-        .accessibilityLabel(model.isPairing ? "Pairing with Vamp Assistant" : "Pair with Vamp Assistant")
-        .accessibilityHint("Connect using the private address and one-time code")
         .padding(.bottom, AppSpacing.md)
     }
 
@@ -364,7 +255,7 @@ struct BeetCodePairingView: View {
         .accessibilityElement(children: .combine)
 
         if showSecurityDetails {
-            Text("Keep Vamp Assistant on your LAN or private Tailscale network; never expose port 9575 to the public internet.")
+            Text("Connect to Assistant or Companion on your own Mac over trusted Wi-Fi or your private Tailscale network. Never expose a host port to the public internet.")
                 .font(.footnote)
                 .foregroundStyle(StreamReading.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -375,10 +266,7 @@ struct BeetCodePairingView: View {
 
     private func applyScannedPayload(_ payload: String) {
         do {
-            let endpoint = try BeetCodeRemoteEndpoint.parse(address: payload)
-            guard endpoint.url.port == BeetCodeRemoteEndpoint.defaultPort else {
-                throw BeetCodeRemoteError.invalidAddress
-            }
+            let endpoint = try BeetCodeRemoteEndpoint.parsePairingLink(payload)
 
             address = endpoint.url.absoluteString
             if let pairingCode = endpoint.pairingCode {
@@ -388,22 +276,21 @@ struct BeetCodePairingView: View {
             showScanner = false
         } catch {
             showScanner = false
-            scanError = "That QR code is not a Vamp Assistant pairing link. Scan the code shown by Vamp Assistant on your Mac."
+            scanError = "That QR code is not an Assistant or Companion pairing link. Scan the code shown by Assistant or Companion on your Mac."
         }
     }
 }
 
-private struct LinkBadge: View {
+private struct StreamAssistantPairingHeader: View {
     var body: some View {
-        Image(systemName: "link")
-            .font(.system(size: 18, weight: .semibold))
-            .foregroundStyle(PR.fg)
-            .frame(width: 38, height: 38)
-            .background {
-                Circle()
-                    .fill(Color.white.opacity(0.075))
-                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
-            }
-            .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 12) {
+            StreamEyebrow(title: "ASSISTANT / COMPANION")
+            Text("Pair your Mac.")
+                .font(.largeTitle.weight(.medium)).tracking(-1.5)
+                .foregroundStyle(StreamDesign.text)
+            Text("Use the private address and one-time code shown on your Mac.")
+                .font(.subheadline).foregroundStyle(StreamDesign.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

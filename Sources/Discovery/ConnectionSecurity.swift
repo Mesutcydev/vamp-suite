@@ -79,6 +79,12 @@ public enum ConnectionSecurity {
 
     /// Derive a symmetric key from a 12-digit PIN.
     /// Uses HKDF with a fixed salt so both sides derive the same key from the same PIN.
+    ///
+    /// The TLS signaling port passes the host's public-key fingerprint here.
+    /// That fingerprint is advertised in Bonjour, so this PSK authenticates
+    /// nobody: it only hides signaling from an observer who has not seen the
+    /// advertisement. Host identity comes from the signed key bundle and the
+    /// signed answer; token secrecy comes from `SessionTokenSealing`.
     public static func deriveKey(from pin: String) -> SymmetricKey {
         let pinData = Data(pin.utf8)
         let salt = Data("com.remotedesktop.psk.salt.v1".utf8)

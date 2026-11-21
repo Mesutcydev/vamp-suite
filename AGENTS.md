@@ -4,12 +4,13 @@ This file is the operational contract for AI agents working with the Vamp suite.
 
 ## Product
 
-Vamp is an open-source remote desktop and terminal suite. Mac hosts and clients
-reuse the signed pairing, trust, Tailscale, and authenticated WebRTC stack in
-this repository. Current hosts are Vamp Sync and Vamp Assistant. Vamp Host,
-Vamp Terminal Host, and Vamp Linux Host are discontinued; historical sources
-and identifiers remain for compatibility and shared-source verification.
-Do not package, reinstall, or advertise discontinued hosts.
+Vamp is an open-source remote desktop and app-streaming suite. Its active apps are
+Vamp Sync, Vamp Stream, and Vamp Control on macOS and iOS/iPadOS. They reuse the
+signed pairing, trust, Tailscale, and authenticated WebRTC stack in this
+repository. Vamp Assistant remains a separate compatibility endpoint. Vamp Host,
+Vamp Terminal Host, Vamp Terminal, and Vamp Linux Host are discontinued;
+historical sources and identifiers remain for compatibility and shared-source
+verification. Do not package, reinstall, or advertise discontinued products.
 
 | Component | Value |
 | --- | --- |
@@ -18,13 +19,14 @@ Do not package, reinstall, or advertise discontinued hosts.
 | Mini host | `Vamp Sync` — active Mac desktop/app host for Control; app-window host for Stream |
 | Linux host | `Vamp Linux Host` — discontinued |
 | Remote-desktop client | `Vamp Control` — macOS and iOS/iPadOS. Terminal Mode is an overlay |
-| Terminal client | `Vamp Terminal` — eight concurrent tabs and ten agent launchers |
+| Terminal client | `Vamp Terminal` — discontinued; Terminal Mode remains in Vamp Control |
 | App-stream client | `Vamp Stream` — focused iOS/iPadOS app-window streaming client |
-| Assistant compatibility | `Vamp Assistant` — active independent AI workspace and remote host on private port `9575` |
+| Assistant compatibility | `Vamp Assistant` — separate compatibility endpoint on private port `9575` |
 | Browser client | Safari control on host loopback `9475` |
 | Full host bundle ID | `com.mesutcy.remotedesktop.host` |
 | Light host bundle ID | `com.mesutcy.remotedesktop.terminalhost` |
-| Mini host bundle ID | `com.mesutcy.remotedesktop.minhost` |
+| Mini host bundle ID | `com.mesutcy.remotedesktop.host` |
+| Sync Mac App Store bundle ID | `com.mesutcy.remotedesktop.host` — updates the existing Vamp : Host listing |
 | Control macOS bundle ID | `com.mesutcy.remotedesktop.macclient` |
 | Control iOS bundle ID | `com.mesutcy.remotedesktop.ios` |
 | Terminal iOS bundle ID | `com.mesutcy.remotedesktop.terminal` |
@@ -43,16 +45,37 @@ Do not package, reinstall, or advertise discontinued hosts.
 | Mini URL scheme | `vampminihost://` |
 | License | Apache-2.0 |
 
-Run only one macOS host at a time. Vamp Control and Vamp Terminal cannot attach
-to Vamp Linux Host.
+Run only one macOS host at a time. Vamp Control cannot attach to Vamp Linux Host.
 
-The iOS builds are unsigned device IPAs for AltStore-style re-signing. No
+The website iOS builds are unsigned device IPAs for AltStore-style re-signing. No
 project-owned Apple team, certificate, provisioning profile, App Store Connect
 account, hosted relay, or public port forwarding is required.
 
+Store distribution uses `VampSyncAppStore` in `project.yml` and the
+`VampStreamAppStore` scheme / `AppStore` configuration in `vampstream-project.yml`.
+Store app display names are Vamp Sync (macOS) and App Stream (iOS/iPadOS);
+retain the existing bundle IDs, wire names, storage paths, and internal schemes.
+Vamp Sync updates the existing Vamp : Host App Store record (Apple ID `6762657715`)
+with bundle ID `com.mesutcy.remotedesktop.host` and the legacy host identity/trust
+and session storage inside its sandbox. Website Sync uses the same bundle ID and legacy
+identity, so existing Vamp Host installs update in place from `https://mesut.uk/appcast.xml`.
+Website installs from the old `minhost` bundle cannot update in place and must reinstall. Never create a new listing for this replacement.
+Keep website and store sources and version/build settings shared. Sync's store
+edition is sandboxed and View Only: no Accessibility request, remote input,
+Remote Unlock, window resize, app launch/close, terminal execution, or Sparkle.
+Both Stream editions connect to the user's own Mac over a physical LAN or a
+private Tailscale network. Store connections validate the resolved address and
+require an active Tailscale tunnel for tailnet peers. Preserve pairing, TLS,
+redirect restrictions, and Sync's View Only policy. App Review 4.2.7 still
+specifies LAN for focused streaming clients; disclose Tailscale honestly in
+review notes and do not claim that a TestFlight upload confirms Store approval.
+Signed store archives require the publisher's team supplied at build time;
+never hard-code a team or credential. See `AppStore-Metadata-Vamp.md` and
+`scripts/archive-vamp-app-store.sh` for the release path.
+
 ## Build
 
-MacHost and VampTerminalHost commands below are legacy shared-source
+MacHost, VampTerminalHost, and VampTerminalApp remain historical shared-source
 verification targets, not maintained products or distribution paths.
 
 SwiftTerm is pinned to 1.18.0 in every spec. 1.19.0 added a build-tool plugin whose
@@ -65,16 +88,10 @@ swift test
 
 xcodegen generate --spec project.yml
 
-xcodebuild -project RemoteDesktopToolApps.xcodeproj -scheme MacHost \
-  -configuration Release CODE_SIGNING_ALLOWED=NO build
-
-xcodebuild -project RemoteDesktopToolApps.xcodeproj -scheme VampTerminalHost \
-  -configuration Release CODE_SIGNING_ALLOWED=NO build
-
 xcodebuild -project RemoteDesktopToolApps.xcodeproj -scheme VampMiniHost \
   -configuration Release CODE_SIGNING_ALLOWED=NO build
 
-xcodebuild -project RemoteDesktopToolApps.xcodeproj -scheme VampTerminalApp \
+xcodebuild -project RemoteDesktopToolApps.xcodeproj -scheme iOSRemote \
   -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 
@@ -82,12 +99,15 @@ xcodegen generate --spec vampstream-project.yml
 xcodebuild -project VampStream.xcodeproj -scheme VampStream \
   -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+xcodegen generate --spec macclient-project.yml
+xcodebuild -project MacClient.xcodeproj -scheme MacClient \
+  -configuration Release CODE_SIGNING_ALLOWED=NO build
 ```
 
-Package an AltStore-ready IPA with:
+Package the active iOS app and Mac host with:
 
 ```bash
-scripts/package-vamp-terminal-ios.sh --clean --allow-dirty
 scripts/package-vamp-stream-ios.sh --clean --allow-dirty
 scripts/package-vamp-mini-host.sh --clean --allow-dirty
 ```
@@ -157,22 +177,23 @@ action did not resolve, `7` for a fingerprint mismatch, and `8` on timeout.
 
 - `Sources/HostApp`: full host, light host mode, terminal PTY service, and Safari control
 - `Sources/HostApp/VampMiniHostApp.swift`: standalone menu-bar pairing and permission surface
-- `Sources/ClientiOS`: shared connection services and the Vamp Terminal client
+- `Sources/ClientiOS`: shared iOS connection services for Vamp Control and Vamp Stream
 - `Sources/SharedProtocol`: versioned wire messages and terminal routing
 - `Sources/SharedModels`: capability metadata and shared session models
 - `Sources/TransportWebRTC`: signed signaling and data transport
 - `Sources/Permissions`: host permission and distribution policy
 - `linux-host`: dependency-free Safari/WebSocket host
 - `scripts/vamp`: agent CLI wrapper
-- `scripts/package-vamp-terminal-ios.sh`: unsigned iOS packaging
+- `scripts/package-vamp-terminal-ios.sh`: historical unsigned iOS packaging; do not distribute
 - `docs/index.html`: GitHub Pages product site
 - `docs/sync/index.html`: Vamp Sync product page
 
 ## Verification
 
 For protocol, trust, terminal routing, or PTY changes, run `swift test` and the
-Linux host tests. Build all three active Xcode schemes after shared-source
-changes. Verify the IPA checksum and manifest before sideloading.
+Linux host tests. Build the four active app targets (Vamp Sync, Vamp Stream,
+Vamp Control iOS, and Vamp Control macOS) after shared-source changes. Verify
+the IPA checksum and manifest before sideloading.
 
 Never weaken pairing approval, replay protection, session-ID validation, or
 terminal-ID validation for convenience.

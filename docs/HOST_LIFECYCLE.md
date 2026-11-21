@@ -20,7 +20,7 @@ current website metadata no longer lists the discontinued hosts.
 ## Updating an existing Sync installation
 
 The current public application, bundle, and executable name is **Vamp Sync**.
-The stable bundle identifier `com.mesutcy.remotedesktop.minhost`, scheme
+The stable bundle identifier `com.mesutcy.remotedesktop.host`, scheme
 `VampMiniHost`, URL scheme, Keychain identity tag, and legacy data location
 remain unchanged. These are compatibility identifiers, not separate products.
 

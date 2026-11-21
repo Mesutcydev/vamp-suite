@@ -1,0 +1,106 @@
+{
+  "name": "App Stream \u2014 Close at hand",
+  "version": "1.0",
+  "source": "Sources/ClientiOS/DesignSystem/StreamDesign.swift",
+  "color": {
+    "ink": "#101116",
+    "garnet": "#662E38",
+    "coral": "#FF8576",
+    "accent": {
+      "dark": "#FF998B",
+      "light": "#A63433"
+    },
+    "text": {
+      "dark": "#F7F2ED",
+      "light": "#242127"
+    },
+    "secondary": {
+      "dark": "#BBB0B4",
+      "light": "#6C6167"
+    },
+    "canvasLight": "#F7F0EB",
+    "action": [
+      "#FFF6EE",
+      "#EED7CE"
+    ],
+    "status": {
+      "online": {
+        "dark": "#8ED4AC",
+        "light": "#286E4E"
+      },
+      "busy": {
+        "dark": "#E5BD88",
+        "light": "#906022"
+      }
+    }
+  },
+  "type": {
+    "family": "System / SF Pro",
+    "display": {
+      "size": 48,
+      "weight": "medium",
+      "tracking": -2.1
+    },
+    "pageTitle": {
+      "style": "largeTitle",
+      "weight": "medium",
+      "tracking": -1.5
+    },
+    "body": {
+      "style": "body",
+      "weight": "regular"
+    },
+    "eyebrow": {
+      "style": "caption2",
+      "design": "monospaced",
+      "tracking": 2
+    },
+    "support": {
+      "style": "footnote"
+    }
+  },
+  "layout": {
+    "inset": 24,
+    "cardRadius": 28,
+    "controlRadius": "capsule",
+    "fieldRadius": 20,
+    "spacing": [
+      4,
+      8,
+      12,
+      16,
+      24,
+      28,
+      32,
+      48
+    ],
+    "maxContentWidth": 760,
+    "primaryActionMinHeight": 58,
+    "minHitTarget": 44,
+    "dockHeight": 60
+  },
+  "motion": {
+    "type": "spring",
+    "response": 0.32,
+    "dampingFraction": 1,
+    "pressedScale": 0.975,
+    "reducedMotion": "opacity only; no scale or travel",
+    "ambientMotion": "none"
+  },
+  "materials": {
+    "iOS26plus": "clear native Liquid Glass over a translucent reading plate",
+    "iOS18to25": "ultra-thin native material",
+    "reduceTransparency": "opaque adaptive surface",
+    "streaming": "dark appearance; picture unobscured; dock reserves its own band"
+  },
+  "appIcons": {
+    "default": "Ribbon",
+    "alternate": "Classic",
+    "settings": "Settings > App icon",
+    "scope": [
+      "Home Screen",
+      "in-app brand marks"
+    ],
+    "classicSource": "Previous App Stream TestFlight build 13, original 1024px icon"
+  }
+}

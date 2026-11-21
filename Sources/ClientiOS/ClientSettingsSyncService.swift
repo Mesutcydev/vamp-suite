@@ -25,7 +25,10 @@ final class ClientSettingsSyncService: ClientSettingsSyncing {
         // launch-time client fault, so keep settings local for this channel.
         nil
         #else
-        NSUbiquitousKeyValueStore.default
+        // Both Stream editions use local preferences and carry no iCloud KVS
+        // entitlement. Avoid a launch-time Apple Account prompt or client fault.
+        if Bundle.main.bundleIdentifier == "com.mesutcy.remotedesktop.stream" { return nil }
+        return NSUbiquitousKeyValueStore.default
         #endif
     }
 

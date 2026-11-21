@@ -1,4 +1,5 @@
 import Foundation
+import SharedModels
 
 /// Which Mac host Stream should offer on the connect home.
 enum VampStreamHostSource: String, CaseIterable, Identifiable, Equatable {
@@ -75,7 +76,7 @@ enum VampStreamForgottenHosts {
 }
 
 enum VampStreamHomeLinks {
-    static let syncDownload = URL(string: "https://thevamp.app/sync/#download")!
+    static let syncDownload = VampProductLinks.syncDownload
 }
 
 enum VampStreamSyncPromoStore {
@@ -272,51 +273,53 @@ enum VampStreamHomeCopy {
     static let hostOnboardingDetail = "Choose the app installed on your Mac. You can change this later."
     static let hostOnboardingContinue = "Continue"
     static let hostOnboardingPrompt = "Select your Mac app to continue."
-    static let hostOnboardingNearbyTitle = "Vamp Sync Macs found nearby"
+    static let hostOnboardingNearbyTitle = "\(VampProductIdentity.syncName) Macs found nearby"
     static let hostOnboardingNearbyDetail = "Approve new devices on your Mac."
-    static let hostSourceSyncDetail = "App windows from Vamp Sync on your Mac."
-    static let hostSourceAssistantDetail = "App streams from a Vamp Assistant workspace."
+    static let hostSourceSyncDetail = "App windows from \(VampProductIdentity.syncName) on your Mac."
+    static let hostSourceAssistantDetail = "App streams from Vamp Assistant or Vamp Companion on your Mac."
     static let hostSourceBothTitle = "Both"
-    static let hostSourceBothDetail = "Show Vamp Sync and Vamp Assistant on the home screen."
+    static let hostSourceBothDetail = "Show \(VampProductIdentity.syncName) and Assistant or Companion on the home screen."
 
-    static let syncTitle = "Vamp Sync"
-    static let syncDetail = "Scan the pairing QR on your Mac, or enter the private address shown by Vamp Sync."
-    static let scanSync = "Scan Vamp Sync"
-    static let scanSyncHint = "Scan a Vamp Sync pairing code"
+    static let syncTitle = "\(VampProductIdentity.syncName)"
+    static let syncDetail = "Scan the pairing QR on your Mac, or enter the private address shown by \(VampProductIdentity.syncName)."
+    static let scanSync = "Scan Mac QR Code"
+    static let scanSyncHint = "Scan a Sync, Assistant, or Companion pairing code"
     static let orConnectByAddress = "Or connect by address"
-    static let addressPlaceholder = "Vamp Sync private address"
+    static let addressPlaceholder = "\(VampProductIdentity.syncName) private address"
     static let connectByAddress = "Connect by address"
-    static let addressError = "Enter the private address shown by Vamp Sync, including its port."
+    static let addressError = "Enter the private address shown by \(VampProductIdentity.syncName), including its port."
     static let syncMacsHeading = "Macs"
-    static let lookingForSync = "Looking for Vamp Sync…"
-    static let noSyncFound = "No Vamp Sync found"
-    static let syncNetworkHint = "Open Vamp Sync on your Mac and keep both devices on the same LAN or private Tailscale network."
+    static let lookingForSync = "Looking for \(VampProductIdentity.syncName)…"
+    static let noSyncFound = "No \(VampProductIdentity.syncName) found"
+    static var syncNetworkHint: String {
+        "Open Vamp Sync on your own Mac and connect over the same LAN or private Tailscale network."
+    }
     static let retryDiscovery = "Retry discovery"
     static let unavailableSync = "A saved host is unavailable. Check that it is running and reachable on a trusted network."
     static let syncPromoEyebrow = "MAC HOST"
     static let syncPromoTitle = "Keep the host in sync."
-    static let syncPromoDetail = "Download Vamp Sync for your Mac, then pair Stream with its QR code."
-    static let syncPromoCTA = "Get Vamp Sync"
-    static let syncPromoHint = "Opens the Vamp Sync download page"
-    static let syncPromoDismiss = "Dismiss Vamp Sync promotion"
-    static let syncPromoInstalledTitle = "Is Vamp Sync installed on your Mac?"
-    static let syncPromoInstalledMessage = "Vamp Sync is the Mac host Stream uses. If it is already installed, this card will stop appearing. Scan QR and connect by address stay on this screen."
+    static let syncPromoDetail = "Download \(VampProductIdentity.syncName) for your Mac, then pair Stream with its QR code."
+    static let syncPromoCTA = "Get \(VampProductIdentity.syncName)"
+    static let syncPromoHint = "Opens the \(VampProductIdentity.syncName) download page"
+    static let syncPromoDismiss = "Dismiss \(VampProductIdentity.syncName) promotion"
+    static let syncPromoInstalledTitle = "Is \(VampProductIdentity.syncName) installed on your Mac?"
+    static let syncPromoInstalledMessage = "\(VampProductIdentity.syncName) is the Mac host Stream uses. If it is already installed, this card will stop appearing. Scan QR and connect by address stay on this screen."
     static let syncPromoInstalledYes = "Yes, it’s installed"
     static let syncPromoInstalledNotYet = "Not yet"
-    static let syncConnectCollapse = "Minimize Vamp Sync connection"
-    static let syncConnectExpand = "Show Vamp Sync connection"
+    static let syncConnectCollapse = "Minimize \(VampProductIdentity.syncName) connection"
+    static let syncConnectExpand = "Show \(VampProductIdentity.syncName) connection"
     static let syncConnectCollapsedDetail = "Scan QR or connect by address"
 
-    static let assistantConnectCollapse = "Minimize Vamp Assistant pairing"
-    static let assistantConnectExpand = "Show Vamp Assistant pairing"
-    static let assistantConnectCollapsedDetail = "Connect an Assistant workspace"
+    static let assistantConnectCollapse = "Minimize Assistant or Companion pairing"
+    static let assistantConnectExpand = "Show Assistant or Companion pairing"
+    static let assistantConnectCollapsedDetail = "Connect an Assistant or Companion Mac"
 
-    static let assistantTitle = "Vamp Assistant"
-    static let assistantDetail = "Pair your Mac to browse and stream its apps."
-    static let pairAssistant = "Pair Vamp Assistant"
-    static let pairAnotherAssistant = "Pair another Assistant"
-    static let pairAssistantHint = "Enter the private address and one-time pairing code shown by Vamp Assistant"
-    static let assistantMacsHeading = "Assistant Macs"
+    static let assistantTitle = "Assistant / Companion"
+    static let assistantDetail = "Pair Assistant or Companion to browse and stream your Mac apps."
+    static let pairAssistant = "Pair Assistant or Companion"
+    static let pairAnotherAssistant = "Pair another Mac"
+    static let pairAssistantHint = "Enter the private address and one-time pairing code shown by Assistant or Companion"
+    static let assistantMacsHeading = "Assistant / Companion Macs"
 
     static func pairAssistantTitle(hasSavedAssistants: Bool) -> String {
         hasSavedAssistants ? pairAnotherAssistant : pairAssistant

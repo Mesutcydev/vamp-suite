@@ -182,12 +182,18 @@ final class SecondaryDisplayStreamer: @unchecked Sendable {
         // client's secondary decoder — expect HDR10 (10-bit) renders the secondary display BLACK.
         // Sync both the encoder and the capture to the same range.
         try await encoder.configure(for: display, qualityPreset: preset, codec: codec, dynamicRange: dynamicRange)
+        // Capture must produce the encoder's ACTUAL configured dimensions. The codec can
+        // silently fall back to H.264 when this machine lacks a hardware HEVC encoder, and a
+        // capture size that disagrees with the encode size makes VideoToolbox rescale every
+        // frame — blurred output and wasted bandwidth on every secondary frame. This mirrors
+        // the primary path (`captureAllowsHighResolution`, read after `configure`).
+        let allowsHighResolution = encoder.encoderDiagnostics.configuredCodec == .hevc
         try await encoder.startEncoding()
         let bridge = EncoderCaptureFrameBridge(encoder: encoder)
         captureBridge = bridge
         capture.setFrameReceiver(bridge)
-        try await capture.startCapture(displayID: display.id, qualityPreset: preset, allowsHighResolution: false, dynamicRange: dynamicRange)
-        logger.info("Secondary display \(self.displayID, privacy: .public) streaming as wireID \(self.wireDisplayID) (\(dynamicRange == .hdr10 ? "HDR10" : "SDR", privacy: .public))")
+        try await capture.startCapture(displayID: display.id, qualityPreset: preset, allowsHighResolution: allowsHighResolution, dynamicRange: dynamicRange)
+        logger.info("Secondary display \(self.displayID, privacy: .public) streaming as wireID \(self.wireDisplayID) (\(allowsHighResolution ? "high-res " : "")\(dynamicRange == .hdr10 ? "HDR10" : "SDR", privacy: .public))")
     }
 
     func forceKeyframe() {

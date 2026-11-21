@@ -60,6 +60,9 @@ struct SavedHost: Codable, Hashable, Identifiable {
     var secureTLSPort: UInt16? = nil
     /// Host key-agreement public key used to seal the session token.
     var keyAgreementPublicKey: Data? = nil
+    /// This Mac has completed the signed key exchange. Once true it is never cleared: a later
+    /// connection where the Mac does not offer the exchange is refused as a downgrade.
+    var signedKeyExchange: Bool? = nil
 }
 
 @MainActor
@@ -72,6 +75,9 @@ final class HostsListViewModel: ObservableObject {
     private let browser: any BonjourDiscoveryBrowsing
     private var eventsTask: Task<Void, Never>?
     private var hasStarted = false
+    /// Host fingerprints read from scanned pairing codes, by "hostname:port". In memory only:
+    /// once the Mac is verified its fingerprint is saved with the host record.
+    private var scannedFingerprints: [String: String] = [:]
     private var delayedRefreshTask: Task<Void, Never>?
     private var startupRetryTask: Task<Void, Never>?
     private var permissionRecoveryTask: Task<Void, Never>?
@@ -476,13 +482,24 @@ final class HostsListViewModel: ObservableObject {
 
     /// Parse an address string like "192.168.1.5", "myhost.example.com:9471",
     /// or "[2001:db8::1]:9471" and add a synthetic host entry so the user can connect to it.
+    ///
+    /// `scannedFingerprint` is the host fingerprint from a scanned pairing code. It is kept
+    /// only as the identity to verify that address against (see `trustedIdentity`), never as
+    /// advertised metadata, so a scanned Mac still connects on the port its code names.
     @discardableResult
-    func addManualHost(address: String) -> DiscoveredHostRow? {
+    func addManualHost(address: String, scannedFingerprint: String? = nil) -> DiscoveredHostRow? {
         guard let parsedAddress = parseManualAddress(address) else {
             return nil
         }
         let hostname = parsedAddress.hostname
         let port = parsedAddress.port
+        let addressKey = Self.addressKey(hostname: hostname, port: port)
+        if let fingerprint = normalizedFingerprint(scannedFingerprint), PublicKeyFingerprint.isValid(fingerprint) {
+            scannedFingerprints[addressKey] = fingerprint
+        } else {
+            // Typing an address by hand must not inherit a fingerprint scanned earlier.
+            scannedFingerprints[addressKey] = nil
+        }
 
         // Reuse existing entry for the same hostname:port to avoid duplicates
         if let existing = hosts.first(where: { $0.endpoint.hostname == hostname && $0.endpoint.port == port }) {
@@ -637,7 +654,11 @@ final class HostsListViewModel: ObservableObject {
     /// than whatever the (attacker-influenceable) Bonjour advertisement currently claims — so a
     /// same-LAN impostor re-advertising a trusted Mac's name/IP/MAC is rejected on the key change
     /// instead of being silently trusted and overwriting the stored trust anchor (TOFU).
-    func trustedFingerprint(matching endpoint: ResolvedHostEndpoint) -> String? {
+    ///
+    /// A fingerprint scanned from the Mac's pairing code counts too: the user read it off the
+    /// Mac's own screen, which is the out-of-band check a first contact otherwise needs. A saved
+    /// record wins over a scan, so a code cannot replace an identity already pinned.
+    func trustedIdentity(matching endpoint: ResolvedHostEndpoint) -> TrustedHostIdentity? {
         let records = loadSavedHostRecords()
         let endpointFingerprint = normalizedFingerprint(endpoint.metadata.publicKeyFingerprint)
         let mac = normalizedMACAddress(endpoint.metadata.macAddress)
@@ -648,14 +669,26 @@ final class HostsListViewModel: ObservableObject {
             if let mac, normalizedMACAddress(record.macAddress) == mac { return true }
             return record.hostname == endpoint.hostname && record.port == endpoint.port
         }
-        return match.flatMap { normalizedFingerprint($0.publicKeyFingerprint) }
+        if let match, let fingerprint = normalizedFingerprint(match.publicKeyFingerprint) {
+            return TrustedHostIdentity(
+                fingerprint: fingerprint,
+                requiresSignedKeyExchange: match.signedKeyExchange == true
+            )
+        }
+        return scannedFingerprints[Self.addressKey(hostname: endpoint.hostname, port: endpoint.port)]
+            .map { TrustedHostIdentity(fingerprint: $0) }
+    }
+
+    private static func addressKey(hostname: String, port: UInt16) -> String {
+        "\(hostname.lowercased()):\(port)"
     }
 
     @discardableResult
     func recordVerifiedHostIdentity(
         endpoint: ResolvedHostEndpoint,
         hostID: UUID,
-        publicKeyFingerprint: String
+        publicKeyFingerprint: String,
+        signedKeyExchange: Bool = false
     ) -> ResolvedHostEndpoint? {
         guard let fingerprint = normalizedFingerprint(publicKeyFingerprint) else {
             return refreshedEndpoint(matching: endpoint)
@@ -713,7 +746,13 @@ final class HostsListViewModel: ObservableObject {
             tailscaleHostname: verifiedEndpoint.metadata.tailscaleHostname ?? priorTailscaleHost?.tailscaleHostname,
             tailscaleIP: verifiedEndpoint.metadata.tailscaleIP ?? priorTailscaleHost?.tailscaleIP,
             secureTLSPort: verifiedEndpoint.metadata.secureTLSPort ?? priorTailscaleHost?.secureTLSPort,
-            keyAgreementPublicKey: verifiedEndpoint.metadata.keyAgreementPublicKey ?? priorTailscaleHost?.keyAgreementPublicKey
+            keyAgreementPublicKey: verifiedEndpoint.metadata.keyAgreementPublicKey ?? priorTailscaleHost?.keyAgreementPublicKey,
+            // Sticky: only ever raised, and only for the same key. `priorTailscaleHost` can
+            // also match by address, which must not carry the requirement to a different Mac.
+            signedKeyExchange: signedKeyExchange
+                || (priorTailscaleHost?.signedKeyExchange == true
+                    && normalizedFingerprint(priorTailscaleHost?.publicKeyFingerprint) == fingerprint)
+                ? true : nil
         )
         records.append(saved)
         persistSavedHosts(records)
@@ -901,6 +940,7 @@ final class HostsListViewModel: ObservableObject {
         merged.tailscaleIP = merged.tailscaleIP ?? other.tailscaleIP
         merged.secureTLSPort = merged.secureTLSPort ?? other.secureTLSPort
         merged.keyAgreementPublicKey = merged.keyAgreementPublicKey ?? other.keyAgreementPublicKey
+        if merged.signedKeyExchange == true || other.signedKeyExchange == true { merged.signedKeyExchange = true }
         return merged
     }
 
@@ -986,6 +1026,12 @@ final class HostsListViewModel: ObservableObject {
 
     private func upsertSavedHostRecord(_ saved: SavedHost) {
         var all = loadSavedHostRecords()
+        var saved = saved
+        // Re-saving a Mac must not drop its key-exchange requirement (same key only).
+        if let fingerprint = normalizedFingerprint(saved.publicKeyFingerprint),
+           all.contains(where: { $0.signedKeyExchange == true && normalizedFingerprint($0.publicKeyFingerprint) == fingerprint }) {
+            saved.signedKeyExchange = true
+        }
         all.removeAll { savedHostRecord($0, matches: saved) }
         all.append(saved)
         persistSavedHosts(all)

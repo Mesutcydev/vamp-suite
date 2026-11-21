@@ -1,0 +1,26 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "8D051CF7-FD51-4720-A30C-D08C8DA05AEB",
+        "deviceName" : "iPhone 17 iOS27",
+        "exportedFileName" : "B1454465-D396-452F-A4E7-81787D63E99B.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "iphone-27-connection-lost-landscape-accessibility-dark-fixture_0_2A3815A4-6963-4657-95C7-7063EB3CF385.png",
+        "timestamp" : 1788860337.898
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "8D051CF7-FD51-4720-A30C-D08C8DA05AEB",
+        "deviceName" : "iPhone 17 iOS27",
+        "exportedFileName" : "7A5BC0B7-C4B3-48FB-9BD7-2B94555E59A2.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "iphone-27-connection-lost-landscape-accessibility-light-fixture_0_4D00F6D8-9433-437B-9D26-61B93EE92C4D.png",
+        "timestamp" : 1788860337.177
+      }
+    ],
+    "testIdentifier" : "RemoteInstrumentRenderingTests/testConnectionLostAtShortHeight()",
+    "testIdentifierURL" : "test://com.apple.xcode/BeetCode/BeetCodeRemoteIOSTests/RemoteInstrumentRenderingTests/testConnectionLostAtShortHeight"
+  }
+]

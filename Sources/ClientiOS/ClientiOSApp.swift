@@ -35,10 +35,10 @@ extension View {
 private struct AppLockPrivacyCover: View {
     var body: some View {
         ZStack {
-            PR.bg.ignoresSafeArea()
+            ControlDesign.canvas.ignoresSafeArea()
             Image(systemName: "lock.fill")
                 .font(.system(size: 40, weight: .ultraLight))
-                .foregroundColor(PR.accent)
+                .foregroundStyle(ControlDesign.accent)
         }
     }
 }
@@ -46,10 +46,12 @@ private struct AppLockPrivacyCover: View {
 @main
 struct ClientiOSApp: App {
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var environment = ClientAppEnvironment.makeDefault(clientName: "Vamp Control")
+    @StateObject private var environment = ClientAppEnvironment.makeDefault(clientName: "Vamp Control", requestsDesktop: true)
     @StateObject private var keepaliveService = BackgroundKeepaliveService()
     @StateObject private var appLock = AppLockService()
     @State private var observersInstalled = false
+    @State private var launchIsVisible = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init() {
         CrashSafeStartupDiagnostics.mark("app.init.begin")
@@ -63,8 +65,18 @@ struct ClientiOSApp: App {
             // was removed along with those files. RootTabView is the sole live UI path.
             RootTabView(environment: environment, appLock: appLock)
             .overlay {
+                if launchIsVisible && !appLock.isLocked {
+                    ControlLaunchView {
+                        withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.22)) {
+                            launchIsVisible = false
+                        }
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .overlay {
                 if appLock.isLocked {
-                    AppLockView(lockService: appLock)
+                    ControlLockView(lockService: appLock)
                         .transition(.opacity)
                 } else if appLock.isEnabled && scenePhase != .active {
                     // Privacy cover so the streamed desktop isn't captured into the iOS
@@ -78,6 +90,7 @@ struct ClientiOSApp: App {
             .animation(.easeInOut(duration: 0.2), value: appLock.isLocked)
             .task {
                 CrashSafeStartupDiagnostics.mark("app.scene.task.started")
+                if appLock.isLocked { launchIsVisible = false }
                 if !observersInstalled {
                     observersInstalled = true
                     keepaliveService.installObservers()
@@ -93,6 +106,7 @@ struct ClientiOSApp: App {
                 CrashSafeStartupDiagnostics.mark("app.scene.phase", details: "\(phase)")
                 switch phase {
                 case .background:
+                    launchIsVisible = false
                     appLock.handleSceneBackground()
                     if environment.sessionCoordinator.lastEndpoint != nil {
                         // Checkpoint, don't fight suspension: flush the local
@@ -116,9 +130,6 @@ struct ClientiOSApp: App {
                     break
                 }
             }
-            // Slightly longer than the Mac default so the front-loaded gleam/wink/twinkle
-            // beats in iosClient() finish before the cross-fade.
-            .vampSplash(.iosClient(), minimumDuration: 2.2)
         }
     }
 

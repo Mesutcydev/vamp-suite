@@ -46,8 +46,7 @@ struct VampPairingCard<Body: View>: View {
                     .transition(.opacity)
             }
         }
-            // A stable reading surface keeps the bright portal from washing out labels.
-            .streamReadingSurface(in: surface)
+        .clipShape(surface)
         .prGlassSurface(
             in: surface,
             role: .card
@@ -71,7 +70,6 @@ struct VampPairingCard<Body: View>: View {
                         lineWidth: 1
                     )
             }
-        .clipShape(surface)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(title))
         .animation(animation, value: isExpanded)
@@ -134,7 +132,8 @@ struct VampPairingCard<Body: View>: View {
 }
 
 private enum VampPairingCardMetrics {
-    static let radius: CGFloat = 28
+    /// Same radius as the host rows above it, so the home reads as one set of cards.
+    static let radius: CGFloat = AppHostMetrics.cardRadius
     static let contentPadding: CGFloat = AppSpacing.xl
 }
 

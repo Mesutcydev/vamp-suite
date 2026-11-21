@@ -317,8 +317,8 @@ final class AppStreamViewModel: ObservableObject {
         sendListRequest(attempt: 1)
     }
 
-    /// The control-channel auth handshake can lag the session becoming "ready", so the very first
-    /// request may be dropped as unauthenticated. Retry a few times until the snapshot arrives.
+    /// Older hosts can miss the initial control-auth packet during startup. Repeat the
+    /// idempotent handshake before each bounded inventory attempt so they can recover.
     private func sendListRequest(attempt: Int) {
         guard let sessionID = environment.sessionCoordinator.activeSessionID else {
             status = .failed(reason: "Not connected to a Mac.")
@@ -330,8 +330,11 @@ final class AppStreamViewModel: ObservableObject {
             offset: listOffset
         )
         do {
-            try environment.webRTCSessionManager.sendDataMessage(
-                try DataChannelEnvelope.applicationListRequest(request))
+            try Self.sendApplicationListRequest(
+                request,
+                sessionTokenHex: environment.sessionCoordinator.currentSessionTokenHex,
+                over: environment.webRTCSessionManager
+            )
             appStreamLog.info("requestApplicationList sent attempt=\(attempt, privacy: .public) session=\(sessionID.uuidString, privacy: .public)")
         } catch {
             appStreamLog.error("requestApplicationList send failed: \(String(describing: error), privacy: .public)")
@@ -352,7 +355,25 @@ final class AppStreamViewModel: ObservableObject {
         }
     }
 
+    static func sendApplicationListRequest(
+        _ request: ApplicationListRequestMessage,
+        sessionTokenHex: String?,
+        over transport: any WebRTCSessionManaging
+    ) throws {
+        if let sessionTokenHex {
+            try transport.sendDataMessage(try DataChannelEnvelope.controlAuth(
+                ControlChannelAuthMessage(sessionID: request.sessionID, sessionToken: sessionTokenHex)
+            ))
+        }
+        try transport.sendDataMessage(try DataChannelEnvelope.applicationListRequest(request))
+    }
+
     func close(_ application: RemoteApplication) {
+        // App Store edition is View Only: closing a host app is a remote change.
+        #if VAMP_APP_STORE
+        status = .failed(reason: "Closing apps is not available in the App Store edition.")
+        return
+        #endif
         guard ApplicationClosePolicy.canClose(application.bundleIdentifier) else {
             status = .failed(reason: "\(application.name) cannot be closed remotely.")
             return
@@ -683,7 +704,7 @@ final class AppStreamViewModel: ObservableObject {
             }
             guard result.resolvedTarget.kind == .window else { return }
             isResizing = false
-            if result.appliedSizingMode != nil { supportsAdaptiveSizing = true }
+            supportsAdaptiveSizing = result.appliedSizingMode != nil && environment.sessionCoordinator.sessionMode != .viewOnly
             sizingNotice = result.reason
             geometryRevision &+= 1
             streamedWindow = StreamedWindow(

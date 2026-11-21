@@ -33,6 +33,12 @@ struct MacClientApp: App {
     @AppStorage(MacMenuBarPreference.storageKey)
     private var menuBarPreference = MacMenuBarPreference.disabledValue
 
+    init() {
+        // Migrate a previous file-transfer opt-out before SwiftUI constructs
+        // Settings views backed by the new shared preference key.
+        ClientFileTransferPreference.migrateLegacySettings()
+    }
+
     private static var versionString: String {
         "Version " + ((Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "")
     }
@@ -60,6 +66,11 @@ struct MacClientApp: App {
                 MacDisconnectCommand(environment: environment)
             }
             CommandGroup(after: .toolbar) { MacDisplayModeCommands() }
+            CommandGroup(after: .appInfo) { MacUpdateCommands() }
+            CommandGroup(replacing: .help) {
+                Link("Vamp Control Help", destination: VampProductLinks.support)
+                Link("Privacy Policy", destination: VampProductLinks.privacy)
+            }
         }
         Settings { MacSettingsScreen(environment: environment) }
     }

@@ -14,8 +14,8 @@ enum VampHostAvailability: Equatable {
     /// card until it is unreadable is not a status.
     var tint: Color {
         switch self {
-        case .online: return .green
-        case .busy: return .orange
+        case .online: return Color.dynamic(light: 0x286E4E, dark: 0x8ED4AC)
+        case .busy: return Color.dynamic(light: 0x906022, dark: 0xE5BD88)
         case .offline: return .gray
         case .checking: return .gray
         }
@@ -50,7 +50,7 @@ struct VampHostStatusLabel: View {
                     isActive: availability.isPulsing, period: 0.9, trough: 0.42)
             Text(availability.label)
                 .font(.caption.weight(.medium))
-                .foregroundStyle(PR.fg2)
+                .foregroundStyle(StreamDesign.secondary)
                 .lineLimit(1)
         }
         .accessibilityElement(children: .ignore)

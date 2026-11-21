@@ -38,6 +38,13 @@ jobs:
       - name: Run core tests
         run: swift test
 
+      - name: Generate active app projects from shared specs
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec project.yml
+          xcodegen generate --spec vampstream-project.yml
+          xcodegen generate --spec macclient-project.yml
+
       - name: Resolve app dependencies
         run: >-
           xcodebuild
@@ -48,7 +55,7 @@ jobs:
         run: >-
           xcodebuild
           -project RemoteDesktopToolApps.xcodeproj
-          -scheme MacHost
+          -scheme VampMiniHost
           -configuration Debug
           -destination 'platform=macOS'
           CODE_SIGNING_ALLOWED=NO
@@ -110,6 +117,32 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           CODE_SIGNING_REQUIRED=NO
           build
+
+      - name: Build Vamp Sync Mac App Store edition
+        run: |
+          xcodebuild -quiet -project RemoteDesktopToolApps.xcodeproj -scheme VampSyncAppStore \
+            -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath .derived-store-sync CODE_SIGNING_ALLOWED=NO build
+          python3 scripts/verify-vamp-store-bundle.py sync '.derived-store-sync/Build/Products/Release/Vamp Sync.app'
+
+      - name: Build Vamp Stream App Store edition
+        run: |
+          xcodebuild -quiet -project VampStream.xcodeproj -scheme VampStreamAppStore \
+            -configuration AppStore -destination 'generic/platform=iOS' \
+            -derivedDataPath .derived-store-stream CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+          python3 scripts/verify-vamp-store-bundle.py stream '.derived-store-stream/Build/Products/AppStore-iphoneos/App Stream.app'
+
+      - name: Build Vamp Control iOS
+        run: >-
+          xcodebuild -quiet -project RemoteDesktopToolApps.xcodeproj -scheme iOSRemote
+          -configuration Release -destination 'generic/platform=iOS'
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+      - name: Build Vamp Control macOS
+        run: >-
+          xcodebuild -quiet -project MacClient.xcodeproj -scheme MacClient
+          -configuration Release -destination 'generic/platform=macOS'
+          CODE_SIGNING_ALLOWED=NO build
 
   test-arm64:
     # Release hosts and IPAs ship arm64, but the main build job runs on an

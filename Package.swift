@@ -105,7 +105,7 @@ let package = Package(
         .target(name: "Discovery", dependencies: ["SharedModels", "SharedProtocol", "SharedUtilities", "TransportWebRTC", "Permissions"]),
         .target(name: "Diagnostics", dependencies: ["SharedModels"]),
         .target(name: "HostWidgetShared"),
-        .target(name: "SharedUI"),
+        .target(name: "SharedUI", dependencies: ["SharedModels"]),
         .executableTarget(
             name: "HostApp",
             dependencies: [
@@ -177,6 +177,7 @@ let package = Package(
                 "BonjourWakeService.swift",
                 "ClientAppEnvironment.swift",
                 "ClientAudioRenderer.swift",
+                "ClientFileTransferPreference.swift",
                 "ClientClipboardSyncManager.swift",
                 "ClientFileTransferManager.swift",
                 "ClientHostBlockedState.swift",

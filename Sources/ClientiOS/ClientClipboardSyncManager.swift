@@ -100,6 +100,10 @@ final class ClientClipboardSyncManager: ObservableObject {
     // MARK: - Session lifecycle
 
     func activate(sessionID: UUID, send: @escaping (DataChannelEnvelope) throws -> Void) {
+        // App Store edition is View Only: never sync the local clipboard to the host.
+        #if VAMP_APP_STORE
+        return
+        #endif
         self.sessionID = sessionID
         self.sendEnvelope = send
         lastSyncedText = nil

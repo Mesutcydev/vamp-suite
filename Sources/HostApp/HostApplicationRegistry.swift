@@ -46,9 +46,9 @@ public final class HostApplicationRegistry {
 
     /// A live snapshot of streamable applications, ordered for the client's app browser.
     /// Running apps (which own on-screen windows) first, then other installed apps.
-    public func snapshot(includeIcons: Bool = true) -> [RemoteApplication] {
+    public func snapshot(includeIcons: Bool = true, includeInstalledApplications: Bool = true) -> [RemoteApplication] {
         let running = runningApplications(includeIcons: includeIcons)
-        let installed = installedApplications(includeIcons: includeIcons)
+        let installed = includeInstalledApplications ? installedApplications(includeIcons: includeIcons) : []
         return Self.sortedForBrowser(Self.dedupedByBundleID(running + installed))
     }
 

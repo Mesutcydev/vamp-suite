@@ -4,13 +4,49 @@ import CoreGraphics
 import Foundation
 import SharedModels
 import os
+#if VAMP_APP_STORE
+import AppKit
+#endif
+
+/// Public session/display signals are availability signals, not proof that a
+/// lock screen has authenticated a user. Unknown snapshots remain unavailable.
+/// Store input is independently disabled by MacHostRuntimePolicy in every state;
+/// ScreenCaptureKit remains responsible for delivering permitted capture frames.
+struct StoreHostSessionAvailability {
+    enum Event: Sendable {
+        case sessionInactive, sessionActive, screensSleep, screensWake, systemSleep, systemWake
+    }
+
+    private(set) var sessionSwitchedOut = false
+    private(set) var screensAsleep = false
+    private(set) var systemAsleep = false
+
+    mutating func handle(_ event: Event) {
+        switch event {
+        case .sessionInactive: sessionSwitchedOut = true
+        case .sessionActive: sessionSwitchedOut = false
+        case .screensSleep: screensAsleep = true
+        case .screensWake: screensAsleep = false
+        case .systemSleep: systemAsleep = true
+        case .systemWake: systemAsleep = false
+        }
+    }
+
+    func state(isOnConsole: Bool?, loginDone: Bool?, displayAwake: Bool) -> HostLockState {
+        guard isOnConsole == true, loginDone == true, displayAwake,
+              !sessionSwitchedOut, !screensAsleep, !systemAsleep else {
+            return .lockedOrLoginWindow
+        }
+        return .unlockedActiveSession
+    }
+}
 
 /// Monitors the macOS screen-lock state and publishes changes as `HostLockState`.
 ///
-/// Detection strategy (no security bypass, read-only queries only):
+/// Website detection strategy (excluded from Store compilation):
 /// 1. `DistributedNotificationCenter` — system posts `com.apple.screenIsLocked` /
 ///    `com.apple.screenIsUnlocked` whenever the lock screen appears or disappears.
-///    These notifications are available to sandboxed builds.
+///    These undocumented notification names are website-only compatibility code.
 /// 2. `CGSessionCopyCurrentDictionary()` — used for the initial snapshot and as a
 ///    ground-truth confirmation after each notification.  The `CGSSessionScreenIsLocked`
 ///    key is set by WindowServer and is readable without special entitlements.
@@ -22,7 +58,11 @@ import os
 @MainActor
 final class LockStateMonitor: ObservableObject {
 
+    #if VAMP_APP_STORE
+    @Published private(set) var lockState: HostLockState = .lockedOrLoginWindow
+    #else
     @Published private(set) var lockState: HostLockState = .unlockedActiveSession
+    #endif
 
     /// Thread-safe accessor for non-MainActor callers (e.g. the input router task).
     nonisolated var currentLockState: HostLockState {
@@ -31,14 +71,74 @@ final class LockStateMonitor: ObservableObject {
         return _cachedState
     }
 
+    #if VAMP_APP_STORE
+    private nonisolated(unsafe) var _cachedState: HostLockState = .lockedOrLoginWindow
+    private var availability = StoreHostSessionAvailability()
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var refreshTask: Task<Void, Never>?
+    #else
     private nonisolated(unsafe) var _cachedState: HostLockState = .unlockedActiveSession
-    private let _stateLock = NSLock()
     private var lockObserver: NSObjectProtocol?
     private var unlockObserver: NSObjectProtocol?
+    #endif
+    private let _stateLock = NSLock()
     private let logger = Logger(subsystem: "com.remotedesktop.host", category: "LockStateMonitor")
 
     // MARK: - Lifecycle
 
+    #if VAMP_APP_STORE
+    /// Store builds use documented NSWorkspace notifications and CGSession keys.
+    /// These do not claim exact lock/unlock detection or enable remote input.
+    func startMonitoring() {
+        stopMonitoring()
+        availability = StoreHostSessionAvailability()
+        let center = NSWorkspace.shared.notificationCenter
+        let events: [(Notification.Name, StoreHostSessionAvailability.Event)] = [
+            (NSWorkspace.sessionDidResignActiveNotification, .sessionInactive),
+            (NSWorkspace.sessionDidBecomeActiveNotification, .sessionActive),
+            (NSWorkspace.screensDidSleepNotification, .screensSleep),
+            (NSWorkspace.screensDidWakeNotification, .screensWake),
+            (NSWorkspace.willSleepNotification, .systemSleep),
+            (NSWorkspace.didWakeNotification, .systemWake)
+        ]
+        for (name, event) in events {
+            workspaceObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.availability.handle(event)
+                    self.refresh()
+                }
+            })
+        }
+        refresh()
+        // Public session/display snapshots can settle after a wake notification.
+        // Retry without treating the wake itself as proof of an available session.
+        refreshTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                self?.refresh()
+            }
+        }
+    }
+
+    func stopMonitoring() {
+        refreshTask?.cancel()
+        refreshTask = nil
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers.forEach(center.removeObserver)
+        workspaceObservers.removeAll()
+    }
+
+    func refresh() {
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        let display = CGMainDisplayID()
+        apply(availability.state(
+            isOnConsole: session?[kCGSessionOnConsoleKey as String] as? Bool,
+            loginDone: session?[kCGSessionLoginDoneKey as String] as? Bool,
+            displayAwake: display != kCGNullDirectDisplay && CGDisplayIsAsleep(display) == 0
+        ))
+    }
+    #else
     func startMonitoring() {
         // Snapshot current state before registering notifications so we handle
         // the case where the host was already locked when the app launched.
@@ -111,6 +211,7 @@ final class LockStateMonitor: ObservableObject {
         let newState: HostLockState = cgSessionIsLocked() ? .lockedOrLoginWindow : .unlockedActiveSession
         apply(newState)
     }
+    #endif
 
     private func apply(_ newState: HostLockState) {
         _stateLock.lock()

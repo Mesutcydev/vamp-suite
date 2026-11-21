@@ -253,12 +253,15 @@ final class HostInputCommandRouter: @unchecked Sendable {
         }
 
         listenTask?.cancel()
+        // Register the broadcast subscriber synchronously so an early, one-shot
+        // controlAuth packet cannot arrive before the receive task is scheduled.
+        let messageStream = webRTCSessionManager.receiveDataMessages()
         listenTask = Task { [weak self] in
             guard let self else { return }
             #if DEBUG
             self.traceHandler?("router.task.started")
             #endif
-            for await envelope in webRTCSessionManager.receiveDataMessages() {
+            for await envelope in messageStream {
                 guard !Task.isCancelled else { break }
                 if self.withLock({ self._terminalOnly }), !self.isAllowedInTerminalOnly(envelope.kind) {
                     self.rejectCommand(reason: "Command unavailable on terminal-only host")
@@ -624,6 +627,13 @@ final class HostInputCommandRouter: @unchecked Sendable {
               message.sessionID == activeSessionID,
               message.source == "client",
               !message.text.isEmpty else { return }
+        // Writing the Mac's pasteboard is a remote change: refuse it at the lock screen and
+        // in view-only mode, exactly as input is refused. (This also keeps the View Only
+        // App Store edition from accepting clipboard writes.)
+        guard !lockStateProvider().blocksRemoteInput, !modeProvider.currentMode.blocksRemoteInput else {
+            rejectCommand(reason: "Clipboard write blocked: Mac is locked or view only")
+            return
+        }
         onClipboardSync?(message.text)
     }
 
@@ -633,6 +643,11 @@ final class HostInputCommandRouter: @unchecked Sendable {
         guard let message = try? envelope.decodeClipboardRequest(),
               envelope.sessionID == message.sessionID,
               message.sessionID == activeSessionID else { return }
+        // Don't hand out what is on the pasteboard while the Mac is locked.
+        guard !lockStateProvider().blocksRemoteInput else {
+            rejectCommand(reason: "Clipboard read blocked: Mac is locked")
+            return
+        }
         guard shouldAllowClipboardRequest() else {
             rejectCommand(reason: "Clipboard request rate-limited")
             return

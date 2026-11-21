@@ -148,12 +148,9 @@ enum HostBrowserPairingCode {
                 guard let base = buffer.baseAddress else { return false }
                 return SecRandomCopyBytes(kSecRandomDefault, buffer.count, base) == errSecSuccess
             }
-            guard drawn else {
-                var fallback = [UInt8](repeating: 0, count: 8)
-                _ = SecRandomCopyBytes(kSecRandomDefault, fallback.count, &fallback)
-                let reduced = fallback.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) } % modulus
-                return String(format: "%012llu", reduced)
-            }
+            // Failing closed: a pairing code drawn from anything else would be guessable, and a
+            // predictable code is worse than no host. This used to fall back to all-zero bytes.
+            guard drawn else { fatalError("System randomness unavailable; refusing to issue a browser pairing code") }
         } while value >= unbiasedLimit
         return String(format: "%012llu", value % modulus)
     }
@@ -664,6 +661,8 @@ final class HostBrowserControlService: @unchecked Sendable {
         // have failed.
         revokeWebSocketSessions(reason: "browser-replaced")
         pairFailuresByAddress.removeValue(forKey: remoteAddress)
+        // The code stays valid until it expires, so a second browser can pair while it is shown.
+        // Rotating it on success breaks that handoff (HostTerminalServiceTests pins it).
         let token = Self.makeToken()
         browserToken = token
         browserTokenExpiresAt = Date().addingTimeInterval(Self.browserTokenLifetime)

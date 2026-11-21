@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// One-time welcome shown on the first launch of the Mac client. Explains the
-/// Vamp Host requirement and the basics of connecting, then never reappears
+/// Vamp Sync requirement and the basics of connecting, then never reappears
 /// (gated by `client.onboarding.completed`).
 struct MacOnboardingView: View {
     let onDone: () -> Void
@@ -16,7 +16,9 @@ struct MacOnboardingView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 Text("Welcome to Vamp Control")
                     .font(.title2.weight(.semibold))
-                Text("Control another Mac from this one — full keyboard, mouse, and screen, over your local network or Tailscale.")
+                Text(MacDistributionPolicy.isAppStoreEdition
+                     ? "Stream another Mac’s desktop over your local network or a private Tailscale network. App windows need your local network."
+                     : "Stream another Mac’s desktop or app windows over your local network or a private Tailscale network.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -30,8 +32,8 @@ struct MacOnboardingView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     step(number: 1,
                          icon: "desktopcomputer",
-                         title: "Run a Vamp host on the other Mac",
-                         detail: "Vamp Host shares its whole desktop, Vamp Sync shares a single app window, and Vamp Assistant connects with a pairing code. Keep it running.")
+                         title: "Run Vamp Sync on the other Mac",
+                         detail: "Vamp Sync shares its desktop or app windows. Its Mac App Store edition is View Only. Vamp Assistant also connects through Pair Assistant in the toolbar.")
                     Divider()
                     step(number: 2,
                          icon: "wifi",
@@ -41,7 +43,7 @@ struct MacOnboardingView: View {
                     step(number: 3,
                          icon: "cursorarrow.rays",
                          title: "Connect and approve",
-                         detail: "Pick the Mac from the list, then approve this device once on the other computer. Vamp Assistant pairs with a code instead — use Pair Assistant in the toolbar.")
+                         detail: "Pick the Mac from the list, compare the complete device fingerprints, then approve this device on the other Mac. Vamp Assistant pairs with a code instead.")
                 }
                 .padding(6)
             }

@@ -18,7 +18,7 @@ struct ConfigScreen: View {
     @AppStorage("client.ui.inlineStreamPreview") private var inlineStreamPreview = false
     @AppStorage("client.ui.streamingUITheme") private var streamingUITheme = "classic"
     @AppStorage("client.liveActivity.enabled") private var liveActivityEnabled = true
-    @AppStorage("com.mesutcy.remotedesktop.client.filetransfer.enabled") private var fileTransferEnabled = true
+    @AppStorage(ClientFileTransferPreference.storageKey) private var fileTransferEnabled = true
     @AppStorage("client.audio.placeholder.enabled") private var audioWhenReadyEnabled = false
     @AppStorage("client.clipboard.enabled") private var clipboardEnabled = true
     @State private var showDiagnostics = false
