@@ -62,6 +62,6 @@ archive() {
     -destination "$destination" -archivePath "$archive_path" \
     "${SIGNING[@]}" archive
   python3 scripts/verify-vamp-store-bundle.py "$product" \
-    "$archive_path/Products/Applications/$bundle" "${VERIFY_PROFILE[@]}"
+    "$archive_path/Products/Applications/$bundle" ${VERIFY_PROFILE[@]+"${VERIFY_PROFILE[@]}"}
 }
 if [[ "$PRODUCT" == all ]]; then archive sync; archive stream; archive control; else archive "$PRODUCT"; fi
