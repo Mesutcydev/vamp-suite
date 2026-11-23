@@ -182,7 +182,7 @@ targets:
     settings:
       base:
         MARKETING_VERSION: 4.0.0
-        CURRENT_PROJECT_VERSION: 52
+        CURRENT_PROJECT_VERSION: 53
         PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.ios
         PRODUCT_NAME: Vamp Control iOS
         # The App Store build sets app-store; it is the only build that sells Vamp Pro.
@@ -246,7 +246,7 @@ targets:
     settings:
       base:
         MARKETING_VERSION: 4.0.0
-        CURRENT_PROJECT_VERSION: 52
+        CURRENT_PROJECT_VERSION: 53
         PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.ios.liveactivity
         PRODUCT_NAME: iOSRemoteLiveActivity
         INFOPLIST_FILE: Configuration/ClientiOSLiveActivity-Info.plist

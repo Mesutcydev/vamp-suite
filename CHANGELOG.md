@@ -7,6 +7,17 @@ their original product names. The format follows
 
 ## [Unreleased]
 
+### Vamp Control iOS 4.0.0 (build 53)
+
+- Settings reads like `vamp config`, on the same grid and glass as Home:
+  `$ config look`, `$ config stream`, `$ config sharing`, `$ config privacy`
+  and `$ open` over clear glass panels; segmented capsules for theme and
+  picture quality; fixed-width `● on` / `○ off` flags instead of system
+  switches (they still read as switches to VoiceOver); `# comments` for the
+  fine print; the version and build in the footer.
+- Paired Macs matches: `$ ls paired`, one line per Mac with its grouped
+  fingerprint and a revoke or forget button.
+
 ### Vamp Control iOS 4.0.0 (build 52)
 
 - The featured Mac is drawn as its screen. While a session runs behind Home it

@@ -584,7 +584,7 @@ private struct ControlKeyRow<Value: View>: View {
 }
 
 /// Hairline between terminal lines inside one glass block.
-private struct ControlRule: View {
+struct ControlRule: View {
     var body: some View {
         Rectangle().fill(ControlDesign.line).frame(height: 0.5)
     }
@@ -880,7 +880,7 @@ struct ControlNotice: View {
     }
 }
 
-private struct ControlConnectionProgress: View {
+struct ControlConnectionProgress: View {
     let name: String?
     let fingerprint: String?
     var isApproved = false
