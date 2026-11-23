@@ -23,7 +23,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/site.css?v=sync-control">
   <link rel="stylesheet" href="assets/products.css?v=control-logo-transparent-2">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&display=swap" rel="stylesheet"><link rel="stylesheet" href="assets/arcade.css?v=sync-control-2">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&display=swap" rel="stylesheet"><link rel="stylesheet" href="assets/arcade.css?v=sync-control-lists">
 </head>
 <body class="suite-home">
   <header class="site-header">
@@ -46,20 +46,32 @@
       <div class="hero-actions"><a class="primary-button ArcadeButton" href="#download"><span data-i18n="ux.downloads">Downloads</span><span aria-hidden="true">↓</span></a></div>
     </section>
 
-    <section class="container product-section" id="download" aria-labelledby="download-title">
+    <section class="container product-section list-section" id="download" aria-labelledby="download-title">
       <h2 class="section-title" id="download-title" data-i18n="ux.downloads">Downloads</h2>
-      <div class="family-grid family-grid--two">
-        <article class="family-card client-card" id="download-mini-host-dmg">
-          <h3>Vamp Sync</h3>
-          <p data-i18n="ux.step0Copy">Install on the Mac you want to reach. Sync runs in the menu bar.</p>
-          <div class="host-download"><a class="primary-button" data-release-link="vamp-mini-host-dmg" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-86/VampSync-macOS-4.0.0-build-86-notarized.dmg"><span data-i18n="ux.mini-host-dmgButton">Download for Mac ↓</span></a><span class="platform-requirement">Intel and Apple Silicon · macOS 13+</span><div class="release-meta"><span data-release-version="vamp-mini-host-dmg">4.0.0 · build 86</span><a class="checksum-link" data-release-sha256="vamp-mini-host-dmg" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-86/VampSync-macOS-4.0.0-build-86-notarized.dmg.sha256">SHA-256</a></div></div>
-          <a class="text-button product-detail-link" href="sync/" data-i18n="ux.step2Cta">Sync setup and editions ↗</a>
-        </article>
+      <ul class="product-list" role="list">
+        <li class="product-list-row" id="download-mini-host-dmg">
+          <div class="product-list-copy">
+            <h3>Vamp Sync</h3>
+            <p data-i18n="ux.step0Copy">Install on the Mac you want to reach. Sync runs in the menu bar.</p>
+            <a class="text-button product-detail-link" href="sync/" data-i18n="ux.step2Cta">Sync setup and editions ↗</a>
+          </div>
+          <div class="client-downloads">
+            <div class="client-download">
+              <div>
+                <strong>Mac</strong>
+                <span class="platform-requirement">Intel and Apple Silicon · macOS 13+</span>
+                <div class="release-meta"><span data-release-version="vamp-mini-host-dmg">4.0.0 · build 86</span><a class="checksum-link" data-release-sha256="vamp-mini-host-dmg" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-86/VampSync-macOS-4.0.0-build-86-notarized.dmg.sha256">SHA-256</a></div>
+              </div>
+              <a class="primary-button" data-release-link="vamp-mini-host-dmg" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-86/VampSync-macOS-4.0.0-build-86-notarized.dmg"><span data-i18n="ux.mini-host-dmgButton">Download for Mac ↓</span></a>
+            </div>
+          </div>
+        </li>
 
-        <article class="family-card client-card" id="control">
-          <span class="section-anchor" id="families" aria-hidden="true"></span>
-          <h3>Vamp Control</h3>
-          <p data-i18n="ux.control">Install on the Mac, iPhone, or iPad you’ll use to connect.</p>
+        <li class="product-list-row" id="control">
+          <div class="product-list-copy" id="families">
+            <h3>Vamp Control</h3>
+            <p data-i18n="ux.control">Install on the Mac, iPhone, or iPad you’ll use to connect.</p>
+          </div>
           <div class="client-downloads">
             <div class="client-download" id="download-control-macos"><div><strong>Mac</strong><span class="platform-requirement">Apple Silicon · macOS 13+</span><div class="release-meta"><span data-release-version="vamp-control-macos">2.0.0 · build 70</span><a class="checksum-link" data-release-sha256="vamp-control-macos" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-70/VampControl-macOS-2.0.0-build-70-notarized.dmg.sha256">SHA-256</a></div></div><a class="secondary-button" data-release-link="vamp-control-macos" aria-label="Download Vamp Control for Mac" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-70/VampControl-macOS-2.0.0-build-70-notarized.dmg"><span data-i18n="ux.downloadAction">Download ↓</span></a></div>
             <div class="client-download" id="download-control-ios">
@@ -72,14 +84,14 @@
               <a class="secondary-button" data-release-link="vamp-control-ios" aria-label="Download Vamp Control for iPhone or iPad" hidden><span data-i18n="ux.downloadAction">Download ↓</span></a>
             </div>
           </div>
-        </article>
-      </div>
+        </li>
+      </ul>
     </section>
 
-    <section class="container product-section pair-section" id="setup" aria-labelledby="setup-title">
+    <section class="container product-section pair-section list-section" id="setup" aria-labelledby="setup-title">
       <h2 class="section-title" id="setup-title" data-i18n="ux.setup">Pair your devices</h2>
       <p class="section-lead" data-i18n="ux.step2Copy">Choose Local Wi-Fi or Tailscale in Vamp Sync. Open Vamp Control and use Sync’s pairing QR code or link. Compare the complete device fingerprint on both devices before approving on your Mac.</p>
-      <details class="install-notes">
+      <details class="list-disclosure">
         <summary data-i18n="ux.installNotes">Installation help</summary>
         <p data-i18n="ux.install">The direct Mac downloads may need “Open Anyway” in System Settings. Control for iPhone and iPad requires re-signing before installation.</p>
         <div class="card-actions"><a class="text-button" href="https://github.com/Mesutcydev/vamp-suite/blob/main/docs/INSTALL.md"><span data-i18n="ux.installGuide">Mac install guide ↗</span></a><a class="text-button" href="https://github.com/Mesutcydev/vamp-suite/blob/main/docs/IOS_SIDELOAD.md"><span data-i18n="ux.iosGuide">iOS install guide ↗</span></a></div>

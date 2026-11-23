@@ -16,7 +16,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../assets/site.css?v=sync-control">
   <link rel="stylesheet" href="../assets/products.css?v=control-logo-transparent-2">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&display=swap" rel="stylesheet"><link rel="stylesheet" href="../assets/arcade.css?v=sync-control-2">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&display=swap" rel="stylesheet"><link rel="stylesheet" href="../assets/arcade.css?v=sync-control-lists">
 </head>
 <body>
   <header class="site-header"><div class="container nav">
@@ -33,15 +33,131 @@
         </div>
         <figcaption class="sync-scene-caption"><span data-i18n="sync.sceneCaption">Connect from your other device.</span><span>LAN / Tailscale</span></figcaption>
       </figure></section>
-    <div class="container product-rail"><div class="product-stat"><strong data-i18n="sync.statLight">Light</strong><span data-i18n="sync.statMenu">menu-bar surface</span></div><div class="product-stat"><strong>WebRTC</strong><span data-i18n="sync.statTransport">signed transport</span></div><div class="product-stat"><strong>2</strong><span data-i18n="sync.statPermissions">macOS permissions</span></div><div class="product-stat"><strong>1</strong><span data-i18n="sync.statTrust">trusted boundary</span></div></div>
-    <section class="container product-section" id="surface"><div class="product-section-head"><div><div class="section-kicker"><span class="number">01</span><span class="bar"></span><span data-i18n="sync.surfaceKicker">Focused surface</span></div><h2 class="section-title" data-i18n="sync.surfaceTitle">Sync lives in your menu bar.</h2></div><p class="section-lead" data-i18n="sync.surfaceLead">See reachability, permissions, pairing requests, approved devices, and runtime controls in one compact menu-bar surface.</p></div><div class="feature-grid"><article class="feature-card"><div class="card-topline"><span class="card-number">01</span><span class="card-tag">PAIRING</span></div><h3 data-i18n="sync.pairTitle">Verify every new device</h3><p data-i18n="sync.pairCopy">Choose Local Wi-Fi or Tailscale in Sync, scan that network’s QR code, then compare the complete fingerprint before approving the device. Tailscale uses a private numeric address, so MagicDNS is optional.</p></article>
-        <article class="feature-card"><div class="card-topline"><span class="card-number">02</span><span class="card-tag">VIDEO</span></div><h3 data-i18n="sync.videoTitle">Share an app window</h3><p data-i18n="sync.videoCopy">Choose an app window in Vamp Control. Sync captures it on your Mac.</p></article>
-        <article class="feature-card"><div class="card-topline"><span class="card-number">03</span><span class="card-tag">INPUT</span></div><h3 data-i18n="sync.inputTitle">Control when allowed</h3><p data-i18n="sync.inputCopy">Forward keyboard and pointer commands only after trust and Accessibility consent.</p></article></div></section>
-    <section class="container product-section" id="permissions"><div class="product-section-head"><div><div class="section-kicker"><span class="number">02</span><span class="bar"></span><span data-i18n="sync.permissionsKicker">macOS permissions</span></div><h2 class="section-title" data-i18n="sync.permissionsTitle">Two permissions, two clear jobs.</h2></div><p class="section-lead" data-i18n="sync.permissionsLead">Grant permissions to Vamp Sync itself. It reports readiness but never bypasses macOS consent.</p></div><div class="download-board"><article class="download-card"><div class="eyebrow">SCREEN RECORDING</div><h3 data-i18n="sync.screenTitle">Required for video.</h3><p data-i18n="sync.screenCopy">Screen Recording lets Sync share the selected app window with your paired client.</p></article>
-        <article class="download-card"><div class="eyebrow">ACCESSIBILITY</div><h3 data-i18n="sync.accessTitle">Required for control.</h3><p data-i18n="sync.accessCopy">Keyboard and pointer control require explicit Accessibility permission.</p></article></div></section>
-    <section class="container product-section" id="editions"><div class="product-section-head"><div><div class="section-kicker">DISTRIBUTION</div><h2 class="section-title">Choose your Vamp Sync edition.</h2></div><p class="section-lead">Both editions pair privately with Vamp Control. The edition installed on your Mac determines the available controls.</p></div><div class="download-board"><article class="download-card"><div class="eyebrow">WEBSITE EDITION</div><h3>View and control app windows.</h3><p>Pointer and keyboard input, window resizing, app launching and closing, and optional Remote Unlock. Requires Screen Recording and Accessibility approval on your Mac. Updates are delivered by Vamp Sync.</p><div class="download-actions"><a class="primary-button" href="#download">Get the website edition</a></div></article><article class="download-card"><div class="eyebrow">MAC APP STORE EDITION</div><h3>View existing app windows.</h3><p>Share windows already open on your Mac at their current size. Open, resize, and close them on the Mac. Requires Screen Recording only; no Accessibility prompt, remote input, or Remote Unlock. Updates are delivered by the Mac App Store. Requires macOS 14 or later.</p><p>The store edition is being prepared for review. This page will link to its listing once it is available.</p></article></div></section>
-    <section class="container product-section" id="download"><div class="product-section-head"><div><div class="section-kicker"><span class="number">03</span><span class="bar"></span><span data-i18n="nav.download">Download</span></div><h2 class="section-title" data-i18n="sync.downloadTitle">Download Vamp Sync.</h2></div><p class="section-lead" data-i18n="sync.downloadLead">Install Vamp Sync on the Mac you want to reach, grant the required permissions, then approve your client after verifying its identity.</p></div><div class="download-board"><article class="download-card"><div class="eyebrow">VAMP SYNC · macOS</div><h3 data-i18n="sync.macTitle">Your Mac, ready to connect.</h3><p data-i18n="sync.macCopy">A dedicated menu-bar app with its own bundle, permissions, and trusted-device store.</p><p class="download-version"><span data-release-version="vamp-mini-host-dmg">4.0.0 · build 86</span></p><div class="download-actions"><a class="primary-button" data-release-link="vamp-mini-host-dmg" target="_blank" rel="noreferrer" data-i18n="sync.downloadDmg" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-86/VampSync-macOS-4.0.0-build-86-notarized.dmg">Download DMG</a><a class="secondary-button" data-release-sha256="vamp-mini-host-dmg" target="_blank" rel="noreferrer" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-86/VampSync-macOS-4.0.0-build-86-notarized.dmg.sha256">SHA-256</a></div></article>
-        <article class="download-card"><div class="eyebrow">VAMP CONTROL</div><h3 data-i18n="sync.clientTitle">Connect with Vamp Control.</h3><p data-i18n="sync.clientCopy">Install Vamp Control on your other Mac, iPhone, or iPad.</p><div class="download-actions"><a class="primary-button" href="../#control" data-i18n="sync.getControl">Get Vamp Control</a></div></article></div></section>
+    <section class="container product-section list-section" id="surface">
+      <div class="list-section-intro">
+        <h2 class="section-title" data-i18n="sync.surfaceTitle">Sync lives in your menu bar.</h2>
+        <p class="section-lead" data-i18n="sync.surfaceLead">See reachability, permissions, pairing requests, approved devices, and runtime controls in one compact menu-bar surface.</p>
+      </div>
+      <div class="product-list">
+        <article class="product-list-row">
+          <div class="product-list-copy">
+            <h3 data-i18n="sync.pairTitle">Verify every new device</h3>
+          </div>
+          <div class="product-list-content">
+            <p data-i18n="sync.pairCopy">Choose Local Wi-Fi or Tailscale in Sync, scan that network’s QR code, then compare the complete fingerprint before approving the device. Tailscale uses a private numeric address, so MagicDNS is optional.</p>
+          </div>
+        </article>
+        <article class="product-list-row">
+          <div class="product-list-copy">
+            <h3 data-i18n="sync.videoTitle">Share an app window</h3>
+          </div>
+          <div class="product-list-content">
+            <p data-i18n="sync.videoCopy">Choose an app window in Vamp Control. Sync captures it on your Mac.</p>
+          </div>
+        </article>
+        <article class="product-list-row">
+          <div class="product-list-copy">
+            <h3 data-i18n="sync.inputTitle">Control when allowed</h3>
+          </div>
+          <div class="product-list-content">
+            <p data-i18n="sync.inputCopy">Forward keyboard and pointer commands only after trust and Accessibility consent.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="container product-section list-section" id="permissions">
+      <div class="list-section-intro">
+        <h2 class="section-title" data-i18n="sync.permissionsTitle">Two permissions, two clear jobs.</h2>
+        <p class="section-lead" data-i18n="sync.permissionsLead">Grant permissions to Vamp Sync itself. It reports readiness but never bypasses macOS consent.</p>
+      </div>
+      <div class="product-list">
+        <article class="product-list-row">
+          <div class="product-list-copy">
+            <div class="eyebrow">SCREEN RECORDING</div>
+            <h3 data-i18n="sync.screenTitle">Required for video.</h3>
+          </div>
+          <div class="product-list-content">
+            <p data-i18n="sync.screenCopy">Screen Recording lets Sync share the selected app window with your paired client.</p>
+          </div>
+        </article>
+        <article class="product-list-row">
+          <div class="product-list-copy">
+            <div class="eyebrow">ACCESSIBILITY</div>
+            <h3 data-i18n="sync.accessTitle">Required for control.</h3>
+          </div>
+          <div class="product-list-content">
+            <p data-i18n="sync.accessCopy">Keyboard and pointer control require explicit Accessibility permission.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="container product-section list-section" id="editions">
+      <div class="list-section-intro">
+        <h2 class="section-title">Choose your Vamp Sync edition.</h2>
+        <p class="section-lead">Both editions pair privately with Vamp Control. The edition installed on your Mac determines the available controls.</p>
+      </div>
+      <div class="product-list">
+        <article class="product-list-row">
+          <div class="product-list-copy">
+            <div class="eyebrow">WEBSITE EDITION</div>
+            <h3>View and control app windows.</h3>
+          </div>
+          <div class="product-list-content">
+            <p>Pointer and keyboard input, window resizing, app launching and closing, and optional Remote Unlock. Requires Screen Recording and Accessibility approval on your Mac. Updates are delivered by Vamp Sync.</p>
+            <div class="download-actions">
+              <a class="primary-button" href="#download">Get the website edition</a>
+            </div>
+          </div>
+        </article>
+        <article class="product-list-row">
+          <div class="product-list-copy">
+            <div class="eyebrow">MAC APP STORE EDITION</div>
+            <h3>View existing app windows.</h3>
+          </div>
+          <div class="product-list-content">
+            <p>Share windows already open on your Mac at their current size. Open, resize, and close them on the Mac. Requires Screen Recording only; no Accessibility prompt, remote input, or Remote Unlock. Updates are delivered by the Mac App Store. Requires macOS 14 or later.</p>
+            <p>The store edition is being prepared for review. This page will link to its listing once it is available.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="container product-section list-section" id="download">
+      <div class="list-section-intro">
+        <h2 class="section-title" data-i18n="sync.downloadTitle">Download Vamp Sync.</h2>
+        <p class="section-lead" data-i18n="sync.downloadLead">Install Vamp Sync on the Mac you want to reach, grant the required permissions, then approve your client after verifying its identity.</p>
+      </div>
+      <div class="product-list">
+        <article class="product-list-row">
+          <div class="product-list-copy">
+            <div class="eyebrow">VAMP SYNC · macOS</div>
+            <h3 data-i18n="sync.macTitle">Your Mac, ready to connect.</h3>
+          </div>
+          <div class="product-list-content">
+            <p data-i18n="sync.macCopy">A dedicated menu-bar app with its own bundle, permissions, and trusted-device store.</p>
+            <p class="download-version"><span data-release-version="vamp-mini-host-dmg">4.0.0 · build 86</span></p>
+            <div class="download-actions">
+              <a class="primary-button" data-release-link="vamp-mini-host-dmg" target="_blank" rel="noreferrer" data-i18n="sync.downloadDmg" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-86/VampSync-macOS-4.0.0-build-86-notarized.dmg">Download DMG</a>
+              <a class="secondary-button" data-release-sha256="vamp-mini-host-dmg" target="_blank" rel="noreferrer" href="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-86/VampSync-macOS-4.0.0-build-86-notarized.dmg.sha256">SHA-256</a>
+            </div>
+          </div>
+        </article>
+        <article class="product-list-row">
+          <div class="product-list-copy">
+            <div class="eyebrow">VAMP CONTROL</div>
+            <h3 data-i18n="sync.clientTitle">Connect with Vamp Control.</h3>
+          </div>
+          <div class="product-list-content">
+            <p data-i18n="sync.clientCopy">Install Vamp Control on your other Mac, iPhone, or iPad.</p>
+            <div class="download-actions">
+              <a class="primary-button" href="../#control" data-i18n="sync.getControl">Get Vamp Control</a>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
   </main>
   <footer class="container site-footer"><div class="footer-top"><div class="footer-brand"><a class="brand" href="./"><span class="brand-word">Vamp Sync</span></a><p data-i18n="sync.footer">The Mac host for Vamp Control.</p></div><div class="footer-links"><a href="../#control">Vamp Control</a><a href="#permissions" data-i18n="sync.navPermissions">Permissions</a><a href="#download" data-i18n="sync.navDownload">Download</a><a href="https://github.com/Mesutcydev/vamp-suite" target="_blank" rel="noreferrer">GitHub ↗</a></div></div><div class="footer-bottom"><span>© <span id="year"></span> Vamp Sync · Apache 2.0</span><span>local-first · peer-approved · no hosted relay</span></div></footer>
   <script src="../assets/site.js?v=sync-control-2" defer></script>

@@ -209,3 +209,69 @@ body .hero-motion-toggle { min-height: 30px; font-size: 10px; }
   body.suite-home .arcade-marquee { min-height: 0; padding: 64px 16px 42px; }
   body.suite-home .arcade-marquee h1 { font-size: clamp(62px, 20vw, 92px); }
 }
+
+/* List layouts for the homepage and Sync product page, below their heroes. */
+body .list-section {
+  padding-top: clamp(40px, 6vw, 72px);
+  scroll-margin-top: 84px;
+}
+
+.list-section-intro { margin-bottom: 24px; }
+.list-section-intro .section-lead { margin-top: 10px; }
+
+.product-list { list-style: none; }
+.product-list > :last-child { border-bottom: 1px solid var(--line); }
+
+.product-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 12px clamp(20px, 7vw, 96px);
+  align-items: start;
+  padding-block: clamp(20px, 3vw, 32px);
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 100px;
+}
+
+.product-list-row h3 {
+  color: var(--ink);
+  font: 800 clamp(1.5rem, 3vw, 2rem)/1.05 var(--arcade-display);
+}
+
+.product-list-row p, .list-disclosure p {
+  max-width: 60ch;
+  color: var(--text);
+  font: 1rem/1.6 "Inter", sans-serif;
+}
+
+.product-list-copy p, .product-list-content p + p { margin-top: 8px; }
+.product-list-copy .eyebrow { margin-bottom: 8px; font-size: .875rem; }
+.product-list-copy .eyebrow::before { content: none; }
+
+.list-section .product-list-row .client-downloads {
+  margin: 0;
+  padding: 0;
+}
+.product-list-row .client-download:first-child { padding-top: 0; border-top: 0; }
+.product-list-row .client-download:last-child { padding-bottom: 0; }
+.product-list-row .download-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+
+.list-disclosure {
+  margin-top: 20px;
+  border-block: 1px solid var(--line);
+}
+.list-disclosure summary {
+  padding-block: 14px;
+  color: var(--ink);
+  cursor: pointer;
+  font: 600 1rem/1.4 "Inter", sans-serif;
+}
+.list-disclosure[open] { padding-bottom: 14px; }
+.list-disclosure .card-actions { margin-top: 8px; }
+
+@media (max-width: 720px) {
+  .product-list-row { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 420px) {
+  .product-list-row .client-download { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .product-list-row .client-download > a { justify-self: start; }
+}
