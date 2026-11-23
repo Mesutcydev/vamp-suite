@@ -2,7 +2,9 @@ import SwiftUI
 import SharedModels
 import SharedUtilities
 
-/// The two source protocols remain separate; this screen only brings their destinations together.
+/// Home reads like a short terminal session on clear glass: `vamp status`, the live
+/// session as a little live preview of the Mac, then `ls macs`. Every row is a button.
+/// The two source protocols (Sync, Companion) stay separate; only their rows share a list.
 struct ControlHomeView: View {
     let environment: ClientAppEnvironment
     @ObservedObject var appLock: AppLockService
@@ -27,9 +29,6 @@ struct ControlHomeView: View {
     @State private var connectionTask: Task<Void, Never>?
     @State private var notice: String?
     @State private var pendingForget: BeetCodeRemoteSessionViewModel.SavedAssistant?
-    /// Unfolded iPhone Duo (951 pt), iPad, and wide landscape get two panes; the
-    /// cover screen and regular iPhones keep one column. Short panels (the Duo's
-    /// 678 pt cover, its 669 pt inner panel) drop the card illustration.
     @State private var layoutSize = CGSize.zero
     @State private var appeared = false
     /// Where an open foldable's crease crosses the content, in content points (iPhone Duo inner panel).
@@ -38,17 +37,8 @@ struct ControlHomeView: View {
     @State private var windowTopInset: CGFloat = 59
     /// The fold leaves this much clear space on each side of the crease.
     private let hingeGutter: CGFloat = 22
+    /// Unfolded iPhone Duo (951 pt), iPad, and wide landscape get two columns.
     private var isWide: Bool { layoutSize.width >= ControlDesign.wideMinWidth }
-    private var isTall: Bool { layoutSize.height >= 700 }
-    /// The side-by-side hero needs the unfolded Duo's width (951 pt); narrower two-pane widths stack it.
-    private var isRoomyWide: Bool { layoutSize.width >= 900 }
-    /// iPad and the unfolded Duo have height to spare; the hero grows into it instead of leaving it empty.
-    private var wideArtHeight: CGFloat { min(max(layoutSize.height * 0.56, 168), 470) }
-    /// Stacked hero art: grows with height on two-pane screens (the unfolded Duo is ~890 × 669 pt usable).
-    private var stackedArtHeight: CGFloat {
-        if isWide { return min(max(layoutSize.height * 0.5, 176), 400) }
-        return isTall ? 176 : 124
-    }
 
     private enum SessionDestination: String, Identifiable {
         case sync, companion, apps
@@ -67,54 +57,31 @@ struct ControlHomeView: View {
     }
 
     private var syncHosts: [DiscoveredHostRow] { hosts.displayHosts.filter { !$0.isTerminalOnlyHost } }
-    private var isEmpty: Bool { syncHosts.isEmpty && companion.savedAssistants.isEmpty }
+    private var macCount: Int { syncHosts.count + companion.savedAssistants.count }
+    private var isEmpty: Bool { macCount == 0 }
     private var availableCount: Int {
         syncHosts.filter(\.isAvailable).count
             + companion.savedAssistants.filter { companion.availabilityByAddress[$0.address] == .reachable }.count
     }
+    /// A desktop session kept running behind Home (the stream's Macs button minimizes it).
+    private var isLive: Bool { coordinator.phase == .receiving && !coordinator.appStreamingOnlySession }
+    private var isBusy: Bool { connectingHost != nil || companion.isPairing }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                Group {
-                    if let hingeX, isWide {
-                        twoPageLayout(hingeX: hingeX)
-                    } else if isWide {
-                        HStack(alignment: .top, spacing: 32) {
-                            VStack(alignment: .leading, spacing: 20) {
-                                header
-                                if !isEmpty { statStrip.controlAppear(appeared, delay: 0.08) }
-                                notices
-                                if !isEmpty { ControlAddMacTile { showsAddMac = true }.controlAppear(appeared, delay: 0.2) }
-                                ControlPrivacyFootnote().controlAppear(appeared, delay: 0.26)
-                            }
-                            .frame(width: isRoomyWide ? 300 : 250, alignment: .leading)
-                            library.frame(maxWidth: .infinity, alignment: .top)
-                                .controlAppear(appeared, delay: 0.12)
-                        }
-                        .frame(maxWidth: ControlDesign.wideMaxWidth, alignment: .leading)
-                    } else {
-                        VStack(alignment: .leading, spacing: 20) {
-                            header
-                            if !isEmpty { statStrip.controlAppear(appeared, delay: 0.08) }
-                            notices
-                            library.controlAppear(appeared, delay: 0.14)
-                            if !isEmpty { ControlAddMacTile { showsAddMac = true }.controlAppear(appeared, delay: 0.2) }
-                            ControlPrivacyFootnote().controlAppear(appeared, delay: 0.26)
-                        }
-                        .frame(maxWidth: ControlDesign.maxWidth, alignment: .leading)
-                    }
-                }
-                .background { ControlHingeReader(hingeX: $hingeX) }
-                .padding(.horizontal, 20)
-                .padding(.top, 6)
-                .padding(.bottom, 28)
-                .frame(maxWidth: .infinity)
+                content
+                    .background { ControlHingeReader(hingeX: $hingeX) }
+                    .padding(.horizontal, ControlDesign.gutter)
+                    .padding(.top, ControlDesign.gap)
+                    .padding(.bottom, ControlDesign.section)
+                    .frame(maxWidth: .infinity)
             }
             .onGeometryChange(for: CGSize.self) { $0.size } action: { layoutSize = $0 }
             .animation(.smooth, value: hingeX)
             .animation(.smooth, value: isWide)
             .animation(.smooth, value: notice)
+            .animation(.smooth, value: isLive)
             .background { ControlBackground() }
             .refreshable { await refresh() }
             .toolbar(.hidden, for: .navigationBar)
@@ -132,7 +99,7 @@ struct ControlHomeView: View {
                                               usesOlderSync: connectingHost != nil && coordinator.hostUsesLegacyHandshake,
                                               onConfirmHost: coordinator.confirmPendingHost,
                                               onCancel: cancelConnection)
-                        .padding(.horizontal, 20).padding(.bottom, 12)
+                        .padding(.horizontal, ControlDesign.gutter).padding(.bottom, ControlDesign.stack)
                 }
             }
         }
@@ -155,7 +122,7 @@ struct ControlHomeView: View {
             case .sync:
                 MirrorFullscreenStreamView(environment: environment, rendererVM: renderer, statsVM: stats,
                                            onClose: closeSession, onOpenApps: openApps,
-                                           restoresDesktop: restoresDesktop)
+                                           restoresDesktop: restoresDesktop, onMinimize: minimizeSession)
                     .ignoresSafeArea()
                     .preferredColorScheme(.dark)
             case .apps:
@@ -198,9 +165,9 @@ struct ControlHomeView: View {
             Task { await hosts.handleSceneBecameActive(); await companion.refreshAvailability() }
         }
         .onChange(of: usage.secondsUsedToday) { _, _ in
-            // The cap ends a live session and presents Pro in its place.
+            // The cap ends a live session, open or minimized, and presents Pro in its place.
             guard StreamingUnlockStore.isEnforced, !unlock.isEffectivelyUnlocked, !usage.hasTimeRemaining,
-                  destination != nil else { return }
+                  destination != nil || isLive else { return }
             closeSession()
             showsPaywall = true
         }
@@ -255,103 +222,52 @@ struct ControlHomeView: View {
         }
     }
 
-    /// Unfolded iPhone Duo: two pages split exactly at the crease, like two cover screens
-    /// side by side. Nothing straddles the fold, and each page fills its height.
-    private func twoPageLayout(hingeX: CGFloat) -> some View {
-        let pageHeight = max(layoutSize.height - 34, 360)
-        let others = syncHosts.count + companion.savedAssistants.count - 1
-        return HStack(alignment: .top, spacing: hingeGutter * 2) {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                if !isEmpty { statStrip.controlAppear(appeared, delay: 0.08) }
-                ControlDeviceCard(name: environment.clientIdentity.displayName,
-                                  fingerprint: environment.clientIdentity.publicKeyFingerprint)
-                    .controlAppear(appeared, delay: 0.14)
-                Spacer(minLength: 12)
-                if !isEmpty { ControlAddMacTile { showsAddMac = true }.controlAppear(appeared, delay: 0.2) }
-                ControlPrivacyFootnote().controlAppear(appeared, delay: 0.26)
-            }
-            .frame(width: max(hingeX - hingeGutter, 240), height: pageHeight, alignment: .topLeading)
+    // MARK: Layout
 
-            VStack(alignment: .leading, spacing: 12) {
-                notices
-                if isEmpty {
-                    ControlFirstMacView(isSearching: isRefreshing, onAdd: { showsAddMac = true },
-                                        onRefresh: { Task { await refresh() } })
-                } else {
-                    if coordinator.phase == .receiving {
-                        ControlLiveSessionPill { destination = .sync }
-                    }
-                    pageLibrary(fills: others == 0 && notice == nil && coordinator.phase != .receiving,
-                                pageHeight: pageHeight)
+    @ViewBuilder private var content: some View {
+        if isWide {
+            // Unfolded iPhone Duo: the columns split exactly at the crease, so nothing straddles the fold.
+            HStack(alignment: .top, spacing: hingeX == nil ? ControlDesign.section : hingeGutter * 2) {
+                VStack(alignment: .leading, spacing: ControlDesign.section) {
+                    status
+                    notices
+                    liveSession
                 }
+                .frame(width: hingeX.map { max($0 - hingeGutter, 240) } ?? 340, alignment: .leading)
+                VStack(alignment: .leading, spacing: ControlDesign.section) {
+                    macList
+                    footnote
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, minHeight: pageHeight, alignment: .top)
-            .controlAppear(appeared, delay: 0.12)
-        }
-    }
-
-    /// The right page: one Mac fills the page; several Macs list below the first.
-    private func pageLibrary(fills: Bool, pageHeight: CGFloat) -> some View {
-        // Card chrome around the art: 10 pt padding twice, 14 pt spacing, ~58 pt title row.
-        let art = fills ? min(pageHeight - 92, 520) : stackedArtHeight
-        let companionHero = syncHosts.isEmpty ? 1 : 0
-        let others = syncHosts.count + companion.savedAssistants.count - 1
-        return VStack(alignment: .leading, spacing: 12) {
-            ForEach(syncHosts.prefix(1)) { syncCard($0, featured: true, artHeight: art) }
-            ForEach(companion.savedAssistants.prefix(companionHero)) { companionCard($0, featured: true, artHeight: art) }
-            if others > 0 {
-                ControlSectionLabel(title: "More Macs").padding(.top, 8)
-                ForEach(syncHosts.dropFirst()) { syncCard($0, featured: false) }
-                ForEach(companion.savedAssistants.dropFirst(companionHero)) { companionCard($0, featured: false) }
+            .frame(maxWidth: ControlDesign.wideMaxWidth, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: ControlDesign.section) {
+                status
+                notices
+                liveSession
+                macList
+                footnote
             }
+            .frame(maxWidth: ControlDesign.maxWidth, alignment: .leading)
         }
-        .disabled(connectingHost != nil || companion.isPairing)
-    }
-
-    private var header: some View {
-        ControlHomeHeader(isEmpty: isEmpty, availableCount: availableCount, appeared: appeared)
-    }
-
-    private var statStrip: some View {
-        HStack(spacing: 10) {
-            ControlStat(label: "Online", value: "\(availableCount)/\(syncHosts.count + companion.savedAssistants.count)",
-                        tint: availableCount > 0 ? ControlDesign.available : nil)
-            ControlStat(label: "Network", value: networkLabel)
-            ControlStat(label: "Relay", value: "None")
-        }
-    }
-
-    private var networkLabel: LocalizedStringKey {
-        if let host = syncHosts.first(where: \.isAvailable) ?? syncHosts.first {
-            return isTailscale(host) ? "Tailscale" : "Local"
-        }
-        if let saved = companion.savedAssistants.first {
-            return saved.connectionKind == .tailscale ? "Tailscale" : "Private"
-        }
-        return "—"
     }
 
     private var topBar: some View {
-        HStack(spacing: 11) {
-            ControlGlassLogo(size: 38)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("vamp").font(.system(size: 19, weight: .bold)).tracking(-0.7)
-                    .foregroundStyle(ControlDesign.ink)
-                ControlMono(text: "Control", size: 8.5)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Vamp Control")
+        HStack(spacing: ControlDesign.stack) {
+            ControlGlassLogo()
+            Text("\(Text(verbatim: "vamp").fontWeight(.bold).foregroundStyle(ControlDesign.ink)) \(Text(verbatim: "~/control").foregroundStyle(ControlDesign.secondary))")
+                .font(.system(size: 17, design: .monospaced))
+                .accessibilityLabel("Vamp Control")
+                .accessibilityAddTraits(.isHeader)
             Spacer()
-            Group {
-                ControlGlassIconButton(symbol: "plus", label: "Add Mac") { showsAddMac = true }
-                    .accessibilityIdentifier("control.addMac")
-                ControlGlassIconButton(symbol: "gearshape", label: "Settings") { showsSettings = true }
-                    .accessibilityIdentifier("control.settings")
-            }
-            .disabled(connectingHost != nil || companion.isPairing)
+            ControlGlassIconButton(symbol: "gearshape", label: "Settings") { showsSettings = true }
+                .accessibilityIdentifier("control.settings")
+                .disabled(isBusy)
         }
-        .padding(.horizontal, 20).padding(.top, windowTopInset < 20 ? 14 : 4).padding(.bottom, 12)
+        .padding(.horizontal, ControlDesign.gutter)
+        .padding(.top, windowTopInset < 20 ? ControlDesign.inset : ControlDesign.gap / 2)
+        .padding(.bottom, ControlDesign.stack)
         .frame(maxWidth: isWide ? ControlDesign.wideMaxWidth + 40 : .infinity)
         .frame(maxWidth: .infinity)
         .background {
@@ -363,6 +279,41 @@ struct ControlHomeView: View {
         }
     }
 
+    /// The home's last comment line, on the shared text column.
+    private var footnote: some View {
+        ControlPrivacyFootnote().padding(.leading, ControlDesign.inset)
+    }
+
+    // MARK: $ vamp status
+
+    private var status: some View {
+        VStack(alignment: .leading, spacing: ControlDesign.gap) {
+            ControlPrompt(command: "vamp status", label: "Status")
+            VStack(spacing: 0) {
+                ControlKeyRow(key: "macs") {
+                    Text(isEmpty ? "none yet" : "\(availableCount) of \(macCount) ready")
+                        .foregroundStyle(availableCount > 0 ? ControlDesign.available : ControlDesign.secondary)
+                }
+                ControlRule()
+                ControlKeyRow(key: "network") { Text(networkLabel) }
+            }
+            .padding(.horizontal, ControlDesign.inset)
+            .controlGlass()
+            .accessibilityElement(children: .combine)
+        }
+        .controlAppear(appeared)
+    }
+
+    private var networkLabel: LocalizedStringKey {
+        if let host = syncHosts.first(where: \.isAvailable) ?? syncHosts.first {
+            return isTailscale(host) ? "tailscale · no relay" : "local · no relay"
+        }
+        if let saved = companion.savedAssistants.first {
+            return saved.connectionKind == .tailscale ? "tailscale · no relay" : "private · no relay"
+        }
+        return "—"
+    }
+
     @ViewBuilder private var notices: some View {
         if let notice {
             ControlNotice(message: notice) { self.notice = nil }
@@ -372,65 +323,73 @@ struct ControlHomeView: View {
         }
     }
 
-    @ViewBuilder private var library: some View {
-        if isEmpty {
-            ControlFirstMacView(isSearching: isRefreshing, onAdd: { showsAddMac = true },
+    // MARK: Live session
+
+    @ViewBuilder private var liveSession: some View {
+        if isLive {
+            VStack(alignment: .leading, spacing: ControlDesign.gap) {
+                ControlPrompt(command: "vamp attach", label: "Live session")
+                ControlLivePreviewCard(name: coordinator.connectedHostName ?? String(localized: "Your Mac"),
+                                       renderer: renderer,
+                                       meta: "\(stats.latencyText) · \(stats.fpsText)",
+                                       onOpen: openSession, onEnd: closeSession)
+            }
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    // MARK: $ ls macs
+
+    private var macList: some View {
+        VStack(alignment: .leading, spacing: ControlDesign.gap) {
+            ControlPrompt(command: "ls macs", label: "Your Macs")
+            if isEmpty {
+                ControlFirstMac(isSearching: isRefreshing, onAdd: { showsAddMac = true },
                                 onRefresh: { Task { await refresh() } })
-        } else {
-            VStack(alignment: .leading, spacing: 12) {
-                if coordinator.phase == .receiving {
-                    ControlLiveSessionPill { destination = .sync }
-                }
-                macLibrary
-            }
-        }
-    }
-
-    /// The first Mac is the hero; the rest are compact rows that flow into columns when unfolded.
-    private var macLibrary: some View {
-        let companionHero = syncHosts.isEmpty ? 1 : 0
-        let others = syncHosts.count + companion.savedAssistants.count - 1
-        return VStack(alignment: .leading, spacing: 12) {
-            ForEach(syncHosts.prefix(1)) { syncCard($0, featured: true) }
-            ForEach(companion.savedAssistants.prefix(companionHero)) { companionCard($0, featured: true) }
-            if others > 0 {
-                ControlSectionLabel(title: "More Macs").padding(.top, 12)
-                LazyVGrid(columns: [isWide ? GridItem(.adaptive(minimum: 280), spacing: 12, alignment: .top)
-                                           : GridItem(.flexible(), alignment: .top)], spacing: 12) {
-                    ForEach(syncHosts.dropFirst()) { syncCard($0, featured: false) }
-                    ForEach(companion.savedAssistants.dropFirst(companionHero)) { companionCard($0, featured: false) }
-                }
-            }
-        }
-        .disabled(connectingHost != nil || companion.isPairing)
-    }
-
-    private func syncCard(_ host: DiscoveredHostRow, featured: Bool, artHeight: CGFloat? = nil) -> some View {
-        ControlMacCard(name: host.title, source: "Vamp Sync", route: route(for: host),
-                       status: host.endpoint.metadata.appVersion == "unknown" && !host.isSaved
-                           ? .unverified : (host.isAvailable ? .online : .offline),
-                       isFeatured: featured, stackedArtHeight: artHeight ?? stackedArtHeight,
-                       isWide: artHeight == nil && isRoomyWide,
-                       wideArtHeight: wideArtHeight, onConnect: { connect(host) })
-            .contextMenu {
-                if host.isSaved {
-                    Button("Remove from Macs", systemImage: "minus.circle", role: .destructive) {
-                        hosts.removeSavedHost(host.id)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(syncHosts.enumerated()), id: \.element.id) { index, host in
+                        if index > 0 { ControlRule().padding(.leading, ControlMacRow.textLeading) }
+                        syncRow(host)
+                    }
+                    ForEach(Array(companion.savedAssistants.enumerated()), id: \.element.id) { index, saved in
+                        if index > 0 || !syncHosts.isEmpty { ControlRule().padding(.leading, ControlMacRow.textLeading) }
+                        companionRow(saved)
                     }
                 }
-                if !host.isAvailable && !isTailscale(host) {
-                    Button("Wake Mac", systemImage: "sun.max") { wake(host) }
-                }
+                .controlGlass()
+                .disabled(isBusy)
+                ControlAddRow { showsAddMac = true }
+                    .disabled(isBusy)
             }
+        }
+        .controlAppear(appeared, delay: 0.08)
     }
 
-    private func companionCard(_ saved: BeetCodeRemoteSessionViewModel.SavedAssistant, featured: Bool,
-                               artHeight: CGFloat? = nil) -> some View {
-        ControlMacCard(name: companionName(saved), source: "Vamp Companion",
-                       route: saved.connectionKind == .tailscale ? "Tailscale" : "Private network",
-                       status: companionStatus(saved), isFeatured: featured,
-                       stackedArtHeight: artHeight ?? stackedArtHeight, isWide: artHeight == nil && isRoomyWide,
-                       wideArtHeight: wideArtHeight) {
+    private func syncRow(_ host: DiscoveredHostRow) -> some View {
+        let status: ControlMacStatus = host.endpoint.metadata.appVersion == "unknown" && !host.isSaved
+            ? .unverified : (host.isAvailable ? .online : .offline)
+        let isLiveHost = isLive && coordinator.connectedHostName == host.endpoint.metadata.displayName
+        return ControlMacRow(name: host.title, source: "sync", route: isTailscale(host) ? "tailscale" : "local",
+                             status: status, isLive: isLiveHost) {
+            if isLiveHost { openSession() } else { connect(host) }
+        }
+        .contextMenu {
+            if host.isSaved {
+                Button("Remove from Macs", systemImage: "minus.circle", role: .destructive) {
+                    hosts.removeSavedHost(host.id)
+                }
+            }
+            if !host.isAvailable && !isTailscale(host) {
+                Button("Wake Mac", systemImage: "sun.max") { wake(host) }
+            }
+        }
+    }
+
+    private func companionRow(_ saved: BeetCodeRemoteSessionViewModel.SavedAssistant) -> some View {
+        ControlMacRow(name: companionName(saved), source: "companion",
+                      route: saved.connectionKind == .tailscale ? "tailscale" : "private",
+                      status: companionStatus(saved)) {
             connectionTask?.cancel()
             companion.cancelConnectionAttempt()
             connectionTask = Task {
@@ -463,9 +422,7 @@ struct ControlHomeView: View {
         StorePrivateNetworkConnectionPolicy.isTailscaleHost(host.endpoint.hostname)
     }
 
-    private func route(for host: DiscoveredHostRow) -> LocalizedStringKey {
-        isTailscale(host) ? "Tailscale" : "Local network"
-    }
+    // MARK: Actions
 
     private func connect(_ host: DiscoveredHostRow) {
         guard !host.isTerminalOnlyHost else { return }
@@ -498,6 +455,17 @@ struct ControlHomeView: View {
 
     private func presentPairedCompanion() {
         if companion.session != nil { destination = .companion }
+    }
+
+    private func openSession() {
+        AppHaptics.selection()
+        restoresDesktop = false
+        destination = .sync
+    }
+
+    /// Back to Home with the session still running; the live preview card brings it back.
+    private func minimizeSession() {
+        destination = nil
     }
 
     private func closeSession() {
@@ -549,150 +517,30 @@ struct ControlHomeView: View {
     }
 }
 
-private struct ControlHomeHeader: View {
-    let isEmpty: Bool
-    let availableCount: Int
-    let appeared: Bool
-    @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 34
+// MARK: - Pieces
 
+/// `key   value` — one line of `vamp status`.
+private struct ControlKeyRow<Value: View>: View {
+    let key: String
+    @ViewBuilder var value: Value
     var body: some View {
-        TimelineView(.everyMinute) { context in
-            VStack(alignment: .leading, spacing: 7) {
-                ControlMono(text: "\(context.date.formatted(.dateTime.weekday(.wide).day().month(.wide)))", size: 10)
-                    .controlAppear(appeared)
-                Text(Self.greeting(at: context.date))
-                    .font(.system(size: titleSize, weight: .bold)).tracking(-1.1)
-                    .foregroundStyle(ControlDesign.ink)
-                    .accessibilityAddTraits(.isHeader)
-                    .controlAppear(appeared, delay: 0.03)
-                HStack(spacing: 8) {
-                    ControlPulseDot(color: availableCount > 0 ? ControlDesign.available : ControlDesign.secondary.opacity(0.5),
-                                    isLive: availableCount > 0)
-                    Text(isEmpty ? "Add a Mac to get started"
-                         : availableCount > 0 ? "^[\(availableCount) Mac](inflect: true) ready to connect"
-                                              : "No Macs reachable right now")
-                        .font(.subheadline.weight(.medium)).foregroundStyle(ControlDesign.secondary)
-                }
-                .padding(.top, 2)
-                .controlAppear(appeared, delay: 0.06)
-            }
+        HStack(spacing: 0) {
+            Text(verbatim: key).foregroundStyle(ControlDesign.secondary)
+                .frame(width: 80, alignment: .leading)
+            HStack(spacing: ControlDesign.gap) { value }
+                .foregroundStyle(ControlDesign.ink)
+            Spacer(minLength: 0)
         }
-    }
-
-    static func greeting(at date: Date) -> LocalizedStringKey {
-        switch Calendar.current.component(.hour, from: date) {
-        case 5..<12: "Good morning"
-        case 12..<18: "Good afternoon"
-        default: "Good evening"
-        }
+        .font(.subheadline)
+        .lineLimit(1)
+        .frame(minHeight: ControlDesign.lineHeight)
     }
 }
 
-/// This device's identity, as Vamp Sync shows it when asking you to approve a pairing.
-private struct ControlDeviceCard: View {
-    let name: String
-    let fingerprint: String
-    private var kind: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
-
+/// Hairline between terminal lines inside one glass block.
+private struct ControlRule: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Image(systemName: kind == "iPad" ? "ipad" : "iphone.gen3").font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(ControlDesign.ink)
-                    .frame(width: 40, height: 40)
-                    .controlGlass(radius: 12, emphasis: .control)
-                VStack(alignment: .leading, spacing: 2) {
-                    ControlMono(text: "This \(kind)", size: 8.5)
-                    Text(name).font(.headline).foregroundStyle(ControlDesign.ink).lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                ControlMono(text: "Fingerprint · match it on your Mac", size: 8.5)
-                Text(ControlConnectionProgress.grouped(fingerprint))
-                    .font(.system(size: 12, weight: .medium, design: .monospaced)).lineSpacing(3)
-                    .foregroundStyle(ControlDesign.ink.opacity(0.85))
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .background(ControlDesign.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .padding(14)
-        .controlGlass(radius: 22)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct ControlStat: View {
-    let label: LocalizedStringKey
-    let value: LocalizedStringKey
-    var tint: Color?
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            ControlMono(text: label, size: 8.5)
-            HStack(spacing: 6) {
-                if let tint { ControlPulseDot(color: tint, size: 6) }
-                Text(value).font(.system(size: 17, weight: .semibold)).monospacedDigit()
-                    .lineLimit(1).minimumScaleFactor(0.75)
-            }
-            .foregroundStyle(ControlDesign.ink)
-        }
-        .padding(.horizontal, 13).padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .controlGlass(radius: 18, emphasis: .control)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct ControlFirstMacView: View {
-    let isSearching: Bool
-    let onAdd: () -> Void
-    let onRefresh: () -> Void
-    var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            VStack(alignment: .leading, spacing: 18) {
-                ControlDisplayArt(isOnline: true, height: 168)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Bring your Mac to your iPhone.")
-                        .font(.title3.weight(.semibold)).tracking(-0.4)
-                        .foregroundStyle(ControlDesign.ink)
-                    Text("Open Vamp Sync or Vamp Companion on your Mac, then add it here.")
-                        .font(.subheadline).foregroundStyle(ControlDesign.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.horizontal, 6)
-                HStack(spacing: 10) {
-                    ControlPrimaryButton(title: "Add your Mac", symbol: "plus", fillsWidth: false, action: onAdd)
-                        .accessibilityIdentifier("control.firstMac")
-                    Button(action: onRefresh) {
-                        Label(isSearching ? "Looking…" : "Look nearby", systemImage: "dot.radiowaves.left.and.right")
-                            .font(.subheadline.weight(.semibold)).foregroundStyle(ControlDesign.ink)
-                            .padding(.horizontal, 16).frame(minHeight: 44)
-                            .controlGlass(radius: 22, interactive: true, emphasis: .control)
-                    }
-                    .buttonStyle(ControlPressStyle())
-                    .disabled(isSearching)
-                }
-                .padding(.horizontal, 6).padding(.bottom, 6)
-            }
-            .padding(10)
-            .controlGlass(radius: 26)
-            ControlSourceNote()
-        }
-    }
-}
-
-private struct ControlSourceNote: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ControlMono(text: "Start on your Mac", size: 9)
-            Text("Vamp Sync and Vamp Companion show an address and a QR code. Scan it, or enter the address in Add a Mac.")
-                .font(.footnote).foregroundStyle(ControlDesign.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .controlGlass(radius: 20)
+        Rectangle().fill(ControlDesign.line).frame(height: 0.5)
     }
 }
 
@@ -700,10 +548,10 @@ enum ControlMacStatus {
     case online, offline, checking, unverified
     var title: LocalizedStringKey {
         switch self {
-        case .online: "Available"
-        case .offline: "Offline"
-        case .checking: "Checking…"
-        case .unverified: "Not verified"
+        case .online: "ready"
+        case .offline: "offline"
+        case .checking: "checking…"
+        case .unverified: "not verified"
         }
     }
     var tint: Color {
@@ -715,198 +563,182 @@ enum ControlMacStatus {
     }
 }
 
-/// One Mac. The featured Mac gets the display artwork and a compact Connect capsule;
-/// the rest are slim rows. The whole tile is the button.
-struct ControlMacCard: View {
+/// One Mac, one line: `● studio-mac   sync · local   connect →`. The whole line is the button.
+private struct ControlMacRow: View {
     let name: String
     let source: LocalizedStringKey
     let route: LocalizedStringKey
     let status: ControlMacStatus
-    var isFeatured = false
-    var stackedArtHeight: CGFloat = 176
-    /// Unfolded and iPad: the hero lays out side by side so the artwork keeps a display's proportions.
-    var isWide = false
-    var wideArtHeight: CGFloat = 168
-    let onConnect: () -> Void
+    var isLive = false
+    let action: () -> Void
+
+    /// Where the name starts inside the list; dividers start here too.
+    static let textLeading = ControlDesign.inset + 8 + ControlDesign.gap
+
+    private var verb: LocalizedStringKey {
+        if isLive { return "open ↗" }
+        return status == .offline ? "retry →" : "connect →"
+    }
 
     var body: some View {
-        Button(action: onConnect) {
-            if isFeatured { hero } else { row }
+        Button(action: action) {
+            HStack(spacing: ControlDesign.gap) {
+                ControlPulseDot(color: isLive ? ControlDesign.available : status.tint, isLive: isLive)
+                    .frame(width: 8)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(verbatim: name).font(.body.weight(.semibold)).foregroundStyle(ControlDesign.ink)
+                    Text("\(Text(source)) · \(isLive ? Text("live") : status == .online ? Text(route) : Text(status.title))")
+                        .font(.footnote).foregroundStyle(ControlDesign.secondary)
+                }
+                .lineLimit(1)
+                Spacer(minLength: ControlDesign.gap)
+                Text(verb).font(.footnote.weight(.semibold))
+                    .foregroundStyle(status == .offline && !isLive ? ControlDesign.secondary : ControlDesign.ink)
+            }
+            .padding(.horizontal, ControlDesign.inset)
+            .frame(minHeight: ControlDesign.rowHeight)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(ControlPressStyle())
+        .buttonStyle(ControlRowPressStyle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(name))
-        .accessibilityValue(Text(status.title))
-        .accessibilityHint(status == .offline ? "Tries to connect again" : "Connects to this Mac")
+        .accessibilityLabel(Text(verbatim: name))
+        .accessibilityValue(isLive ? Text("Live") : Text(status.title))
+        .accessibilityHint(isLive ? "Opens the live session" : status == .offline ? "Tries to connect again" : "Connects to this Mac")
         .accessibilityAddTraits(.isButton)
     }
+}
 
-    @ViewBuilder private var hero: some View {
-        if isWide {
-            HStack(spacing: 20) {
-                art(height: wideArtHeight).frame(maxWidth: wideArtHeight * 1.6)
-                VStack(alignment: .leading, spacing: 6) {
-                    title
-                    ControlStatusLine(status: status, route: route)
-                    Spacer(minLength: 14)
-                    connectCapsule
+/// The running session, small: a live picture of the Mac with open and end.
+private struct ControlLivePreviewCard: View {
+    let name: String
+    @ObservedObject var renderer: VideoRendererViewModel
+    let meta: String
+    let onOpen: () -> Void
+    let onEnd: () -> Void
+    private let screen = RoundedRectangle(cornerRadius: ControlDesign.innerRadius, style: .continuous)
+
+    var body: some View {
+        HStack(spacing: ControlDesign.stack) {
+            Button(action: onOpen) {
+                ZStack {
+                    Color.black
+                    VideoFrameRendererView(pixelBuffer: nil, renderer: renderer)
+                    if renderer.latestPixelBuffer == nil { ProgressView().tint(.white) }
                 }
-                .padding(.vertical, 8)
-                .frame(height: wideArtHeight)
-                Spacer(minLength: 0)
-            }
-            .padding(10)
-            .controlGlass(radius: 26, interactive: true)
-        } else {
-            VStack(alignment: .leading, spacing: 14) {
-                art(height: stackedArtHeight)
-                HStack(alignment: .center, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        title
-                        ControlStatusLine(status: status, route: route)
+                .aspectRatio(16 / 10, contentMode: .fit)
+                .frame(width: 160)
+                .clipShape(screen)
+                .overlay { screen.strokeBorder(ControlDesign.line) }
+                .overlay(alignment: .topLeading) {
+                    HStack(spacing: 4) {
+                        Circle().fill(ControlDesign.available).frame(width: 6, height: 6)
+                        Text("live").font(.system(size: 10, weight: .bold, design: .monospaced))
                     }
-                    Spacer(minLength: 8)
-                    connectCapsule
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, ControlDesign.gap).padding(.vertical, 4)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .padding(ControlDesign.gap)
                 }
-                .padding(.horizontal, 6).padding(.bottom, 6)
             }
-            .padding(10)
-            .controlGlass(radius: 26, interactive: true)
-        }
-    }
+            .buttonStyle(ControlPressStyle())
+            .accessibilityLabel("Open \(name)")
 
-    private func art(height: CGFloat) -> some View {
-        ControlDisplayArt(isOnline: status == .online, height: height,
-                          statusLabel: status == .online ? "Ready" : status.title)
-            .overlay(alignment: .topLeading) {
-                ControlSourceTag(source: source).padding(.leading, 12).padding(.top, 22)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(verbatim: name).font(.body.weight(.semibold)).lineLimit(1)
+                    .foregroundStyle(ControlDesign.ink)
+                Text(verbatim: meta).font(.caption).monospacedDigit().lineLimit(1)
+                    .foregroundStyle(ControlDesign.secondary)
+                Spacer(minLength: ControlDesign.gap)
+                HStack(spacing: ControlDesign.gap) {
+                    Button(action: onOpen) {
+                        Label("open", systemImage: "arrow.up.left.and.arrow.down.right")
+                            .foregroundStyle(ControlDesign.buttonInk)
+                            .padding(.horizontal, ControlDesign.stack).frame(height: ControlDesign.smallButtonHeight)
+                            .background(ControlDesign.accent, in: Capsule())
+                    }
+                    Button(action: onEnd) {
+                        Label("end", systemImage: "stop.fill")
+                            .foregroundStyle(ControlDesign.ink)
+                            .padding(.horizontal, ControlDesign.stack).frame(height: ControlDesign.smallButtonHeight)
+                            .controlGlass(radius: ControlDesign.smallButtonHeight / 2, interactive: true, emphasis: .control)
+                    }
+                    .accessibilityLabel("End session")
+                }
+                .font(.footnote.weight(.semibold))
+                .labelStyle(.titleOnly)
+                .buttonStyle(ControlPressStyle())
             }
-    }
-
-    private var title: some View {
-        Text(name).font(.title2.weight(.semibold)).tracking(-0.6).lineLimit(1)
-            .foregroundStyle(ControlDesign.ink)
-    }
-
-    private var connectCapsule: some View {
-        HStack(spacing: 6) {
-            Text(status == .offline ? "Retry" : "Connect")
-            Image(systemName: "arrow.right").font(.footnote.weight(.bold))
+            .padding(.vertical, 4)
+            Spacer(minLength: 0)
         }
-        .font(.subheadline.weight(.semibold))
-        .foregroundStyle(ControlDesign.buttonInk)
-        .padding(.horizontal, 16).frame(height: 38)
-        .background(ControlDesign.accent, in: Capsule())
-    }
-
-    private var row: some View {
-        HStack(spacing: 14) {
-            ControlSymbol().fill(ControlDesign.ink.opacity(status == .online ? 0.9 : 0.4))
-                .frame(width: 19, height: 19)
-                .frame(width: 44, height: 44)
-                .controlGlass(radius: 13, emphasis: .control)
-            VStack(alignment: .leading, spacing: 3) {
-                ControlMono(text: source, size: 9)
-                Text(name).font(.headline).lineLimit(1).foregroundStyle(ControlDesign.ink)
-                ControlStatusLine(status: status, route: route)
-            }
-            Spacer(minLength: 8)
-            Image(systemName: "arrow.right").font(.footnote.weight(.bold))
-                .foregroundStyle(ControlDesign.buttonInk)
-                .frame(width: 34, height: 34)
-                .background(ControlDesign.accent.opacity(status == .offline ? 0.35 : 1), in: Circle())
-        }
-        .padding(12).padding(.trailing, 2)
-        .controlGlass(radius: 22, interactive: true)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(ControlDesign.gap)
+        .controlGlass()
     }
 }
 
-private struct ControlStatusLine: View {
-    let status: ControlMacStatus
-    let route: LocalizedStringKey
+/// First run: a few shell comments and one obvious next step.
+private struct ControlFirstMac: View {
+    let isSearching: Bool
+    let onAdd: () -> Void
+    let onRefresh: () -> Void
     var body: some View {
-        // Narrow panels (the Duo cover) keep the status and drop the route rather than truncate it.
-        ViewThatFits(in: .horizontal) {
-            line(showsRoute: true)
-            line(showsRoute: false)
-        }
-        .font(.footnote).foregroundStyle(ControlDesign.secondary)
-    }
-
-    private func line(showsRoute: Bool) -> some View {
-        HStack(spacing: 6) {
-            ControlPulseDot(color: status.tint, isLive: status == .online)
-            Text(status.title).foregroundStyle(status == .online ? ControlDesign.ink : ControlDesign.secondary)
-            if showsRoute {
-                Text(verbatim: "·")
-                Text(route)
+        VStack(alignment: .leading, spacing: ControlDesign.inset) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("# no macs yet")
+                Text("# open Vamp Sync on your Mac, then add it here.")
+            }
+            .font(.subheadline).foregroundStyle(ControlDesign.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: ControlDesign.gap) {
+                ControlPrimaryButton(title: "add your mac", symbol: "plus", fillsWidth: false, action: onAdd)
+                    .accessibilityIdentifier("control.firstMac")
+                Button(action: onRefresh) {
+                    Text(isSearching ? "looking…" : "look nearby")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(ControlDesign.ink)
+                        .padding(.horizontal, ControlDesign.inset).frame(minHeight: ControlDesign.buttonHeight)
+                        .controlGlass(radius: ControlDesign.buttonHeight / 2, interactive: true, emphasis: .control)
+                }
+                .buttonStyle(ControlPressStyle())
+                .disabled(isSearching)
             }
         }
-        .lineLimit(1)
-        .fixedSize()
+        .padding(ControlDesign.inset)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .controlGlass()
     }
 }
 
-private struct ControlSourceTag: View {
-    let source: LocalizedStringKey
-    var body: some View {
-        ControlMono(text: source, size: 9, color: ControlDesign.ink.opacity(0.75))
-            .padding(.horizontal, 9).padding(.vertical, 5)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay { Capsule().strokeBorder(ControlDesign.line, lineWidth: 0.5) }
-    }
-}
-
-private struct ControlSectionLabel: View {
-    let title: LocalizedStringKey
-    var body: some View {
-        ControlMono(text: title)
-            .padding(.leading, 4)
-            .accessibilityAddTraits(.isHeader)
-    }
-}
-
-private struct ControlLiveSessionPill: View {
+/// `+ add a mac`, drawn like a pending line: dashed, quiet, always last.
+private struct ControlAddRow: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Circle().fill(ControlDesign.available).frame(width: 8, height: 8)
-                Text("Session live").font(.subheadline.weight(.semibold)).foregroundStyle(ControlDesign.ink)
-                Spacer()
-                Label("Return", systemImage: "arrow.up.forward").font(.subheadline.weight(.semibold))
-                    .labelStyle(.titleAndIcon).foregroundStyle(ControlDesign.ink)
+            // Same slot as a Mac row's dot, so "add a mac" starts where the Mac names do.
+            HStack(spacing: ControlDesign.gap) {
+                Text(verbatim: "+").foregroundStyle(ControlDesign.prompt).frame(width: 8)
+                Text("add a mac").foregroundStyle(ControlDesign.ink)
             }
-            .padding(.horizontal, 16).frame(minHeight: 48)
-            .controlGlass(radius: 24)
-        }
-        .buttonStyle(ControlPressStyle())
-    }
-}
-
-private struct ControlAddMacTile: View {
-    let action: () -> Void
-    var body: some View {
-        Button(action: action) {
-            Label("Add a Mac", systemImage: "plus")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(ControlDesign.ink)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .controlGlass(radius: 20, interactive: true)
+                .padding(.horizontal, ControlDesign.inset)
+                .frame(maxWidth: .infinity, minHeight: ControlDesign.lineHeight, alignment: .leading)
+                .overlay {
+                    RoundedRectangle(cornerRadius: ControlDesign.radius, style: .continuous)
+                        .strokeBorder(ControlDesign.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(ControlPressStyle())
+        .accessibilityLabel("Add a Mac")
         .accessibilityHint("Add a Mac running Vamp Sync or Vamp Companion")
-        .accessibilityIdentifier("control.addAnotherMac")
+        .accessibilityIdentifier("control.addMac")
     }
 }
 
 struct ControlPrivacyFootnote: View {
     var body: some View {
-        Label { ControlMono(text: "Private · Peer approved · No relay", size: 9) } icon: {
-            Image(systemName: "lock.shield").font(.caption2).foregroundStyle(ControlDesign.secondary)
-        }
-            .frame(maxWidth: .infinity).padding(.top, 4)
+        Text("# private · peer approved · no relay")
+            .font(.caption).foregroundStyle(ControlDesign.secondary)
     }
 }
 
@@ -914,7 +746,7 @@ struct ControlNotice: View {
     let message: String
     var onDismiss: (() -> Void)?
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: ControlDesign.stack) {
             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(ControlDesign.caution)
             Text(message).font(.subheadline).foregroundStyle(ControlDesign.ink)
                 .fixedSize(horizontal: false, vertical: true)
@@ -922,12 +754,12 @@ struct ControlNotice: View {
             if let onDismiss {
                 Button("Dismiss", systemImage: "xmark", action: onDismiss).labelStyle(.iconOnly)
                     .font(.footnote.weight(.semibold)).foregroundStyle(ControlDesign.secondary)
-                    .frame(width: 32, height: 32).contentShape(Rectangle())
+                    .frame(width: ControlDesign.smallButtonHeight, height: ControlDesign.smallButtonHeight).contentShape(Rectangle())
             }
         }
-        .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 12)
+        .padding(.leading, ControlDesign.inset).padding(.trailing, ControlDesign.gap).padding(.vertical, ControlDesign.stack)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .controlGlass(radius: 20)
+        .controlGlass()
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 }
@@ -964,8 +796,8 @@ private struct ControlConnectionProgress: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: ControlDesign.stack) {
+            HStack(alignment: .top, spacing: ControlDesign.stack) {
                 if hostConfirmation == nil {
                     ProgressView().tint(ControlDesign.accent)
                 } else {
@@ -973,16 +805,16 @@ private struct ControlConnectionProgress: View {
                         .font(.system(size: 20, weight: .medium))
                         .foregroundStyle(hostConfirmation?.fingerprint == nil ? ControlDesign.caution : ControlDesign.ink)
                 }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.headline).lineLimit(1)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title).font(.headline).fixedSize(horizontal: false, vertical: true)
                     Text(detail).font(.footnote).foregroundStyle(ControlDesign.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Button("Cancel", action: onCancel)
                     .font(.subheadline.weight(.semibold)).foregroundStyle(ControlDesign.ink)
-                    .padding(.horizontal, 14).frame(minHeight: 36)
-                    .controlGlass(radius: 18, interactive: true, emphasis: .control)
+                    .padding(.horizontal, ControlDesign.stack).frame(minHeight: ControlDesign.smallButtonHeight)
+                    .controlGlass(radius: ControlDesign.smallButtonHeight / 2, interactive: true, emphasis: .control)
             }
             if let hostConfirmation {
                 if let hostFingerprint = hostConfirmation.fingerprint {
@@ -1002,14 +834,14 @@ private struct ControlConnectionProgress: View {
                     .accessibilityIdentifier("control.olderSyncNotice")
             }
         }
-        .foregroundStyle(ControlDesign.ink).padding(16)
-        .frame(maxWidth: ControlDesign.maxWidth).controlGlass(radius: 26, emphasis: .control)
+        .foregroundStyle(ControlDesign.ink).padding(ControlDesign.inset)
+        .frame(maxWidth: ControlDesign.maxWidth).controlGlass(emphasis: .control)
         .animation(.smooth, value: isApproved)
         .animation(.smooth, value: hostConfirmation)
     }
 
     private func fingerprintBox(label: LocalizedStringKey, value: String, accessibilityLabel: LocalizedStringKey) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: ControlDesign.gap) {
             ControlMono(text: label, size: 9)
             Text(Self.grouped(value))
                 .font(.system(size: 13, weight: .medium, design: .monospaced)).lineSpacing(3)
@@ -1017,8 +849,8 @@ private struct ControlConnectionProgress: View {
                 .accessibilityLabel(accessibilityLabel)
                 .accessibilityValue(value)
         }
-        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-        .background(ControlDesign.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(ControlDesign.stack).frame(maxWidth: .infinity, alignment: .leading)
+        .background(ControlDesign.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: ControlDesign.innerRadius, style: .continuous))
     }
 
     /// Same grouping as Vamp Sync's panel: blocks of 8, four per line.
@@ -1034,25 +866,28 @@ private struct ControlConnectionProgress: View {
 }
 
 #Preview("Control · First Mac · Light") {
-    NavigationStack {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                ControlHomeHeader(isEmpty: true, availableCount: 0, appeared: true)
-                ControlFirstMacView(isSearching: false, onAdd: {}, onRefresh: {})
-                ControlPrivacyFootnote()
-            }.padding(24)
-        }.background { ControlBackground() }
-    }.tint(ControlDesign.accent).preferredColorScheme(.light)
+    ScrollView {
+        VStack(alignment: .leading, spacing: ControlDesign.section) {
+            ControlPrompt(command: "ls macs", label: "Your Macs")
+            ControlFirstMac(isSearching: false, onAdd: {}, onRefresh: {})
+            ControlPrivacyFootnote()
+        }.padding(ControlDesign.gutter)
+    }
+    .background { ControlBackground() }.fontDesign(.monospaced)
+    .tint(ControlDesign.accent).preferredColorScheme(.light)
 }
 
 #Preview("Control · Your Macs · Dark") {
     ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
-            ControlHomeHeader(isEmpty: false, availableCount: 1, appeared: true)
-            ControlMacCard(name: "Studio Mac", source: "Vamp Sync", route: "Local network", status: .online, isFeatured: true, onConnect: {})
-            ControlSectionLabel(title: "More Macs").padding(.top, 12)
-            ControlMacCard(name: "MacBook Pro", source: "Vamp Companion", route: "Tailscale", status: .offline, onConnect: {})
-            ControlAddMacTile {}
-        }.padding(24)
-    }.background { ControlBackground() }.preferredColorScheme(.dark)
+        VStack(alignment: .leading, spacing: ControlDesign.gap) {
+            ControlPrompt(command: "ls macs", label: "Your Macs")
+            VStack(spacing: 0) {
+                ControlMacRow(name: "Studio Mac", source: "sync", route: "local", status: .online, action: {})
+                ControlRule().padding(.leading, ControlMacRow.textLeading)
+                ControlMacRow(name: "MacBook Pro", source: "companion", route: "tailscale", status: .offline, action: {})
+            }.controlGlass()
+            ControlAddRow {}
+        }.padding(ControlDesign.gutter)
+    }
+    .background { ControlBackground() }.fontDesign(.monospaced).preferredColorScheme(.dark)
 }

@@ -1540,6 +1540,8 @@ struct MirrorFullscreenStreamView: View {
     let onOpenApps: (() -> Void)?
     /// True when returning from app windows: ask the host to switch its display back on appear.
     let restoresDesktop: Bool
+    /// Back to the caller's home with the session still running. Nil makes "Macs" end the session.
+    let onMinimize: (() -> Void)?
 
     @StateObject private var interactionVM: RemoteInteractionViewModel
     @StateObject private var multiDisplay: MultiDisplayRenderer
@@ -1595,7 +1597,8 @@ struct MirrorFullscreenStreamView: View {
         statsVM: SessionStatsViewModel,
         onClose: @escaping () -> Void,
         onOpenApps: (() -> Void)? = nil,
-        restoresDesktop: Bool = false
+        restoresDesktop: Bool = false,
+        onMinimize: (() -> Void)? = nil
     ) {
         self.environment = environment
         self.rendererVM = rendererVM
@@ -1603,6 +1606,7 @@ struct MirrorFullscreenStreamView: View {
         self.onClose = onClose
         self.onOpenApps = onOpenApps
         self.restoresDesktop = restoresDesktop
+        self.onMinimize = onMinimize
         self.sessionCoordinator = environment.sessionCoordinator
         self.displayLayoutViewModel = environment.displayLayoutViewModel
         _interactionVM = StateObject(
@@ -2625,7 +2629,7 @@ struct MirrorFullscreenStreamView: View {
     /// Everyday controls stay visible; occasional actions use the native menu.
     private var chromePill: some View {
         HStack(spacing: 8) {
-            ControlSessionButton(title: "Macs", symbol: "chevron.left", action: onClose)
+            ControlSessionButton(title: "Macs", symbol: "chevron.left", action: onMinimize ?? onClose)
 
             if displayVMRequiresKeyboard && effectiveSessionMode != .viewOnly {
                 ControlSessionButton(title: "Keyboard", symbol: isKeyboardOverlayPresented ? "keyboard.chevron.compact.down" : "keyboard",

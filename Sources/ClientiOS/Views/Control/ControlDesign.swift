@@ -9,10 +9,32 @@ enum ControlDesign {
     /// Status is the one place color appears; everything else stays monochrome.
     static let available = Color.dynamic(light: 0x1F9D55, dark: 0x3DD07A)
     static let caution = Color.dynamic(light: 0xB86E00, dark: 0xF2A93B)
+    /// The shell prompt: `$`, `+`. Terminal green, the one color outside status.
+    static let prompt = available
     static let buttonInk = Color.dynamic(light: 0xFFFFFF, dark: 0x181818)
     static let line = Color.dynamic(light: 0x181818, dark: 0xF3F3F3, lightAlpha: 0.12, darkAlpha: 0.12)
     static let plate = Color.dynamic(light: 0xFFFFFF, dark: 0x242424)
-    static let radius: CGFloat = 28
+    // One 4-pt grid for every Control screen; nothing below picks its own number.
+    /// Related things: a label and its card, sibling cards, a dot and its text.
+    static let gap: CGFloat = 8
+    /// An icon and its text; lines stacked inside a card.
+    static let stack: CGFloat = 12
+    /// Card edge to text. Labels outside cards start here too, so all text shares one column.
+    static let inset: CGFloat = 16
+    /// Screen edge to card.
+    static let gutter: CGFloat = 20
+    /// Between sections.
+    static let section: CGFloat = 24
+    /// Every card, and the controls nested inside one.
+    static let radius: CGFloat = 20
+    static let innerRadius: CGFloat = 12
+    /// Key/value lines and single-line rows; two-line tappable rows.
+    static let lineHeight: CGFloat = 44
+    static let rowHeight: CGFloat = 56
+    static let buttonHeight: CGFloat = 40
+    static let smallButtonHeight: CGFloat = 32
+    /// Glass icon tiles and round icon buttons.
+    static let tile: CGFloat = 40
     static let maxWidth: CGFloat = 720
     /// Two-pane home from here up: the unfolded iPhone Duo panel is 951 pt wide.
     static let wideMinWidth: CGFloat = 700
@@ -75,7 +97,7 @@ struct ControlWordmark: View {
 
 /// The brand mark on a clear glass tile, the way the app icon reads.
 struct ControlGlassLogo: View {
-    var size: CGFloat = 56
+    var size: CGFloat = ControlDesign.tile
     var body: some View {
         ControlSymbol().fill(ControlDesign.accent)
             .frame(width: size * 0.44, height: size * 0.44)
@@ -185,24 +207,24 @@ struct ControlPrimaryButton: View {
     let title: LocalizedStringKey
     var symbol = "arrow.right"
     var isDisabled = false
-    var fillsWidth = true
+    var fillsWidth = false
     let action: () -> Void
 
     var body: some View {
+        // ponytail: a plain capsule; .borderedProminent + .large draws a giant pill on iOS 26.
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: 7) {
                 Text(title)
-                Image(systemName: symbol).font(.body.weight(.semibold))
+                Image(systemName: symbol).font(.footnote.weight(.bold))
             }
-            .font(.headline)
+            .font(.subheadline.weight(.semibold))
             .foregroundStyle(ControlDesign.buttonInk)
-            .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: 44)
-            .padding(.horizontal, fillsWidth ? 0 : 10)
+            .padding(.horizontal, ControlDesign.inset)
+            .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: ControlDesign.buttonHeight)
+            .background(ControlDesign.accent.opacity(isDisabled ? 0.4 : 1), in: Capsule())
+            .contentShape(Capsule())
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
-        .tint(ControlDesign.accent)
+        .buttonStyle(ControlPressStyle())
         .disabled(isDisabled)
     }
 }
@@ -264,6 +286,29 @@ struct ControlHingeReader: UIViewRepresentable {
     }
 }
 
+/// A shell prompt heading: `$ ls macs`. VoiceOver reads the plain label.
+struct ControlPrompt: View {
+    let command: String
+    let label: LocalizedStringKey
+    var body: some View {
+        Text("\(Text(verbatim: "$").foregroundStyle(ControlDesign.prompt)) \(Text(verbatim: command))")
+            .font(.subheadline.weight(.semibold)).foregroundStyle(ControlDesign.ink)
+            // Same text column as the lines inside the glass panels below it.
+            .padding(.leading, ControlDesign.inset)
+            .accessibilityLabel(Text(label))
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Lines inside a glass block light up under the finger instead of shrinking.
+struct ControlRowPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(ControlDesign.ink.opacity(configuration.isPressed ? 0.06 : 0))
+            .animation(.snappy(duration: 0.15), value: configuration.isPressed)
+    }
+}
+
 /// Tiles shrink slightly under the finger instead of flashing.
 struct ControlPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -271,96 +316,6 @@ struct ControlPressStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.975 : 1)
             .opacity(configuration.isPressed ? 0.9 : 1)
             .animation(.snappy(duration: 0.18), value: configuration.isPressed)
-    }
-}
-
-/// Flowing contour lines. `phase` 0→1 shifts them by one line spacing, so a
-/// repeating linear animation loops seamlessly.
-struct ControlSignalLines: Shape {
-    var phase: CGFloat
-    var animatableData: CGFloat {
-        get { phase }
-        set { phase = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let spacing: CGFloat = 19
-        for index in -2..<9 {
-            let offset = CGFloat(index) * spacing + phase * spacing
-            path.move(to: CGPoint(x: -30 + offset, y: rect.height + 20))
-            path.addCurve(to: CGPoint(x: rect.width + 30, y: -30 + offset),
-                          control1: CGPoint(x: 34 + offset, y: 20),
-                          control2: CGPoint(x: rect.width - 60, y: rect.height - 40 + offset))
-        }
-        return path
-    }
-}
-
-/// A Mac display, alive: contour lines drift, rings pulse from the Vamp mark on
-/// clear glass while the Mac is reachable. Motion stops with Reduce Motion.
-struct ControlDisplayArt: View {
-    var isOnline = true
-    var height: CGFloat = 156
-    var statusLabel: LocalizedStringKey?
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var flow: CGFloat = 0
-    @State private var pulse = false
-    @State private var float = false
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 16, style: .continuous) }
-    private var logo: CGFloat { min(60, height * 0.36) }
-
-    var body: some View {
-        ZStack {
-            shape.fill(LinearGradient(
-                colors: scheme == .dark ? [Color(hex: 0x303030), Color(hex: 0x141414)]
-                                        : [Color(hex: 0xF9F9F9), Color(hex: 0xDADADA)],
-                startPoint: .topLeading, endPoint: .bottomTrailing))
-            RadialGradient(colors: [ControlDesign.ink.opacity(scheme == .dark ? 0.18 : 0.10), .clear],
-                           center: .center, startRadius: 2, endRadius: height * 0.85)
-            ControlSignalLines(phase: flow)
-                .stroke(ControlDesign.secondary.opacity(scheme == .dark ? 0.2 : 0.16), lineWidth: 0.9)
-                .clipShape(shape)
-            if isOnline {
-                ForEach(0..<2, id: \.self) { ring in
-                    Circle().strokeBorder(ControlDesign.ink.opacity(0.25), lineWidth: 1)
-                        .frame(width: logo, height: logo)
-                        .scaleEffect(pulse ? 2.7 : 1)
-                        .opacity(pulse ? 0 : 0.8)
-                        .animation(reduceMotion ? nil : .easeOut(duration: 2.8).repeatForever(autoreverses: false)
-                            .delay(Double(ring) * 1.4), value: pulse)
-                }
-            }
-            ControlGlassLogo(size: logo)
-                .offset(y: float ? -2.5 : 2.5)
-                .shadow(color: .black.opacity(scheme == .dark ? 0.35 : 0.12), radius: 14, y: 6)
-        }
-        .frame(height: height)
-        .frame(maxWidth: .infinity)
-        .clipShape(shape)
-        .overlay(alignment: .topTrailing) {
-            if let statusLabel {
-                HStack(spacing: 6) {
-                    ControlPulseDot(color: isOnline ? ControlDesign.available : ControlDesign.secondary, isLive: isOnline)
-                    ControlMono(text: statusLabel, size: 9, color: ControlDesign.ink.opacity(0.8))
-                }
-                .padding(.horizontal, 9).padding(.vertical, 6)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay { Capsule().strokeBorder(ControlDesign.line, lineWidth: 0.5) }
-                .padding(10)
-            }
-        }
-        .overlay { shape.strokeBorder(ControlDesign.line) }
-        .saturation(isOnline ? 1 : 0)
-        .opacity(isOnline ? 1 : 0.8)
-        .accessibilityHidden(true)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.linear(duration: 7).repeatForever(autoreverses: false)) { flow = 1 }
-            withAnimation(.easeInOut(duration: 3.2).repeatForever(autoreverses: true)) { float = true }
-            pulse = true
-        }
     }
 }
 
@@ -396,9 +351,9 @@ struct ControlGlassIconButton: View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(ControlDesign.ink)
-                .frame(width: 42, height: 42)
+                .frame(width: ControlDesign.tile, height: ControlDesign.tile)
                 .contentShape(Circle())
-                .controlGlass(radius: 21, interactive: true, emphasis: .control)
+                .controlGlass(radius: ControlDesign.tile / 2, interactive: true, emphasis: .control)
         }
         .buttonStyle(ControlPressStyle())
         .accessibilityLabel(Text(label))
@@ -421,75 +376,5 @@ struct ControlAppear: ViewModifier {
 extension View {
     func controlAppear(_ shown: Bool, delay: Double = 0) -> some View {
         modifier(ControlAppear(shown: shown, delay: delay))
-    }
-}
-
-/// Original vector artwork, rather than a fake desktop screenshot or an oversized SF Symbol.
-struct ControlMacIllustration: View {
-    var compact = false
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        ZStack {
-            Circle().stroke(ControlDesign.line, lineWidth: 0.7).frame(width: 240, height: 240)
-            Circle().stroke(ControlDesign.line.opacity(0.6), lineWidth: 0.7).frame(width: 300, height: 300)
-
-            VStack(spacing: 0) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 13).fill(ControlDesign.plate)
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(scheme == .dark ? Color(hex: 0x303030) : Color(hex: 0xE5E5E5))
-                        .padding(7)
-                    ControlSignalArtwork().padding(7).clipShape(RoundedRectangle(cornerRadius: 8))
-                    ControlSymbol().fill(ControlDesign.accent).frame(width: 48, height: 48)
-                }
-                .frame(width: 218, height: 143)
-                .overlay { RoundedRectangle(cornerRadius: 13).strokeBorder(ControlDesign.line) }
-                .overlay(alignment: .top) {
-                    Circle().fill(ControlDesign.secondary.opacity(0.6)).frame(width: 3, height: 3).padding(.top, 2)
-                }
-                UnevenRoundedRectangle(bottomLeadingRadius: 10, bottomTrailingRadius: 10)
-                    .fill(ControlDesign.plate)
-                    .frame(width: 244, height: 7)
-                    .overlay(alignment: .top) { Rectangle().fill(ControlDesign.line).frame(height: 0.5) }
-            }
-            .rotationEffect(.degrees(-6))
-            .offset(x: -12, y: -6)
-            .shadow(color: .black.opacity(scheme == .dark ? 0.18 : 0.07), radius: 16, y: 12)
-
-            ZStack {
-                RoundedRectangle(cornerRadius: 17).fill(ControlDesign.plate)
-                RoundedRectangle(cornerRadius: 13).fill(ControlDesign.canvas).padding(4)
-                Image(systemName: "cursorarrow.rays")
-                    .font(.system(size: 24, weight: .light)).foregroundStyle(ControlDesign.accent)
-                Capsule().fill(ControlDesign.secondary.opacity(0.35)).frame(width: 23, height: 3).offset(y: 53)
-            }
-            .frame(width: 69, height: 129)
-            .overlay { RoundedRectangle(cornerRadius: 17).strokeBorder(ControlDesign.line) }
-            .rotationEffect(.degrees(9))
-            .offset(x: 98, y: compact ? 25 : 43)
-            .shadow(color: .black.opacity(0.08), radius: 10, y: 6)
-        }
-        .frame(height: compact ? 190 : 260)
-        .frame(maxWidth: .infinity)
-        .clipped()
-        .accessibilityHidden(true)
-    }
-}
-
-private struct ControlSignalArtwork: View {
-    var body: some View {
-        Canvas { context, size in
-            for index in 0..<7 {
-                let offset = CGFloat(index) * 19
-                var path = Path()
-                path.move(to: CGPoint(x: -30 + offset, y: size.height + 20))
-                path.addCurve(to: CGPoint(x: size.width + 30, y: -30 + offset),
-                              control1: CGPoint(x: 34 + offset, y: 20),
-                              control2: CGPoint(x: size.width - 60, y: size.height - 40 + offset))
-                context.stroke(path, with: .color(ControlDesign.secondary.opacity(0.14)), lineWidth: 1)
-            }
-        }
-        .accessibilityHidden(true)
     }
 }

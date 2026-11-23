@@ -56,7 +56,7 @@ struct ControlAddMacView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: ControlDesign.section) {
                     header
                     sourcePicker
                     scanTile
@@ -69,7 +69,7 @@ struct ControlAddMacView: View {
                     editionsCard
                 }
                 .frame(maxWidth: 620, alignment: .leading)
-                .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 28)
+                .padding(.horizontal, ControlDesign.gutter).padding(.top, ControlDesign.gap).padding(.bottom, ControlDesign.section)
                 .frame(maxWidth: .infinity)
                 .animation(.smooth, value: source)
                 .animation(.smooth, value: canConnect)
@@ -96,7 +96,7 @@ struct ControlAddMacView: View {
             .disabled(companion.isPairing)
             .overlay(alignment: .bottom) {
                 if companion.isPairing {
-                    HStack(spacing: 14) {
+                    HStack(spacing: ControlDesign.stack) {
                         ProgressView().tint(ControlDesign.accent)
                         Text("Pairing with your Mac…").font(.subheadline.weight(.medium))
                         Spacer(minLength: 0)
@@ -104,7 +104,7 @@ struct ControlAddMacView: View {
                             .font(.subheadline.weight(.semibold))
                     }
                     .foregroundStyle(ControlDesign.ink)
-                    .padding(16).controlGlass(radius: 24, emphasis: .control).padding(16)
+                    .padding(ControlDesign.inset).controlGlass(emphasis: .control).padding(ControlDesign.inset)
                 }
             }
         }
@@ -133,20 +133,19 @@ struct ControlAddMacView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 14) {
-            ControlGlassLogo(size: 46)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Add a Mac").font(.system(size: 28, weight: .bold)).tracking(-0.8)
+        HStack(spacing: ControlDesign.stack) {
+            ControlGlassLogo()
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Add a Mac").font(.title2.weight(.bold))
                     .foregroundStyle(ControlDesign.ink)
                     .accessibilityAddTraits(.isHeader)
                 ControlMono(text: "Choose what runs on your Mac", size: 9)
             }
         }
-        .padding(.top, 4)
     }
 
     private var sourcePicker: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: ControlDesign.gap) {
             ForEach(ControlMacSource.allCases) { option in
                 ControlSourceTile(source: option, isSelected: source == option) { source = option }
             }
@@ -159,11 +158,11 @@ struct ControlAddMacView: View {
             field = nil
             showsScanner = true
         } label: {
-            HStack(spacing: 16) {
+            HStack(spacing: ControlDesign.stack) {
                 Image(systemName: "qrcode.viewfinder")
-                    .font(.system(size: 26, weight: .light)).foregroundStyle(ControlDesign.ink)
-                    .frame(width: 56, height: 56)
-                    .controlGlass(radius: 16, emphasis: .control)
+                    .font(.system(size: 20, weight: .light)).foregroundStyle(ControlDesign.ink)
+                    .frame(width: ControlDesign.tile, height: ControlDesign.tile)
+                    .controlGlass(radius: ControlDesign.innerRadius, emphasis: .control)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Scan your Mac’s code").font(.headline).foregroundStyle(ControlDesign.ink)
                     Text(source == .sync ? "Vamp Sync shows it in its menu bar panel."
@@ -171,46 +170,46 @@ struct ControlAddMacView: View {
                         .font(.footnote).foregroundStyle(ControlDesign.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: ControlDesign.gap)
                 Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(ControlDesign.secondary)
             }
-            .padding(12).padding(.trailing, 6)
-            .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .controlGlass(radius: 22, interactive: true)
+            .padding(ControlDesign.inset)
+            .contentShape(RoundedRectangle(cornerRadius: ControlDesign.radius, style: .continuous))
+            .controlGlass(interactive: true)
         }
         .buttonStyle(ControlPressStyle())
         .accessibilityIdentifier("control.scan")
     }
 
     private var nearbyList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 7) {
+        VStack(alignment: .leading, spacing: ControlDesign.gap) {
+            HStack(spacing: ControlDesign.gap) {
                 ControlPulseDot(color: ControlDesign.available, size: 6)
                 ControlMono(text: "Nearby on your network")
             }
-            .padding(.leading, 4)
+            .padding(.leading, ControlDesign.inset)
             ForEach(nearby) { host in
                 Button {
                     field = nil
                     onConnectSync(host)
                 } label: {
-                    HStack(spacing: 14) {
+                    HStack(spacing: ControlDesign.stack) {
                         ControlSymbol().fill(ControlDesign.ink).frame(width: 18, height: 18)
-                            .frame(width: 42, height: 42)
-                            .controlGlass(radius: 12, emphasis: .control)
-                        VStack(alignment: .leading, spacing: 3) {
+                            .frame(width: ControlDesign.tile, height: ControlDesign.tile)
+                            .controlGlass(radius: ControlDesign.innerRadius, emphasis: .control)
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(host.title).font(.headline).foregroundStyle(ControlDesign.ink).lineLimit(1)
                             ControlMono(text: "Vamp Sync · Local network", size: 9)
                         }
-                        Spacer(minLength: 8)
+                        Spacer(minLength: ControlDesign.gap)
                         Image(systemName: "arrow.right").font(.footnote.weight(.bold))
                             .foregroundStyle(ControlDesign.buttonInk)
-                            .frame(width: 32, height: 32)
+                            .frame(width: ControlDesign.smallButtonHeight, height: ControlDesign.smallButtonHeight)
                             .background(ControlDesign.accent, in: Circle())
                     }
-                    .padding(10).padding(.trailing, 4)
-                    .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .controlGlass(radius: 20, interactive: true)
+                    .padding(ControlDesign.inset)
+                    .contentShape(RoundedRectangle(cornerRadius: ControlDesign.radius, style: .continuous))
+                    .controlGlass(interactive: true)
                 }
                 .buttonStyle(ControlPressStyle())
                 .accessibilityLabel(Text("\(host.title), Vamp Sync, local network"))
@@ -219,7 +218,7 @@ struct ControlAddMacView: View {
     }
 
     private var addressCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: ControlDesign.stack) {
             ControlMono(text: source == .sync ? "Or enter its address" : "Address and pairing code")
             Group {
                 if source == .sync {
@@ -240,10 +239,10 @@ struct ControlAddMacView: View {
             .keyboardType(.URL)
             .textContentType(.URL)
             .submitLabel(source == .sync ? .go : .next)
-            .padding(.horizontal, 14).frame(minHeight: 50)
-            .controlGlass(radius: 16, emphasis: .control)
+            .padding(.horizontal, ControlDesign.inset).frame(minHeight: ControlDesign.lineHeight)
+            .controlGlass(radius: ControlDesign.innerRadius, emphasis: .control)
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: ControlDesign.innerRadius, style: .continuous)
                     .strokeBorder(ControlDesign.ink.opacity(field == .address ? 0.45 : 0), lineWidth: 1)
             }
 
@@ -257,10 +256,10 @@ struct ControlAddMacView: View {
                     .onChange(of: code) { _, value in
                         code = String(value.filter { $0 >= "0" && $0 <= "9" }.prefix(6))
                     }
-                    .frame(minHeight: 56)
-                    .controlGlass(radius: 16, emphasis: .control)
+                    .frame(minHeight: ControlDesign.rowHeight)
+                    .controlGlass(radius: ControlDesign.innerRadius, emphasis: .control)
                     .overlay {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: ControlDesign.innerRadius, style: .continuous)
                             .strokeBorder(ControlDesign.ink.opacity(field == .code ? 0.45 : 0), lineWidth: 1)
                     }
             }
@@ -271,42 +270,42 @@ struct ControlAddMacView: View {
                 .font(.footnote).foregroundStyle(ControlDesign.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(16)
-        .controlGlass(radius: 22)
+        .padding(ControlDesign.inset)
+        .controlGlass()
     }
 
     private var editionsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: ControlDesign.stack) {
             ControlMono(text: "Need Vamp Sync?", size: 9)
             Text("The free website edition adds keyboard and pointer control. The Mac App Store edition is View Only.")
                 .font(.footnote).foregroundStyle(ControlDesign.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Link(destination: VampProductLinks.syncEditions) {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     Text("Compare editions")
                     Image(systemName: "arrow.up.right").font(.caption.weight(.bold))
                 }
                 .font(.subheadline.weight(.semibold)).foregroundStyle(ControlDesign.ink)
-                .padding(.horizontal, 14).frame(minHeight: 36)
-                .controlGlass(radius: 18, interactive: true, emphasis: .control)
+                .padding(.horizontal, ControlDesign.stack).frame(minHeight: ControlDesign.smallButtonHeight)
+                .controlGlass(radius: ControlDesign.smallButtonHeight / 2, interactive: true, emphasis: .control)
             }
             .accessibilityHint("Opens the Vamp Sync website")
         }
-        .padding(16)
+        .padding(ControlDesign.inset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .controlGlass(radius: 22)
+        .controlGlass()
     }
 
     /// Appears only once there is something to connect to; never a disabled slab.
     private var connectBar: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: ControlDesign.gap) {
             ControlPrimaryButton(title: companion.isPairing ? "Pairing…" : (source == .sync ? "Connect" : "Pair Mac"),
                                  symbol: source == .sync ? "arrow.right" : "link",
                                  fillsWidth: false, action: connect)
                 .accessibilityIdentifier("control.connect")
             ControlMono(text: source == .sync ? "Approve this device in Vamp Sync" : "Only pair with a Mac you recognize", size: 8.5)
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, ControlDesign.stack)
         .frame(maxWidth: .infinity)
     }
 
@@ -341,7 +340,7 @@ private struct ControlSourceTile: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: ControlDesign.stack) {
                 HStack {
                     Image(systemName: source == .sync ? "macwindow.on.rectangle" : "sparkles.rectangle.stack")
                         .font(.system(size: 18, weight: .medium))
@@ -350,18 +349,18 @@ private struct ControlSourceTile: View {
                         .font(.system(size: 17))
                         .foregroundStyle(isSelected ? ControlDesign.ink : ControlDesign.secondary.opacity(0.6))
                 }
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(source.title).font(.subheadline.weight(.semibold))
                     ControlMono(text: source == .sync ? "Desktop · Apps" : "Code pairing", size: 8.5)
                 }
             }
             .foregroundStyle(ControlDesign.ink)
-            .padding(14)
+            .padding(ControlDesign.inset)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .controlGlass(radius: 20, interactive: true, emphasis: isSelected ? .control : .surface)
+            .contentShape(RoundedRectangle(cornerRadius: ControlDesign.radius, style: .continuous))
+            .controlGlass(interactive: true, emphasis: isSelected ? .control : .surface)
             .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: ControlDesign.radius, style: .continuous)
                     .strokeBorder(ControlDesign.ink.opacity(isSelected ? 0.55 : 0), lineWidth: 1.2)
             }
         }

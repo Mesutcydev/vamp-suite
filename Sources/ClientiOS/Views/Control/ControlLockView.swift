@@ -3,14 +3,14 @@ import SwiftUI
 struct ControlLockView: View {
     @ObservedObject var lockService: AppLockService
     var body: some View {
-        VStack(spacing: 28) {
-            ControlWordmark().padding(.top, 20)
+        VStack(spacing: ControlDesign.section) {
+            ControlWordmark().padding(.top, ControlDesign.gutter)
             Spacer()
             Image(systemName: "lock.shield")
                 .font(.system(size: 56, weight: .ultraLight)).foregroundStyle(ControlDesign.accent)
                 .accessibilityHidden(true)
-            VStack(spacing: 10) {
-                Text("Just for you.").font(.largeTitle.weight(.bold)).tracking(-1.2)
+            VStack(spacing: ControlDesign.gap) {
+                Text("Just for you.").font(.largeTitle.weight(.bold))
                 Text("Unlock Control to return to your Mac.")
                     .font(.subheadline).foregroundStyle(ControlDesign.secondary)
             }
@@ -24,9 +24,9 @@ struct ControlLockView: View {
                 Task { await lockService.authenticate() }
             }.frame(maxWidth: 320)
             Spacer()
-            ControlPrivacyFootnote().padding(.bottom, 24)
+            ControlPrivacyFootnote().padding(.bottom, ControlDesign.section)
         }
-        .foregroundStyle(ControlDesign.ink).padding(.horizontal, 24)
+        .foregroundStyle(ControlDesign.ink).padding(.horizontal, ControlDesign.gutter)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { ControlBackground() }
         .task { await lockService.authenticate() }

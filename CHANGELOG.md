@@ -7,6 +7,22 @@ their original product names. The format follows
 
 ## [Unreleased]
 
+### Vamp Control iOS 4.0.0 (build 51)
+
+- New home, terminal style on clear glass: `$ vamp status` (Macs ready,
+  network), then `$ ls macs` with one row per Mac (`● name · sync · local ·
+  connect →`) and a `+ add a mac` line. The greeting, stat tiles, big artwork
+  card, "More Macs" section and duplicate Add buttons are gone.
+- The live preview card is back: while a desktop session runs, Home shows a
+  small live picture of the Mac with open and end. The stream's Macs button
+  now returns Home and keeps the session running; Disconnect still ends it,
+  and the free daily cap still ends a minimized session.
+- Every Control screen uses one monospaced voice and one 4-pt grid (8/12/16/20/24
+  spacing, 20 pt card radius, 12 pt inner radius, 44/56 pt rows), so prompts,
+  labels and card text share one column. Primary buttons are compact 40 pt
+  capsules instead of large prominent pills.
+- The pairing card wraps its title instead of truncating it.
+
 ### Vamp Sync 4.0.0 (build 86) and Vamp Control macOS 2.0.0 (build 70)
 
 - Pairing uses a signed key exchange. A Mac's pairing link and QR code carry its
