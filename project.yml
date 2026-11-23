@@ -56,7 +56,7 @@ targetTemplates:
       base:
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: VAMP_MINI_HOST
         MARKETING_VERSION: "4.0.0"
-        CURRENT_PROJECT_VERSION: 86
+        CURRENT_PROJECT_VERSION: 87
         PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.host
         PRODUCT_NAME: Vamp Sync
         GENERATE_INFOPLIST_FILE: NO
