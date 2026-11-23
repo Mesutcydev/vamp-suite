@@ -2667,8 +2667,10 @@ struct MirrorFullscreenStreamView: View {
                 }
             }
 
+            // Picture and Tools are submenus: thirteen flat rows were taller than the
+            // space above the bar, so the top of the menu (Disconnect) was cut off.
             Menu {
-                Section("Picture") {
+                Menu {
                     displayModeButton(.fitDisplay, label: "Fit Display", systemImage: "rectangle.arrowtriangle.2.inward")
                     displayModeButton(.fillScreen, label: "Fill Screen", systemImage: "rectangle.arrowtriangle.2.outward")
                     Button("Reset zoom", systemImage: "1.magnifyingglass") {
@@ -2679,25 +2681,24 @@ struct MirrorFullscreenStreamView: View {
                     Button(pictureInPicture.isActive ? "Close Picture in Picture" : "Picture in Picture", systemImage: "pip") {
                         pictureInPicture.toggle()
                     }
-                }
+                } label: { Label("Picture", systemImage: "photo.on.rectangle") }
                 if effectiveSessionMode != .viewOnly {
-                    Section("Tools") {
+                    Menu {
                         Button("Terminal", systemImage: "terminal") { isTerminalModePresented = true }
                         Button(annotationStore.isVisible ? "Hide annotation" : "Annotate", systemImage: "pencil.tip") {
                             annotationStore.isVisible.toggle()
                         }
                         Button("Send clipboard to Mac", systemImage: "doc.on.clipboard") { clipboardSync.pushToHost() }
                         Button("Get clipboard from Mac", systemImage: "arrow.down.doc") { clipboardSync.requestFromHost() }
-                    }
+                    } label: { Label("Tools", systemImage: "wrench.and.screwdriver") }
                 }
-                Section {
-                    Button("Mouse & keyboard", systemImage: "magicmouse") { isBluetoothStatusPresented = true }
-                    Button(audioRenderer.isMuted ? "Unmute audio" : "Mute audio", systemImage: "speaker.wave.2") { audioRenderer.isMuted.toggle() }
-                    Button("Hide controls", systemImage: "eye.slash") {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { isControlsHidden = true }
-                    }
-                    Button("Disconnect", systemImage: "xmark.circle", role: .destructive, action: onClose)
+                Button("Mouse & keyboard", systemImage: "magicmouse") { isBluetoothStatusPresented = true }
+                Button(audioRenderer.isMuted ? "Unmute audio" : "Mute audio", systemImage: "speaker.wave.2") { audioRenderer.isMuted.toggle() }
+                Button("Hide controls", systemImage: "eye.slash") {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { isControlsHidden = true }
                 }
+                Divider()
+                Button("Disconnect", systemImage: "xmark.circle", role: .destructive, action: onClose)
             } label: {
                 ControlSessionLabel(title: "More", symbol: "ellipsis")
             }

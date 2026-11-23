@@ -29,8 +29,8 @@ enum ControlDesign {
     static let radius: CGFloat = 20
     static let innerRadius: CGFloat = 12
     /// Key/value lines and single-line rows; two-line tappable rows.
-    static let lineHeight: CGFloat = 44
-    static let rowHeight: CGFloat = 56
+    static let lineHeight: CGFloat = 48
+    static let rowHeight: CGFloat = 64
     static let buttonHeight: CGFloat = 40
     static let smallButtonHeight: CGFloat = 32
     /// Glass icon tiles and round icon buttons.
@@ -292,7 +292,7 @@ struct ControlPrompt: View {
     let label: LocalizedStringKey
     var body: some View {
         Text("\(Text(verbatim: "$").foregroundStyle(ControlDesign.prompt)) \(Text(verbatim: command))")
-            .font(.subheadline.weight(.semibold)).foregroundStyle(ControlDesign.ink)
+            .font(.body.weight(.semibold)).foregroundStyle(ControlDesign.ink)
             // Same text column as the lines inside the glass panels below it.
             .padding(.leading, ControlDesign.inset)
             .accessibilityLabel(Text(label))

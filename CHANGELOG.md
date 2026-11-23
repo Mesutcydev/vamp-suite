@@ -7,6 +7,18 @@ their original product names. The format follows
 
 ## [Unreleased]
 
+### Vamp Control iOS 4.0.0 (build 52)
+
+- The featured Mac is drawn as its screen. While a session runs behind Home it
+  shows the live picture full width, at the stream's own shape (a portrait
+  stream stays portrait on the glass instead of a letterboxed strip), with end
+  and open. Otherwise it is a dark display waiting at `$ vamp connect mac-m4`
+  with a blinking cursor and one connect button. Other Macs follow as rows.
+- Larger type on Home (17 pt lines, 20 pt Mac names, 48/64 pt rows) and no
+  more `-- · 0 fps` placeholder.
+- The stream's More menu fits on screen: Picture and Tools are submenus, so
+  the top level is six rows and Disconnect is no longer cut off.
+
 ### Vamp Control iOS 4.0.0 (build 51)
 
 - New home, terminal style on clear glass: `$ vamp status` (Macs ready,
