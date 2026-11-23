@@ -2,12 +2,12 @@
   "repository": "Mesutcydev/vamp-suite",
   "assets": {
     "vamp-mini-host-dmg": {
-      "name": "VampSync-macOS-4.0.0-build-86-notarized.dmg",
-      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-86/VampSync-macOS-4.0.0-build-86-notarized.dmg",
-      "label": "4.0.0 \u00b7 build 86",
-      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-sync-4.0.0-build-86",
-      "tag": "vamp-sync-4.0.0-build-86",
-      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-86/VampSync-macOS-4.0.0-build-86-notarized.dmg.sha256"
+      "name": "VampSync-macOS-4.0.0-build-87-notarized.dmg",
+      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-87/VampSync-macOS-4.0.0-build-87-notarized.dmg",
+      "label": "4.0.0 \u00b7 build 87",
+      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-sync-4.0.0-build-87",
+      "tag": "vamp-sync-4.0.0-build-87",
+      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-87/VampSync-macOS-4.0.0-build-87-notarized.dmg.sha256"
     },
     "vamp-control-macos": {
       "name": "VampControl-macOS-2.0.0-build-70-notarized.dmg",
