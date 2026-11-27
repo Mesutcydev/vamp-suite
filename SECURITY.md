@@ -60,7 +60,8 @@ service disruption, and access to systems without permission is welcome.
   is in the menu under Allow Older Vamp Apps.
 - The Vamp Assistant compatibility endpoint (port 9575) speaks plain HTTP. On a shared network
   anyone can read its pairing code, token and traffic. Use it over Tailscale, which encrypts the
-  link. Vamp Control sends the Mac login password (Remote Unlock) without asking only over a
+  link. The apps carry no App Transport Security exception: the Assistant client uses its own
+  Network.framework HTTP client, which never follows a redirect. Vamp Control sends the Mac login password (Remote Unlock) without asking only over a
   Tailscale or HTTPS address; on the Assistant's LAN fallback it says the connection is not encrypted
   and asks before sending it.
 - Terminal Mode is a per-Mac setting that an in-place update of the old Vamp Host carries over to

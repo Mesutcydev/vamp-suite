@@ -163,10 +163,9 @@ targets:
         NSLocalNetworkUsageDescription: "Vamp Control discovers and connects privately to your Macs running Vamp Sync or Vamp Companion."
         NSCameraUsageDescription: "Vamp Control uses the camera to scan the pairing code shown by Sync or Companion on your Mac."
         NSFaceIDUsageDescription: "Use Face ID to unlock Vamp Control and protect access to your paired Macs."
-        # The endpoint parser restricts plain HTTP to private LAN/Tailscale peers.
-        # Dynamic private IPs need this allowance; endpoint validation remains in the client.
-        NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
+        # No NSAppTransportSecurity exception: the Assistant client uses Network.framework
+        # (AssistantHTTP), which ATS does not govern. The endpoint parser still restricts plain HTTP
+        # to private LAN/Tailscale peers.
         NSSpeechRecognitionUsageDescription: "Transcribes your voice on-device so you can dictate text into the remote Mac."
         NSMicrophoneUsageDescription: "Captures your voice for on-device dictation into the remote Mac."
         # The wire-compatibility contract is `_screenharbor._tcp` (AGENTS.md). This spec said

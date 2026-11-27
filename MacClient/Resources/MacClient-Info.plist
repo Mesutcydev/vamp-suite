@@ -32,12 +32,6 @@
 	<string>Copyright © 2026 Mesut Cy. All rights reserved.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Vamp Control uses your local network to connect to Vamp Sync and Vamp Assistant.</string>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<!-- The client itself restricts plain HTTP to private LAN, local, and Tailscale hosts. -->
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_screenharbor._tcp</string>

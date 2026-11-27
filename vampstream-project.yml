@@ -71,13 +71,10 @@ targets:
         NSHumanReadableCopyright: "Copyright © 2026 Vamp contributors."
         NSCameraUsageDescription: "$(VAMP_DISPLAY_NAME) uses the camera to scan private Sync, Assistant, or Companion pairing QR codes."
         NSLocalNetworkUsageDescription: "$(VAMP_DISPLAY_NAME) uses your local network to discover and connect to Macs running Sync, Assistant, or Companion."
-        NSAppTransportSecurity:
-          # Vamp Assistant is intentionally a private-network HTTP peer on
-          # port 9575. The client enforces the LAN/Tailscale-only address
-          # policy in BeetCodeRemoteEndpoint before any request is made. Do not
-          # combine this with NSAllowsLocalNetworking: on current iOS the
-          # fine-grained key causes the global dynamic-IP allowance to be ignored.
-          NSAllowsArbitraryLoads: true
+        # No NSAppTransportSecurity exception. Vamp Assistant is a plain-HTTP peer on port 9575, and
+        # URLSession would need NSAllowsArbitraryLoads for a Tailscale 100.x address (nothing narrower
+        # works), so BeetCodeRemoteClient talks to it through AssistantHTTP on Network.framework,
+        # which ATS does not govern. The endpoint parser still limits plain HTTP to private hosts.
         NSBonjourServices:
           - _screenharbor._tcp
         UIRequiresFullScreen: true
