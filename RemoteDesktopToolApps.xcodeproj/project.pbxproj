@@ -2045,7 +2045,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Configuration/ClientiOSLiveActivity-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
@@ -2120,7 +2120,7 @@
 				CODE_SIGN_ENTITLEMENTS = Configuration/ClientiOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Configuration/ClientiOS-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -2277,7 +2277,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Configuration/ClientiOSLiveActivity-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
@@ -2438,7 +2438,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Configuration/ClientiOS-AppStore.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Configuration/ClientiOS-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -2466,7 +2466,7 @@
 				CODE_SIGN_ENTITLEMENTS = Configuration/ClientiOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Configuration/ClientiOS-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -2490,7 +2490,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Configuration/ClientiOSLiveActivity-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
