@@ -40,5 +40,13 @@
 	<string>Copyright © 2026 Mesut Cy. All rights reserved.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>This app advertises on your local network so iOS remote clients can discover and connect to it.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://mesut.uk/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>jyN/42y+0M/G26dx2UbQg1MNZq8lKyX2vvzUu26pcZo=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>

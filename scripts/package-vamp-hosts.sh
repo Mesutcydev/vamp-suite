@@ -305,6 +305,6 @@ PY
 }
 
 # Keep the scheme, bundle ID, and storage identity stable for existing installs.
-package_host "VampMiniHost" "Vamp Sync" "com.mesutcy.remotedesktop.minhost" "VampSync"
+package_host "VampMiniHost" "Vamp Sync" "com.mesutcy.remotedesktop.host" "VampSync"
 
 log "Host artifacts are ready in $OUTPUT_DIR"

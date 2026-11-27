@@ -1,5 +1,6 @@
 import CoreVideo
 import XCTest
+@testable import CaptureEngine
 @testable import ClientiOS
 @testable import Diagnostics
 @testable import Discovery
@@ -184,15 +185,205 @@ final class SessionFeaturePolicyTests: XCTestCase {
         XCTAssertEqual(scaledHEVCSmall.width, 2560)
         XCTAssertEqual(scaledHEVCSmall.height, 1440)
 
-        // Under Ultra preset, does not cap at all (returns native dimensions)
+        // Ultra keeps native dimensions while they fit the 4K-UHD pixel budget…
         let scaledUltra = StreamScaling.scaledDimensions(
+            preset: .ultra,
+            nativeWidth: 3024,
+            nativeHeight: 1964,
+            allowsHighResolution: false
+        )
+        XCTAssertEqual(scaledUltra.width, 3024)
+        XCTAssertEqual(scaledUltra.height, 1964)
+
+        // …including an ultrawide whose long edge is past 3840 (that limit is window-only)…
+        let ultrawide = StreamScaling.scaledDimensions(
+            preset: .ultra,
+            nativeWidth: 5120,
+            nativeHeight: 1440,
+            allowsHighResolution: true
+        )
+        XCTAssertEqual(ultrawide.width, 5120)
+        XCTAssertEqual(ultrawide.height, 1440)
+
+        // …and a 5K Retina panel's backing pixels (14.7 MP) shrink into the budget, still
+        // far above the 2560×1440 point size it used to stream at.
+        let retina5K = StreamScaling.scaledDimensions(
             preset: .ultra,
             nativeWidth: 5120,
             nativeHeight: 2880,
-            allowsHighResolution: false
+            allowsHighResolution: true
         )
-        XCTAssertEqual(scaledUltra.width, 5120)
-        XCTAssertEqual(scaledUltra.height, 2880)
+        XCTAssertLessThanOrEqual(retina5K.width * retina5K.height, StreamScaling.windowMaximumPixels)
+        XCTAssertGreaterThan(retina5K.width, 3800)
+        XCTAssertEqual(Double(retina5K.width) / Double(retina5K.height), 5120.0 / 2880.0, accuracy: 0.01)
+        XCTAssertEqual(retina5K.width % 2, 0)
+        XCTAssertEqual(retina5K.height % 2, 0)
+    }
+
+    /// One early blip must age out of the loss reading instead of weighing on it for the
+    /// whole session (which pinned the stream on a downgraded preset).
+    func testPingLossIsJudgedOverARecentWindow() {
+        var window = PingLossWindow()
+        XCTAssertNil(window.lossPercent)
+        for _ in 0..<5 { window.record(answered: false) }
+        XCTAssertEqual(window.lossPercent, 100)
+        for _ in 0..<25 { window.record(answered: true) }
+        XCTAssertEqual(window.lossPercent ?? -1, 5.0 / 30.0 * 100, accuracy: 0.001)
+        for _ in 0..<5 { window.record(answered: true) }
+        XCTAssertEqual(window.lossPercent, 0)
+    }
+
+    #if os(macOS)
+    /// The layout sizes the encoder and `backingScale` sizes the capture surface. Both must be
+    /// backing pixels (points × scale): `CGDisplayPixelsWide` reports points on a Retina
+    /// display, which streamed every HiDPI desktop at half resolution.
+    func testDisplayLayoutReportsBackingPixels() {
+        for display in CoreGraphicsDisplayLayoutProvider().queryDisplayLayout().displays {
+            let scale = CoreGraphicsDisplayLayoutProvider.backingScale(of: CGDirectDisplayID(display.id) ?? 0)
+            XCTAssertEqual(display.scaleFactor, scale)
+            XCTAssertEqual(display.pixelSize.width, (display.frame.size.width * scale).rounded())
+            XCTAssertEqual(display.pixelSize.height, (display.frame.size.height * scale).rounded())
+        }
+        XCTAssertEqual(CoreGraphicsDisplayLayoutProvider.backingPixels(points: 1512, scale: 2), 3024)
+        XCTAssertEqual(CoreGraphicsDisplayLayoutProvider.backingPixels(points: 2560, scale: 1), 2560)
+    }
+    #endif
+
+    func testPerformanceWindowFloor() {
+        // A portrait window's backing (836×1812) would halve to 418×906 on
+        // performance — quarter of an already-small stream. The window floor
+        // lifts the long edge to 1080 (never past the source's own pixels).
+        let floored = StreamScaling.scaledDimensions(
+            preset: .performance,
+            nativeWidth: 836,
+            nativeHeight: 1812,
+            allowsHighResolution: true,
+            minLongEdge: StreamScaling.windowPerformanceMinLongEdge
+        )
+        // 1080/906 ≈ 1.192 → 498×1080 (even-rounded)
+        XCTAssertEqual(floored.height, 1080)
+        XCTAssertEqual(floored.width, 498)
+        // The floor must not touch other presets…
+        let balanced = StreamScaling.scaledDimensions(
+            preset: .balanced,
+            nativeWidth: 836,
+            nativeHeight: 1812,
+            allowsHighResolution: true,
+            minLongEdge: StreamScaling.windowPerformanceMinLongEdge
+        )
+        XCTAssertEqual(balanced.width, 836)
+        XCTAssertEqual(balanced.height, 1812)
+        // …or streams without a floor…
+        let noFloor = StreamScaling.scaledDimensions(
+            preset: .performance,
+            nativeWidth: 836,
+            nativeHeight: 1812,
+            allowsHighResolution: true
+        )
+        XCTAssertEqual(noFloor.width, 418)
+        XCTAssertEqual(noFloor.height, 906)
+        // …and must never upscale beyond the window's backing pixels.
+        let smallWindow = StreamScaling.scaledDimensions(
+            preset: .performance,
+            nativeWidth: 700,
+            nativeHeight: 960,
+            allowsHighResolution: true,
+            minLongEdge: StreamScaling.windowPerformanceMinLongEdge
+        )
+        // Long edge 480 (even half of 960) < floor, but the native long edge is
+        // only 960 → clamped to native: (700, 960).
+        XCTAssertEqual(smallWindow.width, 700)
+        XCTAssertEqual(smallWindow.height, 960)
+        // Full-display performance streams (large natives) are unaffected.
+        let displayPerformance = StreamScaling.scaledDimensions(
+            preset: .performance,
+            nativeWidth: 3024,
+            nativeHeight: 1964,
+            allowsHighResolution: true,
+            minLongEdge: StreamScaling.windowPerformanceMinLongEdge
+        )
+        XCTAssertEqual(displayPerformance.width, 1512)
+        XCTAssertEqual(displayPerformance.height, 982)
+    }
+
+    /// `ultra` passes the source's native pixels straight through, so a window on a 5K/6K display
+    /// (or one grown past the phone's screen) could build a frame the client's hardware decoder
+    /// rejects — the stream then fails to a black picture. Window streams are clamped to the
+    /// 4K UHD envelope an iPhone 17 Pro Max and an M4 Mac can actually exchange.
+    func testWindowStreamUltraIsClampedToTheDecoderEnvelope() {
+        // A very tall window from a 6K display: the long edge binds.
+        let tall = StreamScaling.scaledDimensions(
+            preset: .ultra,
+            nativeWidth: 3_200,
+            nativeHeight: 6_400,
+            allowsHighResolution: true,
+            minLongEdge: StreamScaling.windowPerformanceMinLongEdge
+        )
+        XCTAssertEqual(max(tall.width, tall.height), StreamScaling.windowMaximumLongEdge)
+        XCTAssertLessThanOrEqual(tall.width * tall.height, StreamScaling.windowMaximumPixels)
+        XCTAssertEqual(Double(tall.width) / Double(tall.height), 3_200.0 / 6_400.0, accuracy: 0.01)
+        XCTAssertEqual(tall.width % 2, 0, "H.264/HEVC 4:2:0 needs even axes")
+        XCTAssertEqual(tall.height % 2, 0)
+
+        // A huge-area square window: the pixel budget binds, not the edge.
+        let square = StreamScaling.scaledDimensions(
+            preset: .ultra,
+            nativeWidth: 4_096,
+            nativeHeight: 4_096,
+            allowsHighResolution: true,
+            minLongEdge: StreamScaling.windowPerformanceMinLongEdge
+        )
+        XCTAssertLessThanOrEqual(square.width * square.height, StreamScaling.windowMaximumPixels)
+        XCTAssertLessThanOrEqual(max(square.width, square.height), StreamScaling.windowMaximumLongEdge)
+
+        // Display streams are not long-edge limited: an ultrawide keeps its native picture.
+        let display = StreamScaling.scaledDimensions(
+            preset: .ultra,
+            nativeWidth: 5_120,
+            nativeHeight: 1_440,
+            allowsHighResolution: true
+        )
+        XCTAssertEqual(display.width, 5_120)
+        XCTAssertEqual(display.height, 1_440)
+
+        // Never upscales, and real hardware sizes pass through untouched: the 2560×1440 Mac
+        // pair's fitted 1364-point window is 2728 px tall, under both limits.
+        let realWindow = StreamScaling.scaledDimensions(
+            preset: .ultra,
+            nativeWidth: 1_334,
+            nativeHeight: 2_728,
+            allowsHighResolution: true,
+            minLongEdge: StreamScaling.windowPerformanceMinLongEdge
+        )
+        XCTAssertEqual(realWindow.width, 1_334)
+        XCTAssertEqual(realWindow.height, 2_728)
+    }
+
+    /// Capture and encode MUST produce identical dimensions or VideoToolbox rescales mismatched
+    /// input. Both delegate to `StreamScaling`, and the window ceiling is part of that shared
+    /// rule, so the invariant holds for the clamped case too.
+    func testCaptureAndEncodeAgreeOnWindowDimensionsIncludingTheCeiling() {
+        for preset in [StreamQualityPreset.performance, .balanced, .quality, .ultra] {
+            for codec in [EncodedFrameCodec.h264, .hevc] {
+                let capture = CaptureConfiguration.forPreset(
+                    preset,
+                    displayWidth: 3_200,
+                    displayHeight: 6_400,
+                    scaleFactor: 2,
+                    allowsHighResolution: codec == .hevc,
+                    minLongEdge: StreamScaling.windowPerformanceMinLongEdge
+                )
+                let encode = EncoderConfiguration.scaledDimensions(
+                    preset: preset,
+                    width: 3_200,
+                    height: 6_400,
+                    codec: codec,
+                    minLongEdge: StreamScaling.windowPerformanceMinLongEdge
+                )
+                XCTAssertEqual(capture.width, encode.0, "\(preset.rawValue)/\(codec.rawValue) width")
+                XCTAssertEqual(capture.height, encode.1, "\(preset.rawValue)/\(codec.rawValue) height")
+            }
+        }
     }
 
     func testCriticalThermalStateForcesPerformancePreset() {

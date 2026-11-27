@@ -161,7 +161,8 @@ public final class SignalingWebRTCBridge: @unchecked Sendable {
         case .sessionReady(let ready):
             emitEvent(.sessionReady(ready))
 
-        case .permissionBlocked, .hostBusy, .reconnecting, .displayLayoutChanged, .streamRestartRequired:
+        case .permissionBlocked, .hostBusy, .reconnecting, .displayLayoutChanged, .streamRestartRequired,
+             .hostKeyRequest, .hostKeyBundle:
             // These are informational; the app layer handles them directly
             break
         }

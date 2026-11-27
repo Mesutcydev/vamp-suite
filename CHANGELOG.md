@@ -7,6 +7,641 @@ their original product names. The format follows
 
 ## [Unreleased]
 
+### Vamp Control iOS 4.0.0 (build 53)
+
+- Settings reads like `vamp config`, on the same grid and glass as Home:
+  `$ config look`, `$ config stream`, `$ config sharing`, `$ config privacy`
+  and `$ open` over clear glass panels; segmented capsules for theme and
+  picture quality; fixed-width `● on` / `○ off` flags instead of system
+  switches (they still read as switches to VoiceOver); `# comments` for the
+  fine print; the version and build in the footer.
+- Paired Macs matches: `$ ls paired`, one line per Mac with its grouped
+  fingerprint and a revoke or forget button.
+
+### Vamp Control iOS 4.0.0 (build 52)
+
+- The featured Mac is drawn as its screen. While a session runs behind Home it
+  shows the live picture full width, at the stream's own shape (a portrait
+  stream stays portrait on the glass instead of a letterboxed strip), with end
+  and open. Otherwise it is a dark display waiting at `$ vamp connect mac-m4`
+  with a blinking cursor and one connect button. Other Macs follow as rows.
+- Larger type on Home (17 pt lines, 20 pt Mac names, 48/64 pt rows) and no
+  more `-- · 0 fps` placeholder.
+- The stream's More menu fits on screen: Picture and Tools are submenus, so
+  the top level is six rows and Disconnect is no longer cut off.
+
+### Vamp Control iOS 4.0.0 (build 51)
+
+- New home, terminal style on clear glass: `$ vamp status` (Macs ready,
+  network), then `$ ls macs` with one row per Mac (`● name · sync · local ·
+  connect →`) and a `+ add a mac` line. The greeting, stat tiles, big artwork
+  card, "More Macs" section and duplicate Add buttons are gone.
+- The live preview card is back: while a desktop session runs, Home shows a
+  small live picture of the Mac with open and end. The stream's Macs button
+  now returns Home and keeps the session running; Disconnect still ends it,
+  and the free daily cap still ends a minimized session.
+- Every Control screen uses one monospaced voice and one 4-pt grid (8/12/16/20/24
+  spacing, 20 pt card radius, 12 pt inner radius, 44/56 pt rows), so prompts,
+  labels and card text share one column. Primary buttons are compact 40 pt
+  capsules instead of large prominent pills.
+- The pairing card wraps its title instead of truncating it.
+
+### Vamp Sync 4.0.0 (build 86) and Vamp Control macOS 2.0.0 (build 70)
+
+- Pairing uses a signed key exchange. A Mac's pairing link and QR code carry its
+  fingerprint, and first contact asks you to confirm it. Macs and clients that
+  predate this use the previous handshake, and Sync shows a notice while one is
+  connected.
+- Vamp Sync removes the old Vamp Host watchdog LaunchAgent when it starts. That
+  agent relaunched Sync about 20–25 seconds after Quit.
+- Stopping or restarting Sync while a device is connected asks first.
+
+### Signed key exchange before pairing (not tested live)
+
+Vamp Sync, Vamp Control and App Stream:
+
+- The session key is no longer sent unencrypted. An app now asks the Mac for
+  its key bundle, signed by the Mac's identity key, before it sends anything
+  secret, and seals the session key to it. This used to happen only for Macs
+  found on the local network, and with an unsigned key; typed, scanned and
+  Tailscale addresses sent the key in the clear.
+- A Mac is verified before it is trusted. The first time an app connects to a
+  Mac it has not verified, it stops and shows that Mac's fingerprint to compare
+  with the Host fingerprint in Vamp Sync. Nothing is sent or saved until you
+  confirm. Scanning Vamp Sync's pairing code skips the prompt, because the code
+  now carries the fingerprint.
+- A Mac that has connected this way once cannot be pushed back to the older
+  handshake; if it stops offering the key exchange the connection is refused.
+- Older versions keep working for now. An updated Vamp Sync still accepts an
+  older app, and shows a notice while that device is connected. An updated app
+  still connects to an older Vamp Sync on the older handshake, shows a notice,
+  and asks before pairing with one for the first time. Each connect to an
+  older Vamp Sync takes about 3 seconds longer.
+- Reconnecting on the Mac app can no longer fall back to resending the
+  previous session's key unencrypted.
+
+### Audit follow-up fixes
+
+- Vamp Sync: Stop and Restart ask first when a device is connected, from the
+  panel and the menu bar. A vamphost:// link can stop, restart or reject only
+  after the user confirms.
+- Vamp Sync: a quality change no longer cancels a window the user has just
+  picked, and a queued pick the host replaces gets a reply instead of silence.
+- Vamp Sync: the host limits keyframe requests to one per second.
+- Vamp Sync: the pairing panel says why there is no code yet, and the Tailscale
+  button says when Tailscale is not installed.
+- Vamp Sync: trust decisions fail closed. An unreadable trusted-device list, or
+  an approval that cannot be saved, no longer lets a device in.
+- Vamp Sync: the signaling replay cache no longer evicts entries still inside
+  the replay window. Past its cap it refuses new envelopes until old ones age out.
+- Control: command envelopes are numbered and sent in one step, so keystrokes
+  are not dropped when sent concurrently.
+- Control macOS: only the window that changes screen is resized in Actual Size,
+  and the video layer tracks the window's backing scale.
+- Control macOS: Assistant reconnects can be cancelled, and forgetting the
+  saved Assistant asks first.
+- Control iOS: the input flush timer stops when no input is queued.
+- The browser pairing code fails closed if the system has no randomness,
+  instead of falling back to zeros.
+- Vamp Sync: for an approved device, a connection that is only a TCP connect no
+  longer replaces its live signaling connection. It takes over after a verified
+  message, and an unproven connection is dropped after 10 seconds. Devices not
+  yet approved still get the previous behaviour (the latest connection replaces
+  the live one).
+- Vamp Sync: an untrusted offer no longer releases a device's session before
+  the trust decision. The release happens after trust, and only if the slot is
+  still free.
+- Vamp Sync: a declined offer no longer changes the phase, name or settings of
+  the session that is still running. While an approved device's session is live,
+  a new connection is refused rather than cancelling one waiting to pair, and
+  one connection gets a fixed number of signed messages.
+
+### Streaming quality, reliability and security audit
+
+Vamp Sync:
+
+- Retina displays stream at their real pixel size. The desktop was sized from
+  point dimensions (`CGDisplayPixelsWide`, `SCDisplay.width`), so every HiDPI
+  display streamed at half resolution on each axis and "Performance" at a
+  quarter. Capture and encode now both size from the display mode's backing
+  scale. Not yet verified on a HiDPI display.
+- Every stream now fits a 4K-UHD pixel budget (8.3 MP). This already applied
+  to app windows; it now also bounds a display's backing pixels, so a 5K or 6K
+  panel on Ultra is scaled to about 3840×2160 rather than sent at 14.7 MP or
+  more. Displays keep any long edge (a 5120×1440 ultrawide is unchanged).
+- The encoder no longer stays at a reduced bitrate after a restart. It
+  re-applied the last adaptive bitrate to every rebuilt session while the new
+  rate controller assumed full bitrate and never raised it, so one congestion
+  dip could pin the bitrate through later quality changes, display switches,
+  window resizes and new sessions.
+- Switching displays keeps the session's quality preset instead of dropping a
+  Quality or Ultra session to Balanced.
+- Ending a client's session now stops its extra displays and its display
+  observer. Extra displays used to keep capturing after the client left, and
+  a leftover observer could start whole-display capture in a later app-window
+  session when a monitor changed. An app-window session with no window picked
+  never falls back to capturing a display.
+- A window start or display switch that fails no longer leaves capture running
+  behind the failure it reports.
+- Stop pressed while the host is still starting is honoured.
+- An offer configures the session only after the trust gate passes, and the
+  same device ID under a different key is no longer treated as the connected
+  device.
+- The Mac's clipboard is not read or written by a client while the Mac is
+  locked, and not written in view-only mode (which includes the Mac App Store
+  edition).
+- The port-conflict message no longer tells users to quit discontinued apps as
+  if they were current, and Copy Pairing Address is disabled when there is no
+  address to copy.
+
+Vamp Control (iOS and macOS):
+
+- A quality preset lowered during a network dip recovers. Recovery ignored an
+  "excellent" link, could not return to a preset it had already restored once,
+  paused while the remote screen was still, and judged loss over the whole
+  session instead of the last minute.
+- The loss estimate follows a host encoder restart instead of freezing at its
+  last value.
+- No keyframe is requested while the remote screen is simply not changing, so
+  the first frame after a pause is no longer a forced keyframe.
+- A connection the other side closed is noticed at once rather than after a
+  12 to 30 second watchdog. On iOS a lost session now reconnects after the
+  transport's own retries run out instead of showing "reconnecting…"
+  indefinitely.
+- Messages name Vamp Sync and its approval step, and drop the raw "Timeout:"
+  prefix. Remote unlock reports when the Mac is still locked.
+- iOS: the screenshot result is shown, the display button is disabled with one
+  display, and the session bar's icon buttons have accessibility labels.
+- iOS: taps follow the display on screen. The input mapping was rebuilt only
+  on a size change, so after switching displays, or focusing one in Show All
+  Displays, taps kept landing on the previous display until the phone was
+  rotated.
+- iOS: the free daily allowance stops counting when the app is backgrounded.
+- A video view draws the frame already decoded when it appears, instead of
+  staying black until the Mac's screen changes, and a decoder session that
+  failed to start is retried on the next keyframe.
+- Ending a session while a reconnect is in flight no longer brings it back on
+  the next foreground.
+- macOS: closing a remote app and forgetting a Mac ask first, Restore Purchase
+  shows its result, and the access button is disabled in the view-only edition.
+- A second quality change within ten seconds is held and sent when the host
+  will accept it. The host dropped it silently, so the picker showed a preset
+  the Mac was not using.
+- A display switch the Mac refuses (locked, or two picks within two seconds)
+  times out instead of leaving the session waiting, which on macOS kept remote
+  input off.
+- macOS: a click on the black bars around the picture no longer clicks on the
+  Mac, modifier keys are released when focus leaves the stream (Command-Tab
+  used to leave Command held on the Mac), and turning off Show All Displays
+  maps clicks back to the primary display.
+
+### Vamp Sync 4.0.0 (build 81)
+
+- The website edition uses the Vamp Host bundle ID, `com.mesutcy.remotedesktop.host`, and its
+  legacy identity. Existing Vamp Host installs can update to it in place.
+- Updates come from `https://mesut.uk/appcast.xml`, signed with the Vamp Host update key.
+- Build 80 stays published for the earlier `minhost` website edition.
+
+### Vamp Sync 4.0.0 (build 79)
+
+- Mac App Store edition: label the panel "View Only · Mac App Store edition",
+  replace the separate View Only and website-edition cards with one "Two
+  editions of Vamp Sync" comparison card, and add a menu-bar link to the
+  full-control website edition. Links open the browser only.
+
+### Vamp Control iOS 4.0.0 (build 46)
+
+- iPhone Duo polish, verified on the iOS 27.1 Duo simulator in every posture:
+  - The unfolded inner panel is two cover-sized pages. Control now detects the
+    fold with `UIHingeInteraction` and splits the home exactly at the crease,
+    so nothing straddles it, open or half-open: greeting, status, this
+    device's fingerprint, and Add a Mac on the left page; your Mac fills the
+    right page. Sheets already open on one page.
+  - Panels with no top inset (both Duo screens, landscape iPhone) get a proper
+    top margin instead of a toolbar pressed against the edge.
+- A "This iPhone" card shows the device fingerprint to match on your Mac.
+
+### Vamp Sync 4.0.0 (build 80)
+
+- Release the single-device slot when its device is gone. A phone that dropped
+  mid-setup (app switched away, updated, or cancelled) used to hold the slot
+  forever, so every later device was told "already connected to another
+  device". A different device now takes over once the old session has no live
+  transport or has been silent past the liveness timeout; a just-approved
+  session keeps the slot for 30 s while it negotiates.
+
+### Vamp Control iOS 4.0.0 (builds 44–45)
+
+- Verified on a real iPhone Duo (iOS 27.1 simulator): the unfolded panel gets
+  a tall hero that fills its height; the cover screen status line drops the
+  route instead of truncating.
+- The local pointer now follows the picture's scale (about the size of the
+  Mac's own cursor, 11–22 pt) instead of a fixed 18 pt arrow that looked huge
+  over a phone-sized desktop.
+- App Store: iPhone Duo screenshots, a 21:9 product-page header video, and a
+  3:2 search-results video.
+
+### Vamp Control iOS 4.0.0 (build 43)
+
+- Redesign Add a Mac: glass source tiles for Vamp Sync and Vamp Companion, a
+  scan tile, live nearby Macs, glass address and code fields, and a compact
+  Connect that appears only when there is something to connect to.
+- The wide hero grows into spare height on iPad and the unfolded iPhone Duo.
+- New store screenshots: real captures of the build, framed with localized
+  captions in six locales (sources in the build 43 release folder).
+
+### Vamp Control iOS 4.0.0 (build 42)
+
+- Fix pairing with Vamp Sync stalling on "Connecting" after approval: Control
+  now requests Sync's desktop stream (Sync grants it only to clients that
+  advertise desktop control), and an app-windows-only Sync gets a clear
+  update message instead of an endless wait. After approval the connecting
+  card says so and stops asking to verify.
+- Cancelling a connection no longer shows a CancellationError.
+- Premium live home: floating glass top bar with the Vamp mark, date and
+  greeting header, live status, Online/Network/Relay chips, an animated
+  display with pulse rings and a READY chip, drifting backdrop light, and a
+  staggered entrance. Motion respects Reduce Motion.
+- Clear Liquid Glass surfaces with hairline rims, mono labels, full-width
+  notices, and a grouped fingerprint that matches Vamp Sync's panel.
+- Adapt to iPhone Duo: one column on the 466 pt cover, two panes from 700 pt,
+  and a side-by-side hero on the 951 pt unfolded panel.
+- Add Mac explains Vamp Sync editions (website: keyboard and pointer control;
+  Mac App Store: View Only).
+
+### Vamp Control 4.0.0 (build 60)
+
+- Ship as Vamp Control 4.0 on the Mac App Store. The "Don't have Vamp Sync
+  yet?" card now explains the website edition (keyboard and pointer control)
+  versus the View Only Mac App Store edition and links to the comparison.
+
+### Vamp Sync 4.0.0 (build 75)
+
+- Require an embedded App Store distribution profile for delivery verification. Build 75 corrects build 74's missing-profile TestFlight warning (ITMS-90889).
+
+- Make App Sync the update to the existing Vamp : Host Mac App Store listing,
+  retaining its bundle ID, host identity, trusted peers, and session storage.
+- Keep website Sync's separate identity and shared version/build settings, and
+  enforce the existing App Sandbox, View Only, and App Store update policies.
+
+### Vamp Control macOS
+
+- Remove the black canvas from the Control icon and fit the transparent mark to
+  the app, splash, and site. Simplify the Mac launch splash around that mark.
+
+## Vamp Sync 2.3.1 (build 72) — 2026-10-01
+
+- Add Sparkle 2.10 updates, with manual checks in the menu-bar menu and popover
+  settings, an automatic-check preference, and EdDSA verification before extraction.
+- Sign and notarize the universal Intel/Apple Silicon app with Developer ID.
+- Add an account-independent release script for Xcode Organizer or notarytool,
+  with stapled-ticket validation, signed update feeds, checksums, manifests, and
+  Sparkle license and SBOM entries.
+- Recognize notarized Sync downloads in the website's release selector.
+
+## Vamp Stream 0.1.23 (build 53) and Vamp Sync 2.3.0 (build 71) — 2026-09-23
+
+### Added: Settings, light mode, and a plain background in Vamp Stream
+
+- The home's "Change host" button is now **Settings**: which Mac app to show (Vamp Sync, Vamp
+  Assistant, or both), **Appearance** (System, Light, Dark — Dark stays the default), and a
+  **Background artwork** switch. Every choice applies as it is made.
+- With the artwork off the app sits on a plain system background and every glass surface becomes
+  an opaque card. Clear glass over a flat fill has nothing to refract and reads as a missing card.
+- Home, onboarding, the app browsers, connecting states, and gesture help follow the chosen
+  appearance. The live video surface stays dark in every mode, like any video player.
+- The Assistant app browser drew Vamp Control's wallpaper instead of Stream's own artwork.
+
+### Added: forget a Vamp Sync Mac
+
+- Vamp Sync Macs had no way to be removed. Each row now has a ••• menu (long-press on grid tiles)
+  with **Copy address** and **Forget this Mac**. A forgotten Mac stays hidden even while it is
+  announcing itself on the network, and comes back when it is added again by QR code or address.
+
+### Fixed: Vamp Stream
+
+- **Pairing asked for a comparison the phone could not make.** Vamp Sync's approval card says to
+  compare the fingerprint "with the one shown on the device", but Stream never showed one. The
+  connecting screen now shows this device's fingerprint while approval can be pending, grouped
+  exactly like Sync's card.
+- **A stream could stay black until "Retry video".** After a window resize VideoToolbox could fail
+  every frame of the session (-8969) and a keyframe with the same parameter sets never rebuilt it.
+  Output-callback failures now request a keyframe, and after ten in a row the next keyframe
+  rebuilds the session — measured recovery about one second instead of a manual retry.
+- **The hide-controls key was cut off** on a 402 pt iPhone: the deck overflowed and the key sat
+  half off-screen with no scroll indicator. The divider and hide key are pinned outside the
+  scroll area and the key gaps tightened (keys stay 44 pt), so the deck fits.
+- The "could not be resized safely" notice covered the streamed window's bottom row until the next
+  resize result; it now fades after five seconds.
+- The gesture-help Done button rendered as a washed-out grey instead of a solid button.
+- VoiceOver could reach the home screen behind the launch splash.
+- Connection errors pointed at a "Vamp host window" and at the discontinued Vamp Host and Vamp
+  Terminal Host; they now name Vamp Sync and say to open it from the Mac's menu bar.
+- Mac rows drop the "App windows ·" prefix every Sync Mac shared, so the address fits one line.
+- App icons already received are kept when a later refresh arrives without them (an older host
+  sheds icons to stay under the control-channel limit), on both the Sync and Assistant lists.
+
+### Fixed: Vamp Sync
+
+- The menu-bar icon shows its warning dot when Screen Recording or Accessibility is missing, not
+  only inside the closed panel.
+- The pairing QR code no longer points at a down interface or a self-assigned 169.254 address.
+- Revoking a trusted device asks for confirmation first; it disconnects that device immediately.
+- The open panel no longer re-renders itself (QR code included) every second while idle.
+- Version restored to the public track: a project regeneration from a stale spec had reset Vamp
+  Sync to 3.2.0 build 2; this is 2.3.0 build 71, following build 70.
+
+## Vamp Stream 0.1.13–0.1.22 and Vamp Sync builds 64–70 — 2026-09-05 to 2026-09-20
+
+### Fixed: every app target in the repository can be built again
+
+- **No iOS target in this repository built.** SwiftTerm 1.19.0 added a SwiftPM build-tool plugin
+  whose `SwiftTermBuildInfoGenerator` is a macOS host executable; for an iOS destination Xcode
+  looks for it in `Build/Products/Debug` while only `Debug-iphonesimulator` is produced, so every
+  iOS build failed with `Build input file cannot be found`. All specs are pinned to 1.18.0, the
+  last release without that plugin. Vamp Stream drops the dependency entirely — its only importer
+  was Terminal Mode, which Stream never mounts.
+- **Vamp Sync could not be built at all.** Its whole implementation lives behind
+  `#if VAMP_MINI_HOST`, and no spec defined that flag, so the product was compiled out of every
+  target; `xcodebuild -scheme VampMiniHost` — the command in AGENTS.md and in CI — failed with
+  "does not contain a scheme named VampMiniHost". The Info.plist and entitlements were still in
+  `Configuration/`; only the target was missing. Same for `VampTerminalHost` and `VampTerminalApp`.
+  All three targets and schemes are restored, so the documented build set and the CI workflow now
+  match what the project actually contains.
+- **Three targets imported products they never declared** — `iOSRemoteApp` imported `SharedUI`,
+  and both Mac hosts imported `HostWidgetShared` and `SharedUI`. Each failed at dependency
+  scanning; on iOS the failure was hidden behind the earlier SwiftTerm one.
+- `iOSRemoteApp` compiled Vamp Terminal's views, which reference `VampTerminalDesign` from a
+  module it does not link. `vampstream-project.yml` already excluded exactly that file set with a
+  comment claiming it "matches the iOSRemoteApp file set" — iOSRemoteApp had no such list.
+
+### Changed: Vamp Stream carries only the code it runs
+
+- Vamp Stream compiled Vamp Control's entire tab UI (`Views/`) and first-run flow (`Onboarding/`)
+  — about 6,000 lines it can never display, since it has its own root and its own onboarding.
+  Both are excluded, which is also what lets the SwiftTerm dependency go.
+- Removed the unreachable whole-display Remote Control destination. Its only entry point was
+  inside a dead view, while `AssistantExperience` still *defaulted* to it — the same trap that
+  previously sent a freshly paired Mac to the whole desktop instead of the app browser. Vamp
+  Stream is the app-window client; whole-desktop control is Vamp Control's job. The Assistant
+  surface still falls back to `BeetCodeRemoteView` for the locked and permission states.
+- Deleted ~250 lines of unreachable views from `VampStreamConnectView` and the unused
+  load/save wrappers around `@AppStorage` keys. Their tests now assert the contract the app
+  actually depends on — the key names and the fallback behaviour — instead of wrappers nothing
+  called.
+
+### Fixed: the two stream surfaces stop drifting apart
+
+- **The Assistant path drew a hand-written copy of the shared control deck**, which the shared
+  component's own documentation warns is "how the Sync path and the Assistant path drift into
+  looking like different apps". They had: a different hide/reveal button, a different reset
+  control, different tap targets. Both paths now draw `AppStreamChromePill`. The height the
+  picture reserves for the deck also moved onto that component, so the deck and the space left
+  for it can no longer disagree.
+- The gesture help — shown automatically on a user's first ever stream — told them to "Choose Fit
+  window" from a menu that had no such item on the Sync path. Both menus now offer the same two
+  picture actions, and the help describes what is actually there.
+- The same action had two names ("Original Size" / "Original proportions") and picture quality had
+  two different mental models ("Quality" presets vs "Resolution" in pixels). Both are now
+  "Picture quality", named for the outcome, with the resolution kept as secondary detail on the
+  Assistant path so nothing is lost. The Sync picker's "Auto" named a mechanism that preset does
+  not have — it maps to the fixed balanced preset — and is now "Balanced".
+- Favourites and recents, Bluetooth mouse and keyboard, the first-run gesture help, and a manual
+  "Refresh video" existed only on the Sync path. All four now work on both, and favourites are
+  shared: both browsers key on the bundle identifier, so a starred app stays starred whichever
+  kind of Mac it is on.
+
+### Fixed: touch targets, splash, and design tokens in Vamp Stream
+
+- **The bottom control deck was 30 pt tall** — under the 44 pt minimum, floating over video with
+  nothing forgiving around it, so near-misses landed on the streamed Mac instead. The reveal
+  button that is the only way back from hidden controls was 32×32. The keyboard deck was worse:
+  every modifier, key, shortcut and header chip sat between 26 and 33 pt. All are 44 pt now, with
+  the glyphs kept small.
+- **The splash could not be skipped** and cost 1.7 s on every cold launch — it already swallowed
+  taps, it just did nothing with them. A tap now dismisses it. Reduce Motion used to remove the
+  moving pieces but keep the full wait, which is the opposite of what the setting asks for; it now
+  shows the finished artwork and leaves almost immediately. `SplashTiming` listed marks the code
+  did not use and had drifted from it (the portal was declared at 450 ms and appeared at 370 ms);
+  the schedule is now what the animation actually follows.
+- **`PR.r12` was 16**, so a view that wanted 12 points could not use the token and hardcoded the
+  literal instead — which is how this tree accumulated nine different raw corner radii beside a
+  design system that already had a scale. It is `PR.rCard`, and Vamp Stream's 28 remaining raw
+  radii are tokens.
+- The keyboard deck was lowercase monospace ("keyboard", "hide kb", "type and send") inside an app
+  that is otherwise sentence-case SF Pro, and the gesture help rendered in stock grouped-Settings
+  colours on top of a black custom UI. Both now use the app's own type and surfaces. Modifier keys
+  show the Mac's real glyphs (⌘ ⇧ ⌥ ⌃) with spoken names for VoiceOver, and shortcut chips name
+  what they do instead of running glyph and label together ("⌘⇧3 shot").
+
+### Added: Vamp Stream pointer input reaches Vamp Control parity
+
+- **A paired Bluetooth mouse barely worked in Stream.** `BluetoothInputController` was bound to
+  Vamp Control's view model, so Stream could not use it at all: the hover cursor moved, but the
+  left/right/middle buttons and the scroll wheel went nowhere, a physical keyboard produced
+  nothing, and there was no sensitivity control. The bridge is now a shared
+  `RemotePointerInputSink` protocol that both clients implement, so one implementation serves
+  both apps. Stream observes paired devices for the session and exposes the same status sheet with
+  mouse and scroll sensitivity sliders.
+- **Stream had no haptics at all,** so a click that landed on the Mac felt identical to a swipe
+  that did not. It now uses Vamp Control's exact impact styles: light for single, two-, and
+  three-finger taps, medium for double-tap, soft and rigid for drag-lock release and engage.
+- The velocity-acceleration curve was inlined three times with the same magic constants (Control,
+  Stream's Sync path, and Stream's Assistant path), which is how a paired mouse drifts into
+  feeling different per app. It is now one shared `PointerDynamics` helper, so the three paths are
+  identical by construction rather than by coincidence.
+
+### Fixed: one control deck and a portrait Mac window on the Sync path
+
+- **Streaming an app from Vamp Sync had no bottom control deck.** The Assistant path drew the
+  bottom pill (close, annotate, keyboard, window sizing, fit, hide) while the Sync path kept a
+  crowded top bar with its own keyboard button and a hidden ••• menu — the two host paths read as
+  different apps, and the controls people reach for mid-stream were missing. The deck is now one
+  shared component (`AppStreamChromePill`) that the Sync path draws too, with the top bar reduced
+  to navigation and the stream-options menu so no control is repeated.
+- **A Mac window could stay landscape on a portrait phone.** The client only asserted the phone's
+  shape once the host had already acknowledged adaptive sizing, so a stream that began before the
+  video surface reported its size left the window at its original shape and the phone rendered it
+  letterboxed. After the host proves it supports adaptive sizing, the client now compares the
+  returned window's aspect against the device viewport and re-asserts the measured shape once per
+  window — it never loops on a Mac that legitimately keeps a different shape, and never overrides
+  an explicit Original Size choice.
+- Vamp Stream updated to 0.1.22/build 43.
+
+### Fixed: the streamed pointer could wedge the UI in an update loop
+
+- **A cursorless stream could freeze the app at ~100% CPU instead of drawing.** The local pointer
+  model assigns its `@Published` position in `setSurface`, and the mirror/control surfaces call
+  that from inside a `GeometryReader` view builder. Publishing during a view update re-runs the
+  body, the body calls `setSurface` again, and the loop never settles — the control screen looked
+  frozen and never answered a tap. `setSurface` now compares before assigning (an `@Published`
+  setter has no equality check of its own), and Vamp Assistant's control surface places the cursor
+  from a lifecycle hook rather than the builder.
+- Vamp Stream updated to 0.1.22/build 44.
+
+### Fixed: the Mac window actually takes the phone's shape, at the phone's resolution
+
+- **The resize was applied in the wrong order, so macOS clamped it.** `HostSessionCoordinator`
+  asked AX for the new window *size* first and moved the window afterwards. AppKit constrains a
+  window's frame to the screen when its size is applied, so a window sitting low on the display
+  had its height silently cut: the host then honestly reported "The Mac kept a different window
+  shape", and the capture stayed small enough that the phone upscaled it — the soft, letterboxed
+  picture behind both reported symptoms. The window is now anchored inside the usable area first,
+  the size is applied second, the size is re-asserted once for apps whose AX set lands before the
+  move settles, and one bounded retry re-anchors from the *accepted* bounds. The retry decision
+  and the user-visible notice share one pure `aspectMismatch` rule, so "we retried" and "we told
+  the user" can never disagree.
+- **A window the Mac could not reshape cannot be fixed locally, so the local picture modes are
+  gone.** The Sync deck had grown four sizing-looking controls — Mac window sizing, Fit Display /
+  Fill Screen, a fit-window reset, and a Fill screen remedy on the notice — and none of them
+  changed the outcome: they crop or zoom a window the Mac had already declined to reshape, which
+  leaves the geometry the user was actually complaining about untouched. The deck now exposes
+  exactly two window-sizing choices, **Adaptive resize** and **Original Size**, and the picture is
+  always aspect-fit. The real fix is the host-side resize above.
+- **Window captures are clamped to what the pair can actually decode.** `ultra` passed the
+  source's native pixels straight through, so a window on a 5K/6K display could build a frame
+  past the client's hardware decoder (H.264 level 5.2 is 4096×2304; the M4 media engine encodes
+  H.264/HEVC to 4K60). Window streams are now capped at the shared 4K UHD envelope
+  (3840 px long edge, 8.29 MP, even axes, aspect preserved, shrink-only). Display streams are
+  untouched. The window long-edge cap also moves 1400 → 1440 points: at 2x that is 2880 px, just
+  over an iPhone 17 Pro Max's 2868 px native screen, where the old cap produced 2800 px and made
+  the phone upscale by 2.4%.
+- **The control deck no longer sits on top of the streamed app.** The deck floats over the
+  bottom of the video surface, so the picture was drawn underneath it: the streamed app's own
+  bottom controls (a send button, a toolbar) landed under the deck's eye and hide controls, and
+  the Mac was asked to match an area taller than the phone could actually show — which is what
+  left a black band above the picture. The surface now reserves the deck's band, the picture is
+  drawn at exactly its fitted size and pinned to the **top**, and the input mapper is given that
+  same rect so touches still land where they are drawn. Any letterbox slack now falls below the
+  picture, behind the deck, instead of above it.
+- **A few percent of shape shortfall no longer shows as a black gap.** A Mac app can decline the
+  exact shape it was asked for by a small margin — an app minimum, or a screen whose visible frame
+  is shorter than its bounds — and even the fixed host can land a few percent short. That residue
+  is now absorbed by scaling the picture so its **height matches the surface exactly**: the gap
+  above the control deck disappears, and because nothing is lost vertically the streamed app's own
+  bottom controls keep their place. The small overflow crop falls on the left and right edges
+  (~3% split across them). The input mapper and the cursor overlay follow the same rect, so touches
+  and the local pointer stay exact. A shortfall larger than 12% still
+  letterboxes honestly rather than cropping most of the picture away.
+- **The stream keyboard deck no longer appears and then vanishes.** The deck was positioned
+  twice: the surface ignored the keyboard safe area *and* a UIKit keyboard-inset observer pushed
+  it up by the keyboard's height, so the panel ended up above the top of the screen. The surface
+  now ignores only the container's bottom inset, iOS places the deck directly above the system
+  keyboard once, and the manual inset observer is gone along with its dead view. The deck's
+  optional rows (quick actions, shortcuts, helper text) degrade through `ViewThatFits` so it
+  always fits the space above the keyboard, while the header and composer keep a stable identity
+  so the text field never loses first responder mid-sentence. The Assistant app-stream surface had
+  the same double shift and got the same fix.
+- Vamp Stream updated to 0.1.22/build 47. The resize fix is host-side, so it needs the matching
+  Vamp Sync build as well: an older installed Sync (build 68) keeps clamping the window height,
+  which is why the notice and the top letterbox bar survive a client-only update.
+- Vamp Sync host updated to 2.3.0/build 69.
+
+### Changed: the streamed pointer glyph is black, not white
+
+- **The local pointer disappeared into bright Mac content.** Over a cursorless stream Stream (and
+  Vamp Control, which shares the overlay) draws the pointer itself, and a solid white body washed
+  out against documents and light app chrome. The glyph is now a solid black body with a hairline
+  white outline and the same soft shadow: black reads as the pointer on light content, while the
+  outline keeps it findable on dark terminals and dark-mode apps. Vamp Assistant's iOS app draws
+  the same glyph.
+
+### Changed: calmer, hosts-first connect home
+
+- **Hosts are the primary content.** The home used to lead with two always-expanded pairing forms,
+  so a returning user scrolled past setup they had already finished to reach their Macs. Configured
+  Macs now come first, above a "Pair a host" divider, with both pairing cards collapsing to compact
+  headers and the version string moved to a subdued footer instead of the page title.
+- Both pairing cards share one reusable shell: the whole header is a single disclosure button with
+  the chevron as part of its label, and collapsed means header only — the body leaves layout and the
+  accessibility tree rather than hiding behind opacity. Each provider persists independently, and the
+  first-run default is latched once so a host briefly dropping off the network cannot flip the cards
+  open again.
+- Rows and forms sit on quiet opaque content surfaces with hairline borders instead of per-row glass,
+  which made every app look like an equally important floating control. The light-scheme wallpaper
+  scrim was 0.04 — bright enough for artwork to wash out row labels — and is now a real scrim.
+- The app pickers for both providers share one section surface, heading style, header metrics, and
+  search-field inset, so they no longer look like separate mini-apps. App icons are fitted rather
+  than stretched, window titles replace raw pixel dimensions in lists, and the "Installed · tap to
+  open" narration is gone from every installed row.
+
+### Fixed: app-list icons publish at the resolution the row renders
+
+- **The Stream app list looked low-resolution.** The browser draws every icon inside a fixed
+  42 pt row, so a 3x phone samples it into 126 device pixels — and the hosts were serving tiles
+  well below that (Vamp Sync 32 px, Vamp Assistant 48 px), which the row then upscaled. Both
+  hosts now publish a 192 px tile: ~1.5x headroom over the 3x row, and the largest tile the
+  transport can still carry. The list is paginated under a 112 KB per-page budget inside the
+  control channel's 128 KB per-message cap, and an icon that cannot fit a page is silently
+  dropped to a placeholder row — measured over a full `/Applications`, 192 px keeps every real
+  icon inside one page (~80 KB base64 worst case), while 256 px pushes the heaviest ones
+  (Xcode ≈ 138 KB) past the budget and costs that app its icon entirely.
+- Vamp Sync host updated to build 68.
+
+### Fixed: a busy Mac no longer disables the whole home
+
+- A Vamp Sync host-busy rejection was merged into the Assistant error slot
+  (`assistant ?? coordinator`), so a Vamp Sync problem rendered as a **Vamp Assistant** problem and
+  as an unrelated page-wide card between provider sections. Errors now route to their own provider,
+  and "Mac is in use" is scoped to the single Mac that refused — the others stay usable.
+
+### Fixed: portrait app-window fit restored on both host paths
+
+- **Vamp Stream letterboxed Mac apps again.** The shared adaptive window policy had replaced the
+  aspect-exact fit with a width floor (first the window's original width, then a 600-point
+  "readable" floor), so a 1100×700 editor on a 1440×900 Mac became a 600×824 window. That is
+  wider than an iPhone's portrait aspect, and an aspect-fit renderer shrank it into a strip with
+  black bars above and below — about 61% of the screen. `AdaptiveWindowSizing` now matches the
+  viewport aspect exactly and scales that shape into the host display, bounded by the 1400-point
+  decoder cap, so the same editor becomes a tall, narrow 380×824 column and the phone renders it
+  edge-to-edge with no bars.
+- Sizing is app-agnostic again. The Safari-only 600-point exception was the last per-app width
+  special case, and any width floor above `height × aspect` reintroduces the letterbox bars.
+- Landscape viewports still keep their own aspect; a portrait measurement can never be reordered
+  into a landscape request. Stream's measured-viewport gate now rejects invalid, zero, and
+  non-finite sizes and coalesces sub-2-point layout noise, so keyboard animations and control
+  overlays cannot drive a Mac window-resize loop.
+- The legacy `clientViewportAspect` hint is still withheld until the host acknowledges sizing
+  support, so an older Vamp Sync keeps the window at its original size rather than performing the
+  historical narrow-window resize.
+- Vamp Sync resize feedback compares the accepted window shape against the requested shape, and
+  Assistant compares against the expected size from the same shared policy, so the "different
+  window shape" notice only appears when the Mac genuinely could not honor the request instead of
+  on every portrait fit.
+- Vamp Assistant streams whose host reports no usable display bounds now still ask for the phone's
+  aspect. The previous fallback took `max(viewportAspect, originalAspect)`, which kept a landscape
+  Mac window landscape — the exact strip this resize exists to avoid.
+- The host now logs one consolidated sizing line per resize: measured viewport, resolved target,
+  requested and accepted bounds, and whether the resize applied. Geometry numbers only — never
+  window titles or content.
+
+### Fixed: Vamp Stream could not reconnect to Vamp Sync
+
+- **A dead session held the host forever.** The client-liveness watchdog required a non-nil
+  last-activity stamp, so a session whose data channel never opened was never reclaimed. A
+  half-open transport still reported `.connected`, capture and encode kept running for nobody, and
+  the retained `activeSessionID` made the host answer every real client with "already connected to
+  another device" until the host process was quit. Silence is now measured from session start, so
+  a session that receives no traffic within the timeout is torn down. Extracted as a pure,
+  unit-tested `HostClientLiveness` rule.
+- **The connection budget was too tight for a legitimate reconnect.** Vamp Sync allowed 5 signaling
+  connections per IP per minute, but a client reconnect sweep can spend far more: up to three
+  `reconnectLast` attempts across several candidate endpoints (LAN and Tailscale), each possibly
+  opening a TLS socket and a plaintext one. Once exhausted, every later attempt was refused at TCP
+  accept — before the client could send anything identifying it as trusted — which is an
+  unrecoverable lockout rather than rate limiting. The budget is now 30 per minute.
+- Clearing a peer's connection budget is gated on actual trust approval. It previously fired on any
+  message that merely passed signature verification, but a signature only proves the sender owns
+  the key it signed with — anyone can generate a keypair. Only fingerprints the trust gate has
+  approved now clear their budget.
+- Vamp Sync host updated to build 67; Vamp Stream updated to 0.1.21/build 35.
+
+### Stream portrait fit and controls
+
+- Selected Mac apps resize to a portrait shape that fits iPhone screens again. Vamp Sync keeps the adaptive sizing mode across selections and Assistant app streams request the portrait-fit resize as soon as the app opens.
+- Stream keeps one control deck: the bottom bar owns close, annotate, keyboard, fit/sizing, and hide controls, dead placeholder buttons are gone, and the app-stream top bar no longer repeats them.
+- Stream sizing notices float over the video instead of reserving a permanent strip, so the picture keeps its full viewport.
+
 ### Vamp Control macOS
 
 - Remove the black canvas from the Control icon and make the artwork fill its

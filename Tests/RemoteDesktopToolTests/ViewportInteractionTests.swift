@@ -45,6 +45,86 @@ final class ViewportCoordinateMapperTests: XCTestCase {
 
     // MARK: - Fitted Content Rect / Letterboxing
 
+    /// The Stream surface draws the picture at exactly this size and pins it to the top, so the
+    /// render layer's own centering has nothing left to split: any letterbox slack falls below
+    /// the picture, behind the control deck, instead of showing as a black band above it.
+    func testAspectFitSizePreservesAspectAndNeverOverflows() {
+        // Portrait phone area, a Mac window the host refused to reshape (0.53 rather than 0.46).
+        let area = DesktopSize(width: 440, height: 868)
+        let wideWindow = DisplayMappingEngine.aspectFitSize(
+            streamSize: DesktopSize(width: 667, height: 1_258), container: area)
+        XCTAssertEqual(wideWindow.width / wideWindow.height, 667.0 / 1_258.0, accuracy: 0.001)
+        XCTAssertEqual(wideWindow.width, 440, "a wider-than-area window fills the width")
+        XCTAssertLessThan(wideWindow.height, area.height)
+        // The slack the top-pinning turns into bottom space.
+        XCTAssertGreaterThan(area.height - wideWindow.height, 0)
+
+        // A window the host shaped correctly fills the area exactly: no bars anywhere.
+        let matched = DisplayMappingEngine.aspectFitSize(
+            streamSize: DesktopSize(width: 440, height: 868), container: area)
+        XCTAssertEqual(matched.width, area.width, accuracy: 0.5)
+        XCTAssertEqual(matched.height, area.height, accuracy: 0.5)
+
+        // Taller-than-area content is limited by height, never upscaled past the container.
+        let tallWindow = DisplayMappingEngine.aspectFitSize(
+            streamSize: DesktopSize(width: 600, height: 2_400), container: area)
+        XCTAssertEqual(tallWindow.height, area.height)
+        XCTAssertLessThanOrEqual(tallWindow.width, area.width)
+
+        // Degenerate input is passed through rather than producing a zero-sized frame.
+        XCTAssertEqual(
+            DisplayMappingEngine.aspectFitSize(streamSize: .zero, container: area), area)
+        XCTAssertEqual(
+            DisplayMappingEngine.aspectFitSize(streamSize: DesktopSize(width: 100, height: 200), container: .zero),
+            .zero)
+    }
+
+    /// A Mac app can decline the requested shape by a few percent. That residue must not show as
+    /// a black band between the picture and the control deck: a small height shortfall is covered,
+    /// which makes the height exact (so the app's own bottom controls keep their place) and crops
+    /// the left and right edges slightly. A large shortfall still letterboxes honestly.
+    func testSmallShapeShortfallIsCoveredWithoutMovingTheBottomEdge() {
+        let area = DesktopSize(width: 440, height: 868)
+
+        // The reported case: a wider-than-surface window came back ~3% shorter than requested,
+        // which used to leave a ~28 pt black gap above the deck.
+        let shortfall = DisplayMappingEngine.placePicture(
+            streamSize: DesktopSize(width: 440, height: 840), container: area)
+        XCTAssertEqual(shortfall.size.height, area.height, accuracy: 0.5,
+            "the height must be exact so the app's bottom controls stay clear of the deck")
+        XCTAssertGreaterThan(shortfall.size.width, area.width, "covering overflows the width")
+        XCTAssertGreaterThan(shortfall.croppedFraction, 0)
+        XCTAssertLessThan(shortfall.croppedFraction, 0.12)
+        XCTAssertEqual(shortfall.size.width / shortfall.size.height, 440.0 / 840.0, accuracy: 0.001)
+
+        // An exact match needs no crop.
+        let matched = DisplayMappingEngine.placePicture(
+            streamSize: DesktopSize(width: 440, height: 868), container: area)
+        XCTAssertEqual(matched.croppedFraction, 0)
+        XCTAssertEqual(matched.size.width, area.width, accuracy: 0.5)
+        XCTAssertEqual(matched.size.height, area.height, accuracy: 0.5)
+
+        // A window that kept a landscape shape is far past tolerance: letterbox it rather than
+        // zooming into its middle.
+        let landscape = DisplayMappingEngine.placePicture(
+            streamSize: DesktopSize(width: 1_400, height: 980), container: area)
+        XCTAssertEqual(landscape.croppedFraction, 0)
+        XCTAssertLessThan(landscape.size.height, area.height)
+        XCTAssertEqual(landscape.size.width, area.width, accuracy: 0.5)
+
+        // A surface narrower than the picture is never covered: that would crop the top and
+        // bottom, where window chrome and composers live.
+        let tallWindow = DisplayMappingEngine.placePicture(
+            streamSize: DesktopSize(width: 420, height: 868), container: area)
+        XCTAssertEqual(tallWindow.croppedFraction, 0)
+        XCTAssertEqual(tallWindow.size.height, area.height, accuracy: 0.5)
+
+        // Degenerate input never produces a zero frame.
+        let degenerate = DisplayMappingEngine.placePicture(streamSize: .zero, container: area)
+        XCTAssertEqual(degenerate.size, area)
+        XCTAssertEqual(degenerate.croppedFraction, 0)
+    }
+
     func testFittedContentRectWiderDisplayThanView() {
         // 1920×1080 display (16:9) in a 390×844 view (≈0.46:1) → pillarbox
         let mapper = makeMapper()

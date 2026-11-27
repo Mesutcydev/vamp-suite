@@ -56,7 +56,8 @@ final class ClientAudioRenderer: ObservableObject {
     func receive(_ message: AudioFrameMessage) {
         guard isActive, !isMuted, message.codec == "aac" || message.codec == "opus" else { return }
 
-        if message.frameID + 4 < lastFrameID { return }
+        // `frameID + 4` traps on a near-max ID from a malformed frame.
+        if lastFrameID > message.frameID, lastFrameID - message.frameID > 4 { return }
         lastFrameID = max(lastFrameID, message.frameID)
 
         // sampleRate/channelCount come from the remote peer — invalid values make AVAudioFormat

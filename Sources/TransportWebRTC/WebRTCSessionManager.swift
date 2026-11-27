@@ -15,6 +15,7 @@ public final class WebRTCSessionManager: @unchecked Sendable {
     private var controlChannelAuthTokenHex: String?
     private var outboundControlAuthCounter: UInt64 = 0
     fileprivate let lock = NSLock()
+    private let controlSendLock = NSLock()
     fileprivate let logger = Logger(subsystem: "com.remotedesktop.transport", category: "WebRTCSession")
 
     // MARK: - Session State
@@ -451,6 +452,12 @@ extension WebRTCSessionManager: WebRTCSessionManaging {
         guard let dc, dc.readyState == .open else {
             throw WebRTCSessionError.dataChannelUnavailable
         }
+        // Counter assignment and the send are one step. Concurrent senders used to take their
+        // counters in one order and reach the wire in another, and the host drops any envelope
+        // older than its watermark, so commands such as keystrokes were lost. `dc.send` only
+        // queues, so holding this lock across it is cheap.
+        controlSendLock.lock()
+        defer { controlSendLock.unlock() }
         var outbound = message
         if let token = withLock({ controlChannelAuthTokenHex }),
            message.kind.requiresControlChannelAuthentication {
@@ -469,6 +476,7 @@ extension WebRTCSessionManager: WebRTCSessionManaging {
             throw WebRTCSessionError.dataChannelUnavailable
         }
     }
+
 
     public func configureControlChannelAuth(sessionTokenHex: String?) {
         withLock {
@@ -866,15 +874,26 @@ private final class VideoChannelDelegateAdapter: DataChannelDelegate, @unchecked
             manager._streamDiagnostics.framesReceived += 1
             manager._streamDiagnostics.bytesReceived += UInt64(data.count)
             // Update downlink loss EMA from sequence-number gaps. Only count forward jumps;
-            // an out-of-order/duplicate frame (seq <= last) isn't a loss.
-            if let last = manager._lossLastSeq {
-                if frame.sequenceNumber > last {
-                    let gap = Double(frame.sequenceNumber - last - 1)
-                    manager._lossGapEMA = manager._lossGapEMA * 0.9 + gap * 0.1
+            // an out-of-order/duplicate frame (seq <= last) isn't a loss. Primary display
+            // only: every display has its own counter, and mixing them reads as loss.
+            if frame.displayID == 0 {
+                if let last = manager._lossLastSeq {
+                    if frame.sequenceNumber > last {
+                        let gap = Double(frame.sequenceNumber - last - 1)
+                        manager._lossGapEMA = manager._lossGapEMA * 0.9 + gap * 0.1
+                        manager._lossLastSeq = frame.sequenceNumber
+                    } else if frame.isKeyframe, frame.sequenceNumber < last {
+                        // The host restarted its encoder (quality change, display or window
+                        // switch) and numbering began again. Without following it the
+                        // estimate froze at its last value — and a frozen non-zero loss
+                        // keeps the host's bitrate pinned down — until the new counter
+                        // overtook the old one, which can take as long as the session ran.
+                        manager._lossLastSeq = frame.sequenceNumber
+                        manager._lossGapEMA = 0
+                    }
+                } else {
                     manager._lossLastSeq = frame.sequenceNumber
                 }
-            } else {
-                manager._lossLastSeq = frame.sequenceNumber
             }
             if manager._streamDiagnostics.firstFrameReceivedAt == nil {
                 manager._streamDiagnostics.firstFrameReceivedAt = Date()

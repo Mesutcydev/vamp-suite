@@ -25,10 +25,14 @@
 		<string>_screenharbor._tcp</string>
 		<string>_screenharbor._tcp.</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Vamp Control uses the camera to scan the pairing code shown by Sync or Companion on your Mac.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Use Face ID to unlock Vamp Control and protect access to your paired Macs.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Mesut Cy. All rights reserved.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>This app uses your local network to discover and connect to Vamp Host Macs.</string>
+	<string>Vamp Control discovers and connects privately to your Macs running Vamp Sync or Vamp Companion.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Captures your voice for on-device dictation into the remote Mac.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
@@ -37,15 +41,15 @@
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
 	<true/>
-	<key>UILaunchScreen</key>
-	<dict>
-		<key>UIColorName</key>
-		<string>LaunchBackground</string>
-	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
 	</array>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>ControlLaunchBackground</string>
+	</dict>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -59,5 +63,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>VampDistributionChannel</key>
+	<string>$(VAMP_DISTRIBUTION_CHANNEL)</string>
 </dict>
 </plist>

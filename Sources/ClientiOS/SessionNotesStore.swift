@@ -1,4 +1,5 @@
 import Foundation
+import SharedProtocol
 
 @MainActor
 final class SessionNotesStore: ObservableObject {
@@ -38,7 +39,9 @@ final class SessionNotesStore: ObservableObject {
     func export(hostName: String?) throws -> URL {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
-        let hostComponent = (hostName ?? "session")
+        // The host name comes from the Mac's advertisement. It goes into a path, so strip
+        // separators and the like the same way file-transfer names are.
+        let hostComponent = FileTransferSanitizer.sanitizeFileName(hostName ?? "session")
             .replacingOccurrences(of: " ", with: "-")
             .lowercased()
         let timestamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")

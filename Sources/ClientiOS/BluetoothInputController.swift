@@ -2,6 +2,23 @@ import Foundation
 import GameController
 import SharedModels
 
+/// The pointer/keyboard surface a Bluetooth device drives.
+///
+/// Vamp Control (`RemoteInteractionViewModel`) and Vamp Stream
+/// (`AppStreamInputController`) both implement this, so the same GCKeyboard/GCMouse
+/// bridge serves either app. Stream previously had no Bluetooth mouse support at
+/// all: a paired mouse moved the on-screen hover cursor but its buttons and scroll
+/// wheel went nowhere, and there was no sensitivity control.
+@MainActor
+protocol RemotePointerInputSink: AnyObject {
+    /// A mouse button changed state. Location is nil — the pointer is wherever it already is.
+    func sendPointerButton(_ button: MouseButton, action: ButtonAction)
+    /// Physical scroll wheel / trackpad scroll deltas.
+    func sendScrollInput(deltaX: Double, deltaY: Double)
+    /// A key changed state, with the modifiers currently held on the physical keyboard.
+    func sendKey(keyCode: UInt16, action: KeyAction, modifiers: KeyboardModifierFlags)
+}
+
 /// Bridges connected Bluetooth keyboard and mouse to the remote session via
 /// GCKeyboard / GCMouse (Apple's GameController framework HID layer).
 /// Start / stop observation when a session becomes active / inactive.
@@ -20,7 +37,8 @@ final class BluetoothInputController: ObservableObject {
 
     // MARK: - Internals
 
-    weak var interactionVM: RemoteInteractionViewModel?
+    /// The session this device drives. Either client's input controller.
+    weak var sink: (any RemotePointerInputSink)?
     private var notificationObservers: [NSObjectProtocol] = []
     private var isObserving = false
 
@@ -118,10 +136,10 @@ final class BluetoothInputController: ObservableObject {
             return  // modifiers don't generate key events on their own
         }
 
-        guard let vm = interactionVM,
+        guard let sink,
               let macCode = Self.gcToMacKeyCode[keyCode] else { return }
 
-        vm.sendKey(keyCode: macCode, action: pressed ? .down : .up, modifiers: activeModifiers)
+        sink.sendKey(keyCode: macCode, action: pressed ? .down : .up, modifiers: activeModifiers)
     }
 
     // MARK: - Mouse
@@ -136,28 +154,28 @@ final class BluetoothInputController: ObservableObject {
 
         mouse.mouseInput?.leftButton.pressedChangedHandler = { [weak self] _, _, pressed in
             Task { @MainActor [weak self] in
-                self?.interactionVM?.sendPointerButton(.left, action: pressed ? .down : .up)
+                self?.sink?.sendPointerButton(.left, action: pressed ? .down : .up)
             }
         }
 
         mouse.mouseInput?.rightButton?.pressedChangedHandler = { [weak self] _, _, pressed in
             Task { @MainActor [weak self] in
-                self?.interactionVM?.sendPointerButton(.right, action: pressed ? .down : .up)
+                self?.sink?.sendPointerButton(.right, action: pressed ? .down : .up)
             }
         }
 
         mouse.mouseInput?.middleButton?.pressedChangedHandler = { [weak self] _, _, pressed in
             Task { @MainActor [weak self] in
-                self?.interactionVM?.sendPointerButton(.middle, action: pressed ? .down : .up)
+                self?.sink?.sendPointerButton(.middle, action: pressed ? .down : .up)
             }
         }
 
         mouse.mouseInput?.scroll.valueChangedHandler = { [weak self] _, xValue, yValue in
             Task { @MainActor [weak self] in
-                guard let self, let vm = self.interactionVM else { return }
+                guard let self, let sink = self.sink else { return }
                 let scale = self.scrollSensitivity
-                vm.sendScrollInput(deltaX: Double(xValue) * scale,
-                                   deltaY: Double(yValue) * scale)
+                sink.sendScrollInput(deltaX: Double(xValue) * scale,
+                                     deltaY: Double(yValue) * scale)
             }
         }
     }

@@ -45,6 +45,13 @@ jobs:
           mkdir -p "$HOME/Library/org.swift.swiftpm/security"
           cp .github/swiftpm/plugins.json "$HOME/Library/org.swift.swiftpm/security/plugins.json"
 
+      - name: Generate active app projects from shared specs
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec project.yml
+          xcodegen generate --spec vampstream-project.yml
+          xcodegen generate --spec macclient-project.yml
+
       - name: Resolve app dependencies
         run: >-
           xcodebuild
@@ -55,7 +62,7 @@ jobs:
         run: >-
           xcodebuild
           -project RemoteDesktopToolApps.xcodeproj
-          -scheme MacHost
+          -scheme VampMiniHost
           -configuration Debug
           -destination 'platform=macOS'
           CODE_SIGNING_ALLOWED=NO
@@ -123,6 +130,32 @@ jobs:
           CODE_SIGNING_REQUIRED=NO
           build
 
+      - name: Build Vamp Sync Mac App Store edition
+        run: |
+          xcodebuild -quiet -project RemoteDesktopToolApps.xcodeproj -scheme VampSyncAppStore \
+            -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath .derived-store-sync CODE_SIGNING_ALLOWED=NO build
+          python3 scripts/verify-vamp-store-bundle.py sync '.derived-store-sync/Build/Products/Release/Vamp Sync.app'
+
+      - name: Build Vamp Stream App Store edition
+        run: |
+          xcodebuild -quiet -project VampStream.xcodeproj -scheme VampStreamAppStore \
+            -configuration AppStore -destination 'generic/platform=iOS' \
+            -derivedDataPath .derived-store-stream CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+          python3 scripts/verify-vamp-store-bundle.py stream '.derived-store-stream/Build/Products/AppStore-iphoneos/App Stream.app'
+
+      - name: Build Vamp Control iOS
+        run: >-
+          xcodebuild -quiet -project RemoteDesktopToolApps.xcodeproj -scheme iOSRemote
+          -configuration Release -destination 'generic/platform=iOS'
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+      - name: Build Vamp Control macOS
+        run: >-
+          xcodebuild -quiet -project MacClient.xcodeproj -scheme MacClient
+          -configuration Release -destination 'generic/platform=macOS'
+          CODE_SIGNING_ALLOWED=NO build
+
   test-arm64:
     # Release hosts and IPAs ship arm64, but the main build job runs on an
     # Intel runner. Re-run the core suite on Apple silicon so arm64-only codegen
@@ -167,3 +200,16 @@ jobs:
 
       - name: Linux browser Chat regression
         run: node Tests/LinuxBrowserChatTests.mjs
+
+      - name: Build and test native Vamp Sync for Linux
+        working-directory: vamp-sync-linux
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            libssl-dev libx11-dev libx11-xcb-dev libxcb-composite0-dev \
+            libxcb-xtest0-dev libxcb-screensaver0-dev xvfb xauth openbox xterm ffmpeg xclip \
+            python3-gi gir1.2-gtk-3.0 qrencode iproute2 librsvg2-common shared-mime-info
+          xvfb-run -a sh -ec 'openbox >/tmp/vamp-test-wm.log 2>&1 & VAMP_TEST_X11=1 go test -race ./...'
+          xvfb-run -a /usr/bin/python3 desktop/test_panel.py
+          go vet ./...
+          ./packaging/build-deb.sh /tmp/vamp-sync-installers

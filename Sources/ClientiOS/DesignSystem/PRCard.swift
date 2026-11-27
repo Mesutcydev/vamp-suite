@@ -39,7 +39,7 @@ struct PRCard<Content: View, Trailing: View>: View {
             content()
                 .padding(padded ? 14 : 0)
         }
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
     }
 }
 

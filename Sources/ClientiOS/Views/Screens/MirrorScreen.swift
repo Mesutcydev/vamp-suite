@@ -834,7 +834,7 @@ struct SimpleHomeView: View {
         }
         .padding(14)
         .prGlassSurface(
-            in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous)
+            in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
         )
     }
 
@@ -909,7 +909,7 @@ struct SimpleHomeView: View {
                 .padding(.vertical, 18)
                 .padding(.horizontal, 10)
                 .prGlassSurface(
-                    in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous),
+                    in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous),
                     isInteractive: true
                 )
                 .opacity(online || wakeable ? 1 : 0.6)
@@ -990,7 +990,7 @@ struct SimpleHomeView: View {
             }
             .padding(14)
             .prGlassSurface(
-                in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous),
+                in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous),
                 isInteractive: true
             )
             .contentShape(Rectangle())
@@ -1098,9 +1098,9 @@ struct SimpleHomeView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: PR.r12, style: .continuous)
+            RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
                 .fill(PR.err.opacity(0.10))
-                .overlay(RoundedRectangle(cornerRadius: PR.r12).strokeBorder(PR.err.opacity(0.4)))
+                .overlay(RoundedRectangle(cornerRadius: PR.rCard).strokeBorder(PR.err.opacity(0.4)))
         )
     }
 
@@ -1130,7 +1130,7 @@ struct SimpleHomeView: View {
                 .overlay(Capsule().strokeBorder(PR.err.opacity(0.45), lineWidth: 1))
             }
             .padding(28)
-            .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+            .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
         }
     }
 
@@ -1520,10 +1520,10 @@ private struct TerminalOnlyHostTile: View {
         .padding(.horizontal, 12)
         .background(PR.bg2.opacity(0.72))
         .overlay(
-            RoundedRectangle(cornerRadius: PR.r12, style: .continuous)
+            RoundedRectangle(cornerRadius: PR.rCard, style: .continuous)
                 .strokeBorder(statusColor.opacity(0.35), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title), terminal-only host")
         .accessibilityHint("Open Vamp Terminal to use terminal tabs")
@@ -1531,14 +1531,21 @@ private struct TerminalOnlyHostTile: View {
 }
 
 @available(iOS 16.1, *)
-private struct MirrorFullscreenStreamView: View {
+struct MirrorFullscreenStreamView: View {
     let environment: ClientAppEnvironment
     @ObservedObject var rendererVM: VideoRendererViewModel
     @ObservedObject var statsVM: SessionStatsViewModel
     let onClose: () -> Void
+    /// Opens the app-window browser on the same session. Nil hides the Apps control.
+    let onOpenApps: (() -> Void)?
+    /// True when returning from app windows: ask the host to switch its display back on appear.
+    let restoresDesktop: Bool
+    /// Back to the caller's home with the session still running. Nil makes "Macs" end the session.
+    let onMinimize: (() -> Void)?
 
     @StateObject private var interactionVM: RemoteInteractionViewModel
     @StateObject private var multiDisplay: MultiDisplayRenderer
+    @StateObject private var cursorModel = LocalCursorModel()
     @State private var multiActive = false
     @ObservedObject private var sessionCoordinator: ClientSessionCoordinator
     @ObservedObject private var displayLayoutViewModel: DisplayLayoutViewModel
@@ -1557,6 +1564,13 @@ private struct MirrorFullscreenStreamView: View {
     @State private var isStatsVisible = true
     @StateObject private var annotationStore = AnnotationOverlayStore()
     @StateObject private var bluetoothInput = BluetoothInputController()
+
+    /// Cursorless-capture contract: only when negotiation agreed that the host omits the
+    /// macOS cursor from the frames does this surface draw its own local pointer. An
+    /// older host still captures the cursor, and drawing on top of it would double it.
+    private var usesLocalCursor: Bool {
+        sessionCoordinator.negotiatedCapabilities?.supportsCursorlessCapture == true
+    }
     @StateObject private var audioRenderer = ClientAudioRenderer()
     @StateObject private var pictureInPicture = RemotePictureInPictureController()
     @State private var isControlsHidden = false
@@ -1564,6 +1578,8 @@ private struct MirrorFullscreenStreamView: View {
     @State private var isTerminalModePresented = false
     @State private var unlockPasswordText = ""
     @State private var isUnlockSubmitting = false
+    /// The host never reports an unlock result; set when the Mac is still locked afterwards.
+    @State private var unlockDidNotTake = false
     @State private var screenshotStatus = ""
     @State private var showScreenAITools = false
     @StateObject private var terminalSession = ClientTerminalSessionManager()
@@ -1572,6 +1588,10 @@ private struct MirrorFullscreenStreamView: View {
     private let screenshotService = SessionScreenshotService()
     /// "classic" (default) keeps this view's existing fullscreen UI; "modern" uses the portrait trackpad layout.
     @AppStorage("client.ui.streamingUITheme") private var streamingUITheme = "classic"
+    /// An open foldable's crease. Half-folded, the session becomes the deck (`deckStreamContent`).
+    @State private var fold: ControlFold?
+    /// Read by Home's fold tip: once the deck has been used, the tip stops explaining it.
+    @AppStorage("control.duo.deckLearned") private var deckLearned = false
     @State private var modernInputMode: ModernInputMode = .pointer
     private enum ModernInputMode { case pointer, gestures }
 
@@ -1579,12 +1599,18 @@ private struct MirrorFullscreenStreamView: View {
         environment: ClientAppEnvironment,
         rendererVM: VideoRendererViewModel,
         statsVM: SessionStatsViewModel,
-        onClose: @escaping () -> Void
+        onClose: @escaping () -> Void,
+        onOpenApps: (() -> Void)? = nil,
+        restoresDesktop: Bool = false,
+        onMinimize: (() -> Void)? = nil
     ) {
         self.environment = environment
         self.rendererVM = rendererVM
         self.statsVM = statsVM
         self.onClose = onClose
+        self.onOpenApps = onOpenApps
+        self.restoresDesktop = restoresDesktop
+        self.onMinimize = onMinimize
         self.sessionCoordinator = environment.sessionCoordinator
         self.displayLayoutViewModel = environment.displayLayoutViewModel
         _interactionVM = StateObject(
@@ -1638,6 +1664,7 @@ private struct MirrorFullscreenStreamView: View {
             multiActive = false
             multiDisplay.setActive(count: 1)
             sessionCoordinator.setStreamedDisplays([primary])
+            interactionVM.focusedDisplayOverride = nil
         } else {
             let ordered = [primary] + displays.map(\.id).filter { $0 != primary }
             sessionCoordinator.setStreamedDisplays(ordered)
@@ -1648,25 +1675,62 @@ private struct MirrorFullscreenStreamView: View {
 
     private func focusDisplay(_ wireID: UInt8) {
         multiDisplay.focus(wireID)
+        // The main surface now shows that display; point input at it too. Wire 0 is the
+        // primary, then the rest in the order `toggleMultiDisplay` handed the host.
+        let displays = displayLayoutViewModel.displays
+        let primary = currentPrimaryDisplayID
+        let ordered = displays.filter { $0.id == primary } + displays.filter { $0.id != primary }
+        interactionVM.focusedDisplayOverride = wireID == 0 || Int(wireID) >= ordered.count
+            ? nil : ordered[Int(wireID)]
         sessionCoordinator.requestKeyframeRefresh(reason: "multi-display focus")
     }
 
     var body: some View {
         GeometryReader { proxy in
             Group {
-                if usesModernTheme(proxy.size) {
-                    modernStreamContent(viewSize: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
+                if let fold, fold.isHalfOpen {
+                    deckStreamContent(viewSize: proxy.size, fold: fold)
                 } else {
                     classicStreamContent(viewSize: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
                 }
             }
+#if canImport(UIKit) && !os(macOS)
+            .background {
+                ControlHingeReader(fold: $fold)
+                MirrorSafeAreaInsetsReader(insets: $deviceSafeAreaInsets)
+            }
+#endif
+            .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: fold?.isHalfOpen)
             .overlay(alignment: .top) { multiDisplayBar }
+            // The screenshot result was set but never drawn here, so the camera button
+            // gave no sign of whether a file was saved.
+            .overlay(alignment: .top) {
+                if !screenshotStatus.isEmpty {
+                    Text(screenshotStatus)
+                        .font(.footnote.weight(.medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(Capsule().fill(Color.black.opacity(0.72)))
+                        .padding(.top, proxy.safeAreaInsets.top + 52)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+            }
             .onDisappear { multiDisplay.stopAll() }
             .onAppear {
+                if restoresDesktop, let displayID = currentPrimaryDisplayID {
+                    requestDisplaySwitch(to: displayID)
+                }
                 interactionVM.updateViewSize(DesktopSize(width: proxy.size.width, height: proxy.size.height))
+                if let rect = interactionVM.cursorContentRect {
+                    cursorModel.setSurface(size: proxy.size, contentRect: rect)
+                }
             }
             .onChangeCompat(of: proxy.size) { newSize in
                 interactionVM.updateViewSize(DesktopSize(width: newSize.width, height: newSize.height))
+                if let rect = interactionVM.cursorContentRect {
+                    cursorModel.setSurface(size: newSize, contentRect: rect)
+                }
                 // A rotation changes the fitted-video box, invalidating any pan/zoom offset that was
                 // clamped against the old dimensions. Reset both zoom models so the picture
                 // re-centers cleanly rather than rendering off-center until the user pinches again.
@@ -1680,6 +1744,12 @@ private struct MirrorFullscreenStreamView: View {
                     sessionCoordinator.requestKeyframeRefresh(reason: "orientation change")
                 }
             }
+            // The input mapping was only rebuilt on a size change, so after switching
+            // displays taps kept going to the previous one until the phone was rotated,
+            // and a layout that arrived after this view appeared left input off.
+            .onChangeCompat(of: displayLayoutViewModel.selectedDisplayID) { _ in interactionVM.refreshMapping() }
+            .onChangeCompat(of: displayLayoutViewModel.streamConfiguration) { _ in interactionVM.refreshMapping() }
+            .onChangeCompat(of: displayLayoutViewModel.layout) { _ in interactionVM.refreshMapping() }
         }
         .task {
             rendererVM.onNeedsKeyframe = { [weak sessionCoordinator = sessionCoordinator] in
@@ -1695,7 +1765,7 @@ private struct MirrorFullscreenStreamView: View {
             interactionVM.sessionMode = effectiveSessionMode
             interactionVM.pointerSensitivity = bluetoothInput.mouseSensitivity
             interactionVM.updateForConnectionState(sessionCoordinator.phase == .receiving ? .connected : .disconnected)
-            bluetoothInput.interactionVM = interactionVM
+            bluetoothInput.sink = interactionVM
             bluetoothInput.startObserving()
             audioRenderer.start()
             sessionCoordinator.onAudioFrame = { [weak audioRenderer = audioRenderer] msg in audioRenderer?.receive(msg) }
@@ -1776,7 +1846,8 @@ private struct MirrorFullscreenStreamView: View {
 #if canImport(UIKit) && !os(macOS)
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.keyboardWillChangeFrameNotification)) { notif in
             guard let end = (notif.userInfo?[UIApplication.keyboardFrameEndUserInfoKey] as? CGRect) else { return }
-            let screenH = UIScreen.main.bounds.height
+            // The notification's screen is the active panel on a foldable; UIScreen.main may not be.
+            guard let screenH = (notif.object as? UIScreen)?.bounds.height else { return }
             let kbH = max(0, screenH - end.origin.y)
             withAnimation(.easeOut(duration: 0.25)) {
                 keyboardOverlayBottomPad = kbH
@@ -1798,24 +1869,15 @@ private struct MirrorFullscreenStreamView: View {
         streamingUITheme == "modern"
     }
 
-    /// True hardware safe-area insets, read straight from the active window.
+    /// True hardware safe-area insets of this view's own window, reported by
+    /// `MirrorSafeAreaInsetsReader` and updated each time they change (a foldable switching
+    /// panels, a rotation, a resize).
     ///
     /// This view is presented with `.ignoresSafeArea()` so the classic path can run the video
     /// edge-to-edge — which means the body's `GeometryReader` reports `safeAreaInsets == .zero`.
     /// The modern chrome still has to clear the Dynamic Island and the home indicator, so it reads
     /// the real insets here instead of trusting the zeroed proxy values.
-    private var deviceSafeAreaInsets: EdgeInsets {
-#if canImport(UIKit) && !os(macOS)
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first { $0.isKeyWindow }
-        if let i = window?.safeAreaInsets {
-            return EdgeInsets(top: i.top, leading: i.left, bottom: i.bottom, trailing: i.right)
-        }
-#endif
-        return EdgeInsets()
-    }
+    @State private var deviceSafeAreaInsets = EdgeInsets()
 
     // MARK: - Classic content (verbatim — unchanged behavior)
 
@@ -1830,8 +1892,15 @@ private struct MirrorFullscreenStreamView: View {
                 hostLockedOverlay
             }
         }
-        .overlay(alignment: .bottom) {
-            fullscreenBottomChrome(bottomInset: safeAreaInsets.bottom)
+        .overlay(alignment: fold?.isVertical == true ? .bottomTrailing : .bottom) {
+            if let fold, fold.isVertical {
+                // Open flat like a book: the controls stay on the right page, off the crease.
+                fullscreenBottomChrome(bottomInset: max(safeAreaInsets.bottom, deviceSafeAreaInsets.bottom))
+                    .frame(width: max(viewSize.width - fold.crease - ControlFold.gutter - deviceSafeAreaInsets.trailing, 0))
+                    .padding(.trailing, deviceSafeAreaInsets.trailing)
+            } else {
+                fullscreenBottomChrome(bottomInset: safeAreaInsets.bottom)
+            }
         }
         .overlay(alignment: .bottom) {
             if isKeyboardOverlayPresented {
@@ -1845,10 +1914,128 @@ private struct MirrorFullscreenStreamView: View {
         }
     }
 
+    // MARK: - Half-folded Duo deck
+
+    /// A half-folded Duo is a small laptop. The Mac's screen takes the far side of the crease
+    /// (above it when held like a laptop, the left page when held like a book) and the near side,
+    /// under the thumbs, is a trackpad with the session controls. View Only sessions take no
+    /// input, so their near side says so instead of offering a trackpad that would do nothing.
+    @ViewBuilder
+    private func deckStreamContent(viewSize: CGSize, fold: ControlFold) -> some View {
+        let gutter = ControlFold.gutter
+        let insets = EdgeInsets(top: max(deviceSafeAreaInsets.top, 12), leading: max(deviceSafeAreaInsets.leading, 12),
+                                bottom: max(deviceSafeAreaInsets.bottom, 10), trailing: max(deviceSafeAreaInsets.trailing, 12))
+        let layout = fold.isVertical ? AnyLayout(HStackLayout(spacing: gutter * 2))
+                                     : AnyLayout(VStackLayout(spacing: gutter * 2))
+        ZStack {
+            Color.black.ignoresSafeArea()
+            layout {
+                deckVideo
+                    .frame(width: fold.isVertical ? max(fold.crease - gutter - insets.leading, 0) : nil,
+                           height: fold.isVertical ? nil : max(fold.crease - gutter - insets.top, 0))
+                deck
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .padding(insets)
+
+            if sessionCoordinator.hostLockState == .lockedOrLoginWindow {
+                hostLockedOverlay
+            }
+        }
+        .environment(\.colorScheme, .dark)
+        .overlay(alignment: .bottom) {
+            if isKeyboardOverlayPresented {
+                KeyboardOverlayView(
+                    interactionVM: interactionVM,
+                    onDismiss: { isKeyboardOverlayPresented = false }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.bottom, keyboardOverlayBottomPad)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isKeyboardOverlayPresented)
+        .onAppear { deckLearned = true }
+    }
+
+    /// The Mac's screen on the far side of the deck. Built like the full-screen layer (the
+    /// display layer letterboxes itself), with the local cursor the trackpad moves.
+    private var deckVideo: some View {
+        let host = rendererVM.frameSize.map {
+            CGSize(width: max(CGFloat($0.width), 1), height: max(CGFloat($0.height), 1))
+        } ?? CGSize(width: 16, height: 10)
+        return GeometryReader { geo in
+            let scale = min(geo.size.width / host.width, geo.size.height / host.height)
+            let fitted = CGSize(width: host.width * scale, height: host.height * scale)
+            let rect = CGRect(x: (geo.size.width - fitted.width) / 2, y: (geo.size.height - fitted.height) / 2,
+                              width: fitted.width, height: fitted.height)
+            let _ = cursorModel.setSurface(size: geo.size, contentRect: rect)
+            VideoFrameRendererView(pixelBuffer: rendererVM.latestPixelBuffer, displayMode: .fitDisplay,
+                                   renderer: rendererVM, pictureInPicture: pictureInPicture)
+                .frame(width: geo.size.width, height: geo.size.height)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                        .frame(width: fitted.width, height: fitted.height)
+                }
+                .overlay {
+                    if usesLocalCursor {
+                        LocalCursorOverlay(cursor: cursorModel, contentZoom: 1,
+                                           pointsPerDesktopPoint: interactionVM.cursorViewPointsPerDesktopPoint)
+                    }
+                }
+        }
+    }
+
+    /// The near side of the deck: stats when asked for, the trackpad, then the usual controls.
+    private var deck: some View {
+        VStack(spacing: 12) {
+            if environment.showsStatsOverlay {
+                HStack {
+                    Spacer()
+                    MirrorHUD(isDismissible: true, fps: statsVM.fpsText, latency: statsVM.latencyText,
+                              bandwidth: statsVM.bitrateText, onClose: { environment.showsStatsOverlay = false })
+                }
+            }
+            if effectiveSessionMode == .viewOnly {
+                deckViewOnlyNote
+            } else if !isKeyboardOverlayPresented {
+                TrackpadSurfaceView(interactionVM: interactionVM, onRelativeMove: { dx, dy in
+                    updateLocalCursorRelative(dx: dx, dy: dy)
+                })
+                .transition(.opacity)
+            } else {
+                Spacer(minLength: 0)
+            }
+            chromePill
+        }
+        .sheet(isPresented: $isBluetoothStatusPresented) {
+            BluetoothInputStatusView(controller: bluetoothInput, onDismiss: { isBluetoothStatusPresented = false })
+        }
+    }
+
+    private var deckViewOnlyNote: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "eye")
+                .font(.system(size: 26, weight: .medium))
+            Text("View only").font(.headline)
+            Text("This Mac takes no input from here. Open it flat for the biggest picture.")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(.white)
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color.white.opacity(0.05)))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
+        .accessibilityElement(children: .combine)
+    }
+
     // MARK: - Modern theme (portrait trackpad layout)
 
-    private static let modernGreen = Color(red: 0.20, green: 0.84, blue: 0.45)
-    private static let modernPanel = Color(red: 0.10, green: 0.11, blue: 0.12)
+    private static let modernAccent = Color.white
+    private static let modernPanel = Color(white: 0.10)
 
     @ViewBuilder
     private func modernStreamContent(viewSize: CGSize, safeAreaInsets: EdgeInsets) -> some View {
@@ -1934,7 +2121,11 @@ private struct MirrorFullscreenStreamView: View {
                     .layoutPriority(1)
 
                 if !isKeyboardOverlayPresented {
-                    TrackpadSurfaceView(interactionVM: interactionVM)
+                    TrackpadSurfaceView(
+                        interactionVM: interactionVM,
+                        onRelativeMove: { dx, dy in
+                            updateLocalCursorRelative(dx: dx, dy: dy)
+                        })
                         .frame(height: modernTrackpadHeight(viewSize))
                         .padding(.horizontal, 14)
                         .transition(.opacity)
@@ -1991,7 +2182,11 @@ private struct MirrorFullscreenStreamView: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        TrackpadSurfaceView(interactionVM: interactionVM)
+                        TrackpadSurfaceView(
+                            interactionVM: interactionVM,
+                            onRelativeMove: { dx, dy in
+                                updateLocalCursorRelative(dx: dx, dy: dy)
+                            })
                             .frame(width: min(viewSize.width * 0.42, 460),
                                    height: min(viewSize.height * 0.55, 230))
                             .padding(.trailing, trailingPad)
@@ -2030,6 +2225,12 @@ private struct MirrorFullscreenStreamView: View {
             } ?? CGSize(width: 16, height: 10)
             let scale = min(geo.size.width / host.width, geo.size.height / host.height)
             let fitted = CGSize(width: max(host.width * scale, 1), height: max(host.height * scale, 1))
+            let fittedRect = CGRect(
+                x: (geo.size.width - fitted.width) / 2,
+                y: (geo.size.height - fitted.height) / 2,
+                width: fitted.width,
+                height: fitted.height)
+            let _ = cursorModel.setSurface(size: geo.size, contentRect: fittedRect)
             VideoFrameRendererView(
                 pixelBuffer: rendererVM.latestPixelBuffer,
                 displayMode: interactionVM.displayMode,
@@ -2074,6 +2275,14 @@ private struct MirrorFullscreenStreamView: View {
                     )
                 )
                 .frame(width: geo.size.width, height: geo.size.height) // center the fitted picture
+                .overlay {
+                    if usesLocalCursor {
+                        LocalCursorOverlay(cursor: cursorModel, contentZoom: previewZoom,
+                                           pointsPerDesktopPoint: interactionVM.cursorViewPointsPerDesktopPoint)
+                            .scaleEffect(previewZoom, anchor: .center)
+                            .offset(previewOffset)
+                    }
+                }
         }
 #else
         Color.black
@@ -2101,6 +2310,14 @@ private struct MirrorFullscreenStreamView: View {
 
     private func modernTrackpadHeight(_ viewSize: CGSize) -> CGFloat {
         max(160, min(viewSize.height * 0.30, 290))
+    }
+
+    private func updateLocalCursorRelative(dx: Double, dy: Double) {
+        guard let scale = interactionVM.cursorViewPointsPerDesktopPoint else { return }
+        cursorModel.moveRelative(
+            dx: dx,
+            dy: dy,
+            viewPointsPerDesktopPoint: scale)
     }
 
     @ViewBuilder
@@ -2146,12 +2363,12 @@ private struct MirrorFullscreenStreamView: View {
                 Image(systemName: icon).font(.system(size: 18, weight: .regular))
                 Text(label).font(.system(size: 10, weight: .medium))
             }
-            .foregroundColor(active ? Self.modernGreen : Color.white.opacity(0.82))
+            .foregroundColor(active ? Self.modernAccent : Color.white.opacity(0.82))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(active ? Self.modernGreen.opacity(0.15) : Color.clear)
+                    .fill(active ? Self.modernAccent.opacity(0.15) : Color.clear)
             )
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
@@ -2219,26 +2436,35 @@ private struct MirrorFullscreenStreamView: View {
                 modernBarButton(icon: "arrow.down.right.and.arrow.up.left") {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { resetModernZoom() }
                 }
+                .accessibilityLabel("Reset zoom")
             }
             modernBarButton(icon: "camera") { captureScreenshot() }
+                .accessibilityLabel("Take screenshot")
             modernBarButton(
                 icon: pictureInPicture.isActive ? "pip.exit" : "pip.enter",
                 active: pictureInPicture.isActive
             ) { pictureInPicture.toggle() }
+            .accessibilityLabel(pictureInPicture.isActive ? "Exit Picture in Picture" : "Picture in Picture")
             modernBarButton(
                 icon: bluetoothInput.isMouseConnected || bluetoothInput.isKeyboardConnected ? "magicmouse.fill" : "magicmouse",
                 active: bluetoothInput.isMouseConnected || bluetoothInput.isKeyboardConnected
             ) { isBluetoothStatusPresented = true }
+            .accessibilityLabel("Bluetooth mouse and keyboard")
             modernBarButton(
                 icon: audioRenderer.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
                 active: audioRenderer.isActive && !audioRenderer.isMuted
             ) { audioRenderer.isMuted.toggle() }
+            .accessibilityLabel(audioRenderer.isMuted ? "Unmute Mac audio" : "Mute Mac audio")
             modernBarButton(
                 icon: "display",
                 active: displayLayoutViewModel.isSwitchingDisplay
             ) {
                 if displayLayoutViewModel.displays.count > 1 { cycleModernDisplay() }
             }
+            // With one display there is nothing to switch to; don't offer a dead button.
+            .disabled(displayLayoutViewModel.displays.count <= 1)
+            .opacity(displayLayoutViewModel.displays.count <= 1 ? 0.35 : 1)
+            .accessibilityLabel("Switch display")
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
@@ -2257,7 +2483,7 @@ private struct MirrorFullscreenStreamView: View {
         } label: {
             Image(systemName: icon)
                 .font(.system(size: 17, weight: .medium))
-                .foregroundColor(active ? Self.modernGreen : Color.white.opacity(0.82))
+                .foregroundColor(active ? Self.modernAccent : Color.white.opacity(0.82))
                 .frame(maxWidth: .infinity)
                 .frame(height: 30)
                 .contentShape(Rectangle())
@@ -2307,6 +2533,13 @@ private struct MirrorFullscreenStreamView: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: 280)
                     .onSubmit { submitUnlock() }
+                if unlockDidNotTake && !isUnlockSubmitting {
+                    Text("The Mac is still locked. Check the password and try again.")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.orange)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 280)
+                }
                 HStack(spacing: 12) {
                     Button("Unlock") { submitUnlock() }
                         .font(.system(size: 14, weight: .semibold, design: .monospaced))
@@ -2332,6 +2565,7 @@ private struct MirrorFullscreenStreamView: View {
             if newState == .unlockedActiveSession {
                 unlockPasswordText = ""
                 isUnlockSubmitting = false
+                unlockDidNotTake = false
             }
         }
     }
@@ -2339,24 +2573,26 @@ private struct MirrorFullscreenStreamView: View {
     private func submitUnlock() {
         guard !unlockPasswordText.isEmpty, !isUnlockSubmitting else { return }
         isUnlockSubmitting = true
+        unlockDidNotTake = false
         let password = unlockPasswordText
         unlockPasswordText = ""
         sessionCoordinator.sendUnlockPassword(password)
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
             isUnlockSubmitting = false
+            unlockDidNotTake = sessionCoordinator.hostLockState == .lockedOrLoginWindow
         }
     }
 
     private func captureScreenshot() {
-        guard let pixelBuffer = rendererVM.latestPixelBuffer else {
-            screenshotStatus = "no frame"
-            return
-        }
-        do {
-            let url = try screenshotService.capture(pixelBuffer: pixelBuffer)
-            screenshotStatus = "saved: \(url.lastPathComponent)"
-        } catch {
-            screenshotStatus = "failed"
+        if let pixelBuffer = rendererVM.latestPixelBuffer {
+            do {
+                let url = try screenshotService.capture(pixelBuffer: pixelBuffer)
+                screenshotStatus = "Screenshot saved: \(url.lastPathComponent)"
+            } catch {
+                screenshotStatus = "Couldn’t save the screenshot"
+            }
+        } else {
+            screenshotStatus = "No picture to capture yet"
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { screenshotStatus = "" }
     }
@@ -2365,6 +2601,13 @@ private struct MirrorFullscreenStreamView: View {
     private func videoLayer(viewSize: CGSize) -> some View {
 #if canImport(UIKit) && !os(macOS)
         ZStack {
+            // The mapper's fitted rect is only valid once display info arrives; re-feeding
+            // the cursor surface on every body pass (displayLayoutViewModel is observed)
+            // seeds/updates it the moment geometry exists, without an extra onChange.
+            // setSurface ignores zero rects, so an unready mapper is a no-op here.
+            let _ = cursorModel.setSurface(
+                size: viewSize,
+                contentRect: interactionVM.cursorContentRect ?? .zero)
             VideoFrameRendererView(
                 pixelBuffer: rendererVM.latestPixelBuffer,
                 displayMode: interactionVM.displayMode,
@@ -2380,18 +2623,23 @@ private struct MirrorFullscreenStreamView: View {
                 viewportOffset: viewportOffset,
                 viewSize: viewSize,
                 onTap: { pt in
+                    cursorModel.place(at: pt)
                     interactionVM.handleTap(at: DesktopPoint(x: pt.x, y: pt.y))
                 },
                 onDoubleTap: { pt in
+                    cursorModel.place(at: pt)
                     interactionVM.handleDoubleTap(at: DesktopPoint(x: pt.x, y: pt.y))
                 },
                 onRightClick: { pt in
+                    cursorModel.place(at: pt)
                     interactionVM.handleTwoFingerTap(at: DesktopPoint(x: pt.x, y: pt.y))
                 },
                 onMiddleClick: { pt in
+                    cursorModel.place(at: pt)
                     interactionVM.handleThreeFingerTap(at: DesktopPoint(x: pt.x, y: pt.y))
                 },
                 onDragChanged: { delta, loc in
+                    cursorModel.place(at: loc)
                     interactionVM.handleDragChanged(
                         translation: DesktopPoint(x: delta.width, y: delta.height),
                         currentViewPoint: DesktopPoint(x: loc.x, y: loc.y)
@@ -2411,24 +2659,7 @@ private struct MirrorFullscreenStreamView: View {
                     viewportOffset = clampedViewportOffset(newOffset, zoom: viewportZoom, in: viewSize)
                 },
                 onPinchChanged: { scale, focalPoint in
-                    let oldZoom = viewportZoom
-                    let newZoom = min(max(viewportZoom * scale, 1.0), 5.0)
-                    viewportZoom = newZoom
-                    if newZoom <= 1.0 {
-                        viewportOffset = .zero
-                    } else {
-                        // Preserve the remote pixel under the user's fingers instead
-                        // of zooming around the center of the phone.
-                        let ratio = newZoom / max(oldZoom, 0.001)
-                        let center = CGPoint(x: viewSize.width / 2, y: viewSize.height / 2)
-                        let anchoredOffset = CGSize(
-                            width: viewportOffset.width
-                                + (1 - ratio) * (focalPoint.x - center.x - viewportOffset.width),
-                            height: viewportOffset.height
-                                + (1 - ratio) * (focalPoint.y - center.y - viewportOffset.height)
-                        )
-                        viewportOffset = clampedViewportOffset(anchoredOffset, zoom: newZoom, in: viewSize)
-                    }
+                    applyPinch(scale: scale, focalPoint: focalPoint, viewSize: viewSize)
                 },
                 onPinchEnded: {
                     if viewportZoom < 1.15 {
@@ -2439,15 +2670,30 @@ private struct MirrorFullscreenStreamView: View {
                     }
                 },
                 onLongPress: { pt in
+                    cursorModel.place(at: pt)
                     interactionVM.toggleDragLock(at: DesktopPoint(x: pt.x, y: pt.y))
                 },
                 onPointerDelta: { delta in
-                    interactionVM.sendRelativePointerMove(
-                        deltaX: Double(delta.width) * bluetoothInput.mouseSensitivity,
-                        deltaY: Double(delta.height) * bluetoothInput.mouseSensitivity
-                    )
+                    let sensitivity = bluetoothInput.mouseSensitivity
+                    let dx = Double(delta.width) * sensitivity
+                    let dy = Double(delta.height) * sensitivity
+                    interactionVM.sendRelativePointerMove(deltaX: dx, deltaY: dy)
+                    if let scale = interactionVM.cursorViewPointsPerDesktopPoint {
+                        cursorModel.moveRelative(dx: dx, dy: dy, viewPointsPerDesktopPoint: scale)
+                    }
                 }
             )
+            .overlay {
+                // Cursorless capture: the host omits the macOS cursor from the video,
+                // so the pointer is drawn locally for zero-latency hover feedback. The
+                // overlay carries the viewport's zoom/pan to stay glued under magnify.
+                if usesLocalCursor {
+                    LocalCursorOverlay(cursor: cursorModel, contentZoom: viewportZoom,
+                                       pointsPerDesktopPoint: interactionVM.cursorViewPointsPerDesktopPoint)
+                        .scaleEffect(viewportZoom, anchor: .center)
+                        .offset(viewportOffset)
+                }
+            }
 
             if annotationStore.isVisible {
                 AnnotationCanvasOverlay(store: annotationStore)
@@ -2468,14 +2714,14 @@ private struct MirrorFullscreenStreamView: View {
             HStack {
                 Spacer()
                 Button {
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82)) {
                         isControlsHidden = false
                     }
                 } label: {
                     Image(systemName: "eye")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.55))
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
                         .background(Color.black.opacity(0.22), in: Capsule())
                         .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.7))
                 }
@@ -2513,40 +2759,14 @@ private struct MirrorFullscreenStreamView: View {
         }
     }
 
+    /// Everyday controls stay visible; occasional actions use the native menu.
     private var chromePill: some View {
-        HStack(spacing: 0) {
-            chromeIconButton(
-                systemName: "xmark",
-                isDestructive: true
-            ) {
-                onClose()
-            }
+        HStack(spacing: 8) {
+            ControlSessionButton(title: "Macs", symbol: "chevron.left", action: onMinimize ?? onClose)
 
-            let bleActive = bluetoothInput.isKeyboardConnected || bluetoothInput.isMouseConnected
-            chromeIconButton(
-                systemName: bleActive ? "magicmouse.fill" : "magicmouse",
-                isActive: bleActive,
-                accent: Color(red: 0.204, green: 0.827, blue: 0.612)
-            ) {
-                AppHaptics.selection()
-                isBluetoothStatusPresented = true
-            }
-
-            chromeIconButton(
-                systemName: annotationStore.isVisible ? "pencil.slash" : "pencil.tip",
-                isActive: annotationStore.isVisible,
-                accent: PR.accent
-            ) {
-                AppHaptics.selection()
-                annotationStore.isVisible.toggle()
-            }
-
-            if displayVMRequiresKeyboard {
-                chromeIconButton(
-                    systemName: isKeyboardOverlayPresented ? "keyboard.chevron.compact.down" : "keyboard",
-                    isActive: isKeyboardOverlayPresented,
-                    accent: PR.accent
-                ) {
+            if displayVMRequiresKeyboard && effectiveSessionMode != .viewOnly {
+                ControlSessionButton(title: "Keyboard", symbol: isKeyboardOverlayPresented ? "keyboard.chevron.compact.down" : "keyboard",
+                                     isActive: isKeyboardOverlayPresented) {
                     AppHaptics.selection()
                     isKeyboardOverlayPresented.toggle()
                 }
@@ -2556,96 +2776,72 @@ private struct MirrorFullscreenStreamView: View {
                 Menu {
                     ForEach(displayLayoutViewModel.displays) { display in
                         Button {
-                            AppHaptics.selection()
                             requestDisplaySwitch(to: display.id)
                         } label: {
-                            let isCurrent = displayLayoutViewModel.selectedDisplayID == display.id
-                            let label = "\(display.name) — \(Int(display.pixelSize.width))×\(Int(display.pixelSize.height))"
-                            if isCurrent {
-                                Label(label, systemImage: "checkmark")
+                            if displayLayoutViewModel.selectedDisplayID == display.id {
+                                Label(display.name, systemImage: "checkmark")
                             } else {
-                                Text(label)
+                                Text(display.name)
                             }
                         }
                         .disabled(displayLayoutViewModel.selectedDisplayID == display.id)
                     }
+                    Button(multiActive ? "Show one display" : "Show all displays", systemImage: "rectangle.on.rectangle", action: toggleMultiDisplay)
                 } label: {
-                    chromeIconLabel(
-                        systemName: displayLayoutViewModel.isSwitchingDisplay ? "rectangle.on.rectangle.angled" : "display.2",
-                        isActive: false,
-                        isDimmed: displayLayoutViewModel.isSwitchingDisplay,
-                        accent: PR.accent,
-                        isDestructive: false
-                    )
+                    ControlSessionLabel(title: "Displays", symbol: "display.2")
                 }
-                .buttonStyle(.plain)
                 .disabled(displayLayoutViewModel.isSwitchingDisplay)
             }
 
-            chromeIconButton(
-                systemName: "terminal.fill",
-                accent: PR.accent
-            ) {
-                AppHaptics.selection()
-                isTerminalModePresented = true
+            if let onOpenApps, sessionCoordinator.negotiatedCapabilities?.supportsAppStreaming == true {
+                ControlSessionButton(title: "Apps", symbol: "macwindow") {
+                    AppHaptics.selection()
+                    onOpenApps()
+                }
             }
 
-            chromeIconButton(
-                systemName: audioRenderer.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                isDimmed: audioRenderer.isMuted
-            ) {
-                AppHaptics.selection()
-                audioRenderer.isMuted.toggle()
-            }
-
-            chromeIconButton(
-                systemName: pictureInPicture.isActive ? "pip.exit" : "pip.enter",
-                isActive: pictureInPicture.isActive,
-                accent: PR.accent
-            ) {
-                AppHaptics.selection()
-                pictureInPicture.toggle()
-            }
-
+            // Picture and Tools are submenus: thirteen flat rows were taller than the
+            // space above the bar, so the top of the menu (Disconnect) was cut off.
             Menu {
-                displayModeButton(.fitDisplay, label: "Fit Display", systemImage: "rectangle.arrowtriangle.2.inward")
-                displayModeButton(.fillScreen, label: "Fill Screen", systemImage: "rectangle.arrowtriangle.2.outward")
+                Menu {
+                    displayModeButton(.fitDisplay, label: "Fit Display", systemImage: "rectangle.arrowtriangle.2.inward")
+                    displayModeButton(.fillScreen, label: "Fill Screen", systemImage: "rectangle.arrowtriangle.2.outward")
+                    Button("Reset zoom", systemImage: "1.magnifyingglass") {
+                        viewportZoom = 1
+                        viewportOffset = .zero
+                    }
+                    Button("Take screenshot", systemImage: "camera", action: captureScreenshot)
+                    Button(pictureInPicture.isActive ? "Close Picture in Picture" : "Picture in Picture", systemImage: "pip") {
+                        pictureInPicture.toggle()
+                    }
+                } label: { Label("Picture", systemImage: "photo.on.rectangle") }
+                if effectiveSessionMode != .viewOnly {
+                    Menu {
+                        Button("Terminal", systemImage: "terminal") { isTerminalModePresented = true }
+                        Button(annotationStore.isVisible ? "Hide annotation" : "Annotate", systemImage: "pencil.tip") {
+                            annotationStore.isVisible.toggle()
+                        }
+                        Button("Send clipboard to Mac", systemImage: "doc.on.clipboard") { clipboardSync.pushToHost() }
+                        Button("Get clipboard from Mac", systemImage: "arrow.down.doc") { clipboardSync.requestFromHost() }
+                    } label: { Label("Tools", systemImage: "wrench.and.screwdriver") }
+                }
+                Button("Mouse & keyboard", systemImage: "magicmouse") { isBluetoothStatusPresented = true }
+                Button(audioRenderer.isMuted ? "Unmute audio" : "Mute audio", systemImage: "speaker.wave.2") { audioRenderer.isMuted.toggle() }
+                Button("Hide controls", systemImage: "eye.slash") {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { isControlsHidden = true }
+                }
+                Divider()
+                Button("Disconnect", systemImage: "xmark.circle", role: .destructive, action: onClose)
             } label: {
-                chromeIconLabel(
-                    systemName: interactionVM.displayMode == .fillScreen
-                        ? "rectangle.arrowtriangle.2.outward"
-                        : "rectangle.arrowtriangle.2.inward",
-                    isActive: interactionVM.displayMode == .fillScreen,
-                    isDimmed: false,
-                    accent: PR.accent,
-                    isDestructive: false
-                )
-            }
-            .buttonStyle(.plain)
-
-            if environment.showsStatsOverlay && !isStatsVisible {
-                chromeIconButton(
-                    systemName: "chart.bar",
-                    isActive: true,
-                    accent: PR.accent
-                ) {
-                    isStatsVisible = true
-                }
-            }
-
-            chromeDivider
-
-            chromeIconButton(systemName: "eye.slash", isDimmed: true) {
-                AppHaptics.selection()
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-                    isControlsHidden = true
-                }
+                ControlSessionLabel(title: "More", symbol: "ellipsis")
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .liquidGlassPill()
-        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(8)
+        .frame(maxWidth: 420)
+        .background(Color.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .controlGlass(radius: 30)
+        .environment(\.colorScheme, .dark)
+        .tint(.white)
     }
 
     private var chromeDivider: some View {
@@ -2755,6 +2951,28 @@ private struct MirrorFullscreenStreamView: View {
             Label(label, systemImage: interactionVM.displayMode == mode ? "checkmark" : systemImage)
         }
         .disabled(interactionVM.displayMode == mode)
+    }
+
+    /// Pinch-to-zoom on the video layer. Extracted so the gesture builder stays inside
+    /// the type-checker's complexity budget.
+    private func applyPinch(scale pinchScale: CGFloat, focalPoint: CGPoint, viewSize: CGSize) {
+        let oldZoom = viewportZoom
+        let newZoom = min(max(viewportZoom * pinchScale, 1.0), 5.0)
+        viewportZoom = newZoom
+        if newZoom <= 1.0 {
+            viewportOffset = .zero
+            return
+        }
+        // Preserve the remote pixel under the user's fingers instead of zooming around
+        // the center of the phone.
+        let ratio = newZoom / max(oldZoom, 0.001)
+        let center = CGPoint(x: viewSize.width / 2, y: viewSize.height / 2)
+        let anchoredWidth = viewportOffset.width
+            + (1 - ratio) * (focalPoint.x - center.x - viewportOffset.width)
+        let anchoredHeight = viewportOffset.height
+            + (1 - ratio) * (focalPoint.y - center.y - viewportOffset.height)
+        viewportOffset = clampedViewportOffset(
+            CGSize(width: anchoredWidth, height: anchoredHeight), zoom: newZoom, in: viewSize)
     }
 
     private func clampedViewportOffset(_ proposed: CGSize, zoom: CGFloat, in viewSize: CGSize) -> CGSize {
@@ -2924,6 +3142,54 @@ private struct MirrorHUD: View {
 }
 
 #if canImport(UIKit) && !os(macOS)
+/// Reports the safe area insets of the window region this view covers, and reports again whenever
+/// UIKit changes them: a foldable switching panels, a rotation, or a resize. `safeAreaInsets` uses
+/// physical edges, so left and right are resolved to leading and trailing with this view's own
+/// layout direction, and each edge keeps its own value.
+private struct MirrorSafeAreaInsetsReader: UIViewRepresentable {
+    @Binding var insets: EdgeInsets
+
+    func makeUIView(context: Context) -> InsetsView {
+        let view = InsetsView()
+        view.onChange = { value in if insets != value { insets = value } }
+        return view
+    }
+
+    func updateUIView(_ view: InsetsView, context: Context) {
+        view.onChange = { value in if insets != value { insets = value } }
+    }
+
+    final class InsetsView: UIView {
+        var onChange: ((EdgeInsets) -> Void)?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            backgroundColor = .clear
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+        override func safeAreaInsetsDidChange() {
+            super.safeAreaInsetsDidChange()
+            report()
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            report()
+        }
+
+        private func report() {
+            let i = safeAreaInsets
+            let isRightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
+            let value = EdgeInsets(top: i.top, leading: isRightToLeft ? i.right : i.left,
+                                   bottom: i.bottom, trailing: isRightToLeft ? i.left : i.right)
+            DispatchQueue.main.async { [weak self] in self?.onChange?(value) }
+        }
+    }
+}
+
 private struct MirrorFullscreenGestureView: UIViewRepresentable {
     var viewportZoom: CGFloat
     var viewportOffset: CGSize
@@ -3260,28 +3526,7 @@ private struct MirrorControlButton: View {
     let combo: String
     let action: () -> Void
 
-    private var accent: Color {
-        switch label {
-        case "hosts":
-            return Color(hex: 0x39E0C4)
-        case "keys":
-            return Color(hex: 0x5E9BFF)
-        case "screens":
-            return Color(hex: 0xC983FF)
-        case "capture":
-            return Color(hex: 0xFF6C93)
-        case "stats":
-            return Color(hex: 0x2DE3F2)
-        case "switch":
-            return Color(hex: 0xD4EF58)
-        default:
-            return Color(hex: 0x39E0C4)
-        }
-    }
-
-    private var borderAccent: Color {
-        Color(hex: 0x39E0C4)
-    }
+    private var accent: Color { ControlDesign.ink }
 
     var body: some View {
         Button(action: action) {
@@ -3300,7 +3545,7 @@ private struct MirrorControlButton: View {
             .background(PR.bg2)
             .overlay(
                 RoundedRectangle(cornerRadius: PR.r8)
-                    .strokeBorder(borderAccent.opacity(0.35), lineWidth: 1)
+                    .strokeBorder(accent.opacity(0.35), lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: PR.r8))
         }

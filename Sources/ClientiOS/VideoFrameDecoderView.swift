@@ -42,6 +42,15 @@ final class VideoFrameDecoder: @unchecked Sendable {
     /// a stream that's receiving frames but never decoding (e.g. the initial keyframe's
     /// parameter sets were lost on the unreliable channel). Nil until the first success.
     private var _lastSuccessfulDecodeAt: TimeInterval?
+    /// Reference-time the last frame was handed to the decoder. A screen that is not changing
+    /// sends no frames at all, which is idle, not stalled.
+    private var _lastFrameSubmittedAt: TimeInterval?
+    /// Output-callback failures since the last successful decode. VideoToolbox can fail every
+    /// frame of a session after a bad start (-8969, bad data) and a keyframe carrying the same
+    /// parameter sets never rebuilt it, so only a manual "Retry video" recovered. Past this
+    /// many, the next keyframe rebuilds the session, which is what that retry did.
+    private var _callbackFailuresSinceSuccess = 0
+    private static let callbackFailuresBeforeRebuild = 10
     private let logger = Logger(subsystem: "com.mesutcy.remotedesktop.terminal", category: "VideoDecoder")
     private var hasLoggedDecodeStart = false
     private var hasLoggedDecodeSuccess = false
@@ -91,6 +100,12 @@ final class VideoFrameDecoder: @unchecked Sendable {
                 // the host for an IDR until the first frame lands.
                 return true
             }
+            // Stalled means frames keep arriving and none decodes. With nothing arriving
+            // since the last good frame the Mac's screen is simply still; asking for a
+            // keyframe then (every second, as this did) made the first frame after each
+            // pause a full keyframe — a burst of bitrate and a soft picture exactly when
+            // the user starts scrolling or typing again.
+            guard let submitted = _lastFrameSubmittedAt, submitted > last else { return false }
             return (now - last) >= stallSeconds
         }
         guard stalled else { return }
@@ -105,7 +120,10 @@ final class VideoFrameDecoder: @unchecked Sendable {
     }
 
     func decodeAsync(_ frame: VideoFrameData) {
-        let generation = lock.withLock { decodeGeneration }
+        let generation = lock.withLock { () -> UInt64 in
+            _lastFrameSubmittedAt = Date().timeIntervalSinceReferenceDate
+            return decodeGeneration
+        }
         decodeQueue.async { [weak self] in
             guard let self else { return }
             let isCurrent = self.lock.withLock { self.decodeGeneration == generation }
@@ -126,6 +144,8 @@ final class VideoFrameDecoder: @unchecked Sendable {
         callbackSelfRef = nil
         // Clear so the watchdog treats the next session as freshly started.
         _lastSuccessfulDecodeAt = nil
+        _lastFrameSubmittedAt = nil
+        _callbackFailuresSinceSuccess = 0
         lock.unlock()
 
         if let session {
@@ -169,9 +189,11 @@ final class VideoFrameDecoder: @unchecked Sendable {
                 if let formatDescription {
                     needsReset = !CMFormatDescriptionEqual(formatDescription, otherFormatDescription: newFmt)
                         || currentDynamicRange != frame.dynamicRange
+                        || _callbackFailuresSinceSuccess >= Self.callbackFailuresBeforeRebuild
                 } else {
                     needsReset = true
                 }
+                if needsReset { _callbackFailuresSinceSuccess = 0 }
                 lock.unlock()
 
                 if needsReset {
@@ -437,6 +459,11 @@ final class VideoFrameDecoder: @unchecked Sendable {
                 let decoder = Unmanaged<VideoFrameDecoder>.fromOpaque(refcon).takeUnretainedValue()
                 guard status == noErr, let pixelBuffer else {
                     decoder.logger.error("Decode callback failed: \(status)")
+                    decoder.lock.withLock {
+                        decoder._decodeErrors += 1
+                        decoder._callbackFailuresSinceSuccess += 1
+                    }
+                    decoder.requestKeyframeRecovery()
                     return
                 }
                 let dynamicRange = decoder.lock.withLock { decoder.currentDynamicRange }
@@ -489,6 +516,7 @@ final class VideoFrameDecoder: @unchecked Sendable {
                 }
                 decoder.lock.lock()
                 decoder._decodedFrames += 1
+                decoder._callbackFailuresSinceSuccess = 0
                 decoder._lastSuccessfulDecodeAt = Date().timeIntervalSinceReferenceDate
                 let shouldLogDecodeSuccess = !decoder.hasLoggedDecodeSuccess
                 if shouldLogDecodeSuccess {
@@ -521,6 +549,9 @@ final class VideoFrameDecoder: @unchecked Sendable {
             logger.info("Decoder session created")
         } else {
             Unmanaged<VideoFrameDecoder>.fromOpaque(retainedSelfRef).release()
+            // Forget the format so the next keyframe tries again. With it kept, every later
+            // keyframe looked unchanged and a failed session was never rebuilt.
+            lock.withLock { formatDescription = nil }
             logger.error("Decoder session creation failed: \(status)")
         }
     }
@@ -807,6 +838,10 @@ struct VideoFrameRendererView: UIViewRepresentable {
             // Frames are published on the main actor; subscribe directly (no extra hop).
             context.coordinator.cancellable = renderer.framePublisher
                 .sink { [weak view] buffer in view?.display(pixelBuffer: buffer) }
+            // The publisher does not replay. A frame decoded just before this view existed
+            // was never drawn, and a Mac screen that is not changing sends no other, so the
+            // picture stayed black until something moved on the Mac.
+            if let latest = renderer.latestPixelBuffer { view.display(pixelBuffer: latest) }
         }
         return view
     }
@@ -1140,3 +1175,35 @@ struct MultiDisplayThumbnailStrip: View {
         }
     }
 }
+
+#if SCREENSHOTS && canImport(UIKit)
+extension VideoRendererViewModel {
+    /// Screenshot builds only: show a fictional desktop as if it were the stream, so store
+    /// images of a session never carry a real screen.
+    func showSample(_ image: UIImage) {
+        guard let cg = image.cgImage else { return }
+        var buffer: CVPixelBuffer?
+        let attrs = [kCVPixelBufferCGImageCompatibilityKey: true, kCVPixelBufferCGBitmapContextCompatibilityKey: true,
+                     kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary] as CFDictionary
+        guard CVPixelBufferCreate(nil, cg.width, cg.height, kCVPixelFormatType_32BGRA, attrs, &buffer) == kCVReturnSuccess,
+              let buffer else { return }
+        CVPixelBufferLockBaseAddress(buffer, [])
+        let context = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: cg.width, height: cg.height,
+                                bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+                                space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        context?.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        CVPixelBufferUnlockBaseAddress(buffer, [])
+        latestPixelBuffer = buffer
+        frameSize = DesktopSize(width: Double(cg.width), height: Double(cg.height))
+        // A stream sends frames continuously; a display view made later (a fold, a new layout)
+        // waits for the next one. Keep resending the sample so every view gets a picture.
+        Task { @MainActor [weak self] in
+            while let self, self.latestPixelBuffer === buffer {
+                self.framePublisher.send(buffer)
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+}
+#endif

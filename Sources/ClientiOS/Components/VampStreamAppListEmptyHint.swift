@@ -11,16 +11,16 @@ struct VampStreamAppListEmptyHint: View {
         VStack(spacing: 12) {
             if isLoading {
                 ProgressView()
-                    .tint(PR.fg)
+                    .tint(StreamDesign.accent)
                     .padding(.top, 8)
             } else {
                 Image(systemName: "app.dashed")
                     .font(.system(size: 28, weight: .light))
-                    .foregroundStyle(PR.fg2)
+                    .foregroundStyle(StreamDesign.secondary)
             }
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(PR.fg2)
+                .foregroundStyle(StreamDesign.secondary)
                 .multilineTextAlignment(.center)
             if let actionTitle, let action {
                 VampGlassActionButton(title: actionTitle, action: action)
@@ -28,6 +28,6 @@ struct VampStreamAppListEmptyHint: View {
         }
         .padding(22)
         .frame(maxWidth: .infinity)
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .appQuietSurface()
     }
 }

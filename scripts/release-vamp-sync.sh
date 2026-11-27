@@ -4,13 +4,16 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK="$ROOT/.packaging-vamp-hosts"
+WORK="${VAMP_SYNC_RELEASE_WORK_DIR:-$ROOT/.packaging-vamp-hosts}"
+DERIVED="${VAMP_SYNC_RELEASE_DERIVED_DIR:-$ROOT/.derived-vampsync-sparkle}"
 OUTPUT="$ROOT/dist/VampStreamHost"
 IDENTITY="${VAMP_SYNC_SIGN_IDENTITY:-}"
 TEAM="${VAMP_SYNC_TEAM_ID:-}"
-PROFILE="${VAMP_SYNC_NOTARY_PROFILE:-}"
+NOTARY_KEY="${VAMP_NOTARY_KEY:-$HOME/.appstoreconnect/private_keys/AuthKey_K5DU2QVCV8.p8}"
+NOTARY_KEY_ID="${VAMP_NOTARY_KEY_ID:-K5DU2QVCV8}"
+NOTARY_ISSUER="${VAMP_NOTARY_ISSUER:-5ddc2a8a-c374-4f06-b9bd-916f198652be}"
 ARCHS="${VAMP_HOST_ARCHS:-arm64 x86_64}"
-ACCOUNT="${VAMP_SYNC_SPARKLE_ACCOUNT:-vamp-sync}"
+ACCOUNT="${VAMP_SYNC_SPARKLE_ACCOUNT:-ed25519}"
 EXPORTED_APP=""
 DOWNLOAD_PREFIX=""
 ALLOW_DIRTY=0
@@ -83,11 +86,11 @@ if [[ -z "$EXPORTED_APP" ]]; then
   xcodegen generate --spec "$ROOT/project.yml" --project "$ROOT"
   xcodebuild -quiet -project "$ROOT/RemoteDesktopToolApps.xcodeproj" -scheme VampMiniHost \
     -configuration Release -sdk macosx -destination 'generic/platform=macOS' \
-    -derivedDataPath "$ROOT/.derived-vampsync-sparkle" -archivePath "$ARCHIVE" \
+    -derivedDataPath "$DERIVED" -archivePath "$ARCHIVE" \
     ARCHS="$ARCHS" ONLY_ACTIVE_ARCH=NO CODE_SIGN_STYLE=Manual \
     CODE_SIGN_IDENTITY="$IDENTITY" DEVELOPMENT_TEAM="$TEAM" \
     ENABLE_HARDENED_RUNTIME=YES ENABLE_DEBUG_DYLIB=NO archive
-  if [[ "$ARCHIVE_ONLY" -eq 1 || -z "$PROFILE" ]]; then
+  if [[ "$ARCHIVE_ONLY" -eq 1 ]]; then
     log "Archive ready: $ARCHIVE"
     log "Open in Xcode; choose Distribute App → Direct Distribution. Export after notarization."
     exit 0
@@ -106,7 +109,7 @@ PY
     -exportOptionsPlist "$EXPORT_PLIST"
   EXPORTED_APP="$WORK/export/Vamp Sync.app"
   ditto -c -k --sequesterRsrc --keepParent "$EXPORTED_APP" "$WORK/notarization.zip"
-  xcrun notarytool submit "$WORK/notarization.zip" --keychain-profile "$PROFILE" \
+  xcrun notarytool submit "$WORK/notarization.zip" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" \
     --wait --output-format json > "$WORK/notarization-result.json"
   python3 - "$WORK/notarization-result.json" <<'PY'
 import json, sys
@@ -119,7 +122,7 @@ fi
 
 [[ -d "$EXPORTED_APP" ]] || fail "Exported app not found: $EXPORTED_APP"
 INFO="$EXPORTED_APP/Contents/Info.plist"
-[[ "$(plutil -extract CFBundleIdentifier raw "$INFO")" == com.mesutcy.remotedesktop.minhost ]] \
+[[ "$(plutil -extract CFBundleIdentifier raw "$INFO")" == com.mesutcy.remotedesktop.host ]] \
   || fail "The exported app is not Vamp Sync"
 codesign --verify --deep --strict "$EXPORTED_APP"
 SIGNING_DETAILS="$(codesign -d --verbose=4 "$EXPORTED_APP" 2>&1)"
@@ -135,13 +138,13 @@ ZIP="$OUTPUT/${STEM}-notarized.zip"
 DMG="$OUTPUT/${STEM}-notarized.dmg"
 [[ -n "$DOWNLOAD_PREFIX" ]] || DOWNLOAD_PREFIX="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-${VERSION}-build-${BUILD}/"
 [[ "$DOWNLOAD_PREFIX" == https://* ]] || fail "Sparkle downloads must use HTTPS"
-SPARKLE_BIN="${VAMP_SYNC_SPARKLE_BIN:-$ROOT/.derived-vampsync-sparkle/SourcePackages/artifacts/sparkle/Sparkle/bin}"
+SPARKLE_BIN="${VAMP_SYNC_SPARKLE_BIN:-$DERIVED/SourcePackages/artifacts/sparkle/Sparkle/bin}"
 [[ -x "$SPARKLE_BIN/generate_keys" && -x "$SPARKLE_BIN/generate_appcast" && -x "$SPARKLE_BIN/sign_update" ]] \
   || fail "Sparkle tools not found; set VAMP_SYNC_SPARKLE_BIN to the Sparkle bin directory"
 PUBLIC_KEY="$("$SPARKLE_BIN/generate_keys" --account "$ACCOUNT" -p)"
 [[ "$PUBLIC_KEY" == "$(plutil -extract SUPublicEDKey raw "$INFO")" ]] \
   || fail "Sparkle Keychain public key does not match the exported app"
-[[ "$(plutil -extract SUFeedURL raw "$INFO")" == https://thevamp.app/sync/appcast.xml ]] \
+[[ "$(plutil -extract SUFeedURL raw "$INFO")" == https://mesut.uk/appcast.xml ]] \
   || fail "Unexpected Vamp Sync update feed"
 
 # Keep the app's stapled ticket and bundle signature intact.
@@ -152,9 +155,9 @@ ditto "$EXPORTED_APP" "$STAGE/Vamp Sync.app"
 ln -s /Applications "$STAGE/Applications"
 hdiutil create -volname 'Vamp Sync' -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 DMG_NOTARIZED=false
-if [[ -n "$PROFILE" ]]; then
+if [[ "$ARCHIVE_ONLY" -eq 0 ]]; then
   codesign --force --sign "$IDENTITY" --timestamp "$DMG"
-  xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait \
+  xcrun notarytool submit "$DMG" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --wait \
     --output-format json > "$WORK/dmg-notarization-result.json"
   python3 - "$WORK/dmg-notarization-result.json" <<'PY'
 import json, sys
@@ -225,4 +228,4 @@ log "Signed update feed ready: $FEED_DIR/appcast.xml"
 if [[ "$DMG_NOTARIZED" == false ]]; then
   log "The app has Apple's stapled ticket. The outer DMG is unsigned; Sparkle uses the EdDSA-signed ZIP."
 fi
-log "Publish the matching GitHub release assets, then copy appcast.xml to docs/sync/appcast.xml."
+log "Publish the matching GitHub release assets, then host appcast.xml at https://mesut.uk/appcast.xml."

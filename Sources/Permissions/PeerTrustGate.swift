@@ -15,6 +15,8 @@ public enum TrustEvaluation: Sendable, Hashable {
     case fingerprintChanged(peerID: UUID, displayName: String, previousFingerprint: String, newFingerprint: String)
     /// Fingerprint is missing or not a 64-character SHA-256 hex digest.
     case invalidIdentity
+    /// The trusted-device store could not be read. Nothing can be decided, so nothing is trusted.
+    case storeUnavailable
 }
 
 /// Manages the trust decision flow for incoming connections.
@@ -97,7 +99,11 @@ public actor PeerTrustGate {
             }
             return .requiresApproval(peerID: peerID, displayName: displayName, fingerprint: fingerprint)
         } catch {
-            return .requiresApproval(peerID: peerID, displayName: displayName, fingerprint: fingerprint)
+            // A read failure used to become an approval prompt, so a revoked device could be
+            // approved again. Refuse until the store can be read.
+            logger.error("evaluate: trusted-peer store unreadable — refusing \(peerID.uuidString, privacy: .public)")
+            lastDenialReason = "Couldn’t read the list of trusted devices. Try again."
+            return .storeUnavailable
         }
     }
 
@@ -116,6 +122,8 @@ public actor PeerTrustGate {
             return false
         case .invalidIdentity, .fingerprintChanged:
             return false
+        case .storeUnavailable:
+            return false
         case .requiresApproval(let id, let name, let fp):
             // Prevent concurrent prompts (TOCTOU guard)
             guard pendingPromptPeerID == nil else {
@@ -129,17 +137,18 @@ public actor PeerTrustGate {
                 return false
             }
             let approved = await handler(id, name, fp)
-            if approved {
-                let peer = TrustedPeer(id: id, displayName: name, fingerprint: fp)
-                do {
-                    try await store.trustPeer(peer)
-                } catch {
-                    // Never swallow this: a failed persist means the user approves but the device
-                    // is re-prompted on every reconnect (brutal over Tailscale). Surface it.
-                    logger.error("Failed to persist approved peer \(id.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                }
+            guard approved else { return false }
+            let peer = TrustedPeer(id: id, displayName: name, fingerprint: fp)
+            do {
+                try await store.trustPeer(peer)
+            } catch {
+                // An approval that cannot be saved is not an approval: the session would start
+                // now and the device would be asked again on every reconnect. Refuse it.
+                logger.error("Failed to persist approved peer \(id.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                lastDenialReason = "Couldn’t save this device as trusted, so the connection was not allowed. Check the disk and try again."
+                return false
             }
-            return approved
+            return true
         }
     }
 

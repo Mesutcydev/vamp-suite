@@ -12,16 +12,21 @@ public final class HostInputInjectionService: InputInjectionServiceProtocol, @un
     private let bridge: any PlatformInputBridge
     private let accessibilityChecker: () -> Bool
     private let layoutProvider: () async throws -> DisplayLayout
+    private let confinesPointerToLayout: () -> Bool
     private let logger = Logger(subsystem: "com.remotedesktop.input", category: "InjectionService")
 
+    /// - Parameter confinesPointerToLayout: true while a single window is the stream target, so a
+    ///   pointer command can never leave that window's frame.
     public init(
         bridge: any PlatformInputBridge,
         accessibilityChecker: @escaping () -> Bool,
-        layoutProvider: @escaping () async throws -> DisplayLayout
+        layoutProvider: @escaping () async throws -> DisplayLayout,
+        confinesPointerToLayout: @escaping () -> Bool = { false }
     ) {
         self.bridge = bridge
         self.accessibilityChecker = accessibilityChecker
         self.layoutProvider = layoutProvider
+        self.confinesPointerToLayout = confinesPointerToLayout
     }
 
     // MARK: - InputInjectionServiceProtocol
@@ -50,7 +55,10 @@ public final class HostInputInjectionService: InputInjectionServiceProtocol, @un
 
         switch InputCoordinateTranslator.translateToGlobal(command, layout: layout) {
         case .success(let translated):
-            try executeCommand(translated)
+            let confined = confinesPointerToLayout()
+                ? InputCoordinateTranslator.clamp(translated, to: layout.virtualBounds)
+                : translated
+            try executeCommand(confined)
         case .failure(let error):
             logger.warning("Coordinate translation failed: \(error.localizedDescription)")
             throw error

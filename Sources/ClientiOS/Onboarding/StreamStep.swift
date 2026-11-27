@@ -140,7 +140,7 @@ struct StreamStep: View {
                 }
             }
         }
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
     }
 
     private func opacity(for line: OnboardingViewModel.LogLine) -> Double {

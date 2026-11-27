@@ -164,11 +164,18 @@ public final class LANPeerConnection: LANTransportSecurityConfigurable, @uncheck
     }
 
     private func receiveFrame(on conn: NWConnection) {
-        conn.receive(minimumIncompleteLength: Self.frameHeaderSize, maximumLength: Self.frameHeaderSize) { [weak self] headerData, _, _, error in
+        conn.receive(minimumIncompleteLength: Self.frameHeaderSize, maximumLength: Self.frameHeaderSize) { [weak self] headerData, _, isComplete, error in
             guard let self else { return }
             guard let headerData, headerData.count == Self.frameHeaderSize else {
-                if let error, !self.isCancellationError(error) {
-                    self.handleConnectionError(error)
+                if let error {
+                    if !self.isCancellationError(error) { self.handleConnectionError(error) }
+                } else if isComplete {
+                    // The peer closed cleanly. Network.framework reports that here and not
+                    // through the state handler, so the session used to look connected (a
+                    // frozen picture) until a liveness watchdog fired 12–30 s later.
+                    // Cancelling routes it through the normal closed/retry handling.
+                    self.logger.info("Peer closed the data connection")
+                    conn.cancel()
                 }
                 return
             }
@@ -182,6 +189,9 @@ public final class LANPeerConnection: LANTransportSecurityConfigurable, @uncheck
             guard payloadLen >= 0, payloadLen <= 16_777_216 else {
                 self.logger.error("Received invalid frame payload length: \(payloadLen)")
                 self.handleConnectionError(nil)
+                // The stream can't be re-framed after this. Close it so the normal
+                // closed/retry handling runs instead of leaving a live socket nobody reads.
+                conn.cancel()
                 return
             }
 
@@ -267,9 +277,20 @@ public final class LANPeerConnection: LANTransportSecurityConfigurable, @uncheck
     /// (AP roam, NAT table timeout, peer power loss) surface as `.failed`
     /// within ~15 s instead of sitting in `.ready` indefinitely.
     private static let tlsPSKIdentity = Data("vamp-data-channel-v1".utf8)
+    // 0x00AD is TLS_RSA_PSK_WITH_AES_256_GCM_SHA384. Appending it only adds a candidate: with it
+    // alone a loopback test negotiated TLS_PSK_WITH_AES_128_GCM_SHA256 (0x00A8), which has no forward
+    // secrecy.
     private static let tlsPSKCiphersuite = tls_ciphersuite_t(rawValue: UInt16(0x00AD))
+    /// TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256. The key is the per-session token, so with a plain
+    /// PSK suite anyone who later learns the token (see SessionTokenSealing) can read a recorded
+    /// session. This suite mixes a fresh ECDHE secret into the keys, so the recording stays closed.
+    /// It is chosen only when both ends offer it: against a peer that does not (an older app, or the
+    /// Linux host) the handshake falls back to 0x00A8 exactly as before, which a loopback matrix of
+    /// every pairing of these settings confirmed. Network.framework implements no DHE-PSK GCM suite
+    /// (0x00AA, 0x00AB), so this is the forward-secret option available.
+    static let tlsPSKForwardSecretSuite = tls_ciphersuite_t(rawValue: UInt16(0xCCAC))
 
-    private static func makeTCPParameters(sessionTokenHex: String?) throws -> NWParameters {
+    static func makeTCPParameters(sessionTokenHex: String?) throws -> NWParameters {
         guard let sessionTokenHex,
               let token = tokenFromHex(sessionTokenHex),
               token.count == 32 else {
@@ -287,6 +308,9 @@ public final class LANPeerConnection: LANTransportSecurityConfigurable, @uncheck
         if let tlsPSKCiphersuite {
             sec_protocol_options_append_tls_ciphersuite(tls.securityProtocolOptions, tlsPSKCiphersuite)
         }
+        if let tlsPSKForwardSecretSuite {
+            sec_protocol_options_append_tls_ciphersuite(tls.securityProtocolOptions, tlsPSKForwardSecretSuite)
+        }
         sec_protocol_options_set_peer_authentication_required(tls.securityProtocolOptions, true)
         let params = NWParameters(tls: tls, tcp: tcp)
         params.includePeerToPeer = true
@@ -295,7 +319,7 @@ public final class LANPeerConnection: LANTransportSecurityConfigurable, @uncheck
     }
 
     private static func tokenFromHex(_ hex: String) -> Data? {
-        guard hex.count == 64 else { return nil }
+        guard hex.count == 64, hex.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return nil }
         var result = Data(capacity: 32)
         var index = hex.startIndex
         while index < hex.endIndex {

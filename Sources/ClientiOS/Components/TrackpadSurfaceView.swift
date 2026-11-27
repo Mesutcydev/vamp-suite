@@ -15,6 +15,8 @@ import UIKit
 /// long-press = drag-lock toggle.
 struct TrackpadSurfaceView: View {
     @ObservedObject var interactionVM: RemoteInteractionViewModel
+    /// Optional hook for the local cursor overlay owned by the video surface.
+    var onRelativeMove: ((Double, Double) -> Void)? = nil
     /// Multiplies each raw finger delta before it's sent as a relative pointer move. A phone-sized
     /// pad mapped to a large Mac display needs gain > 1 to feel responsive; the view model then
     /// layers its own speed-based acceleration on top.
@@ -66,7 +68,10 @@ struct TrackpadSurfaceView: View {
             #if canImport(UIKit) && !os(macOS)
             TrackpadGestureSurface(
                 onMove: { dx, dy in
-                    interactionVM.sendRelativePointerMove(deltaX: dx * sensitivity, deltaY: dy * sensitivity)
+                    let scaledX = dx * sensitivity
+                    let scaledY = dy * sensitivity
+                    interactionVM.sendRelativePointerMove(deltaX: scaledX, deltaY: scaledY)
+                    onRelativeMove?(scaledX, scaledY)
                 },
                 onClick: { interactionVM.sendPointerButton(.left, action: .click) },
                 onDoubleClick: { interactionVM.sendPointerButton(.left, action: .doubleClick) },

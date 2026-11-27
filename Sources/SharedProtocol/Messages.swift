@@ -70,6 +70,40 @@ public struct SessionOfferMessage: Codable, Hashable, Sendable {
     }
 }
 
+/// Client → host, sent before the offer: asks the host to prove which
+/// key-agreement key belongs to its signing identity. Hosts that predate the
+/// signed key exchange cannot decode this event and skip it.
+public struct HostKeyRequestMessage: Codable, Hashable, Sendable {
+    /// Random per-request value the host signs back, so a captured bundle
+    /// cannot answer a later request.
+    public var nonce: Data
+
+    public init(nonce: Data) {
+        self.nonce = nonce
+    }
+}
+
+/// Host → client: the host's key-agreement public key, signed by the same
+/// P-256 identity key whose fingerprint the client pins. Built and verified by
+/// `SessionTokenSealing.makeKeyBundle` / `verifyKeyBundle`.
+public struct SignedHostKeyBundle: Codable, Hashable, Sendable {
+    /// x963 P-256 signing public key. Its SHA-256 is the host fingerprint.
+    public var signingPublicKey: Data
+    /// x963 P-256 key-agreement public key the session token is sealed to.
+    public var keyAgreementPublicKey: Data
+    /// Echo of the request nonce.
+    public var nonce: Data
+    /// DER ECDSA signature over the bundle transcript.
+    public var signature: Data
+
+    public init(signingPublicKey: Data, keyAgreementPublicKey: Data, nonce: Data, signature: Data) {
+        self.signingPublicKey = signingPublicKey
+        self.keyAgreementPublicKey = keyAgreementPublicKey
+        self.nonce = nonce
+        self.signature = signature
+    }
+}
+
 public struct SessionAnswerMessage: Codable, Hashable, Sendable {
     public var sessionID: UUID
     public var sdp: String
@@ -225,6 +259,14 @@ public struct HostStatusMessage: Codable, Hashable, Sendable {
     /// Current lock / secure-input state of the host Mac.
     /// Nil means unknown (older host); treat as `.unlockedActiveSession`.
     public var lockState: HostLockState?
+    /// Edition support for optional Remote Unlock, independent of normal input mode.
+    public var supportsRemoteUnlock: Bool?
+
+    /// Older hosts report only their session mode. Layout-only status updates
+    /// can omit both fields and leave the current unlock capability intact.
+    public var allowsRemoteUnlockEntry: Bool? {
+        supportsRemoteUnlock ?? sessionMode.map { $0 != .viewOnly }
+    }
 
     public init(
         hostID: UUID,
@@ -236,7 +278,8 @@ public struct HostStatusMessage: Codable, Hashable, Sendable {
         quality: NetworkQuality? = nil,
         thermalState: AppThermalState? = nil,
         lowPowerModeEnabled: Bool? = nil,
-        lockState: HostLockState? = nil
+        lockState: HostLockState? = nil,
+        supportsRemoteUnlock: Bool? = nil
     ) {
         self.hostID = hostID
         self.connectionState = connectionState
@@ -248,6 +291,7 @@ public struct HostStatusMessage: Codable, Hashable, Sendable {
         self.thermalState = thermalState
         self.lowPowerModeEnabled = lowPowerModeEnabled
         self.lockState = lockState
+        self.supportsRemoteUnlock = supportsRemoteUnlock
     }
 }
 

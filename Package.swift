@@ -46,7 +46,9 @@ let package = Package(
         .library(name: "SharedUI", targets: ["SharedUI"])
     ],
     dependencies: [
-        // 1.19.0 added a build-tool plugin that Xcode cannot place for iOS builds.
+        // Pinned below 1.19.0: that release added a build-tool plugin whose host executable
+        // (SwiftTermBuildInfoGenerator) Xcode cannot place for an iOS destination, breaking
+        // every iOS build. 1.18.0 is the last release without it.
         .package(url: "https://github.com/migueldeicaza/SwiftTerm", exact: "1.18.0")
     ],
     targets: [
@@ -103,7 +105,7 @@ let package = Package(
         .target(name: "Discovery", dependencies: ["SharedModels", "SharedProtocol", "SharedUtilities", "TransportWebRTC", "Permissions"]),
         .target(name: "Diagnostics", dependencies: ["SharedModels"]),
         .target(name: "HostWidgetShared"),
-        .target(name: "SharedUI"),
+        .target(name: "SharedUI", dependencies: ["SharedModels"]),
         .executableTarget(
             name: "HostApp",
             dependencies: [

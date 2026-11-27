@@ -66,7 +66,7 @@ in [vamp-companion](https://github.com/Mesutcydev/vamp-companion).
 <details>
 <summary>Other tools and compatibility</summary>
 
-**Vamp Sync, Vamp Assistant, and Vamp Companion are the current hosts.** Vamp Host, Vamp
+**Vamp Sync, Vamp Assistant, and Vamp Companion are the current host products.** Vamp Host, Vamp
 Terminal Host, and Vamp Linux Host are discontinued. Their historical source
 and build targets remain for compatibility and shared-source verification;
 new packages are no longer produced. Vamp Terminal documentation describes
@@ -76,6 +76,12 @@ No Vamp account or hosted relay is required. Existing discovery, storage, and
 installation identifiers remain stable for compatibility.
 
 </details>
+
+### Vamp Sync for Linux
+
+A native X11 host for Vamp Control and Vamp Stream includes the Vamp Sync
+desktop panel. See the [Linux build and pairing instructions](vamp-sync-linux/README.md) and
+[tester diagnostics specification](vamp-sync-linux/TESTING.md).
 
 ## Download and install
 
@@ -225,3 +231,29 @@ name-use policies are documented in [GOVERNANCE.md](GOVERNANCE.md),
 Vamp Suite is independent and is not affiliated with, endorsed by, or sponsored
 by Apple Inc. Tailscale is an optional private-network transport and is not a
 hosted Vamp service.
+
+### Website and App Store editions
+
+The installed store apps are named **Vamp Sync** and **App Stream**. Their
+shared transport remains compatible with the website editions. Vamp Sync updates
+the existing **Vamp : Host** listing using `com.mesutcy.remotedesktop.host` and
+retains its pairing storage. Website Sync uses `com.mesutcy.remotedesktop.host`
+and its separate identity.
+
+Vamp Sync's website and Mac App Store targets share `VampSyncBase` in
+`project.yml`, including sources and version/build settings. The website edition
+supports remote input after Accessibility consent and uses Sparkle updates. The
+store edition uses App Sandbox, shares existing windows in View Only mode, and
+receives updates through the Mac App Store.
+
+Vamp Stream uses one source target with Release (website) and AppStore
+configurations. Both explain Sync's editions during onboarding and in Settings.
+The App Store configuration connects to the user's own Mac on the same physical
+Wi-Fi/Ethernet LAN; the website configuration retains private Tailscale support.
+Shared fixes apply to both builds, which CI verifies together. Each store release
+still needs Apple's review.
+
+Build unsigned store archives with `scripts/archive-vamp-app-store.sh all --unsigned`,
+or provide your own team at build time with `--team TEAM_ID` for signed archives.
+Listing copy, review instructions, and the remaining device/signing checks are in
+[the store release guide](AppStore-Metadata-Vamp.md).

@@ -132,7 +132,11 @@ private struct MacSwiftTermView: NSViewRepresentable {
         func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) { /* no-op */ }
 
         func clipboardCopy(source: TerminalView, content: Data) {
-            guard let text = String(data: content, encoding: .utf8) else { return }
+            // OSC 52 lets any text the terminal prints replace the clipboard. Respect the
+            // clipboard-sync switch and cap the size so output cannot flood it.
+            guard UserDefaults.standard.object(forKey: "client.clipboard.enabled") as? Bool ?? true,
+                  content.count <= 100_000,
+                  let text = String(data: content, encoding: .utf8) else { return }
             Task { @MainActor in
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)

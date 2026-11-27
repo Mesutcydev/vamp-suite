@@ -122,6 +122,26 @@ final class RemoteInteractionViewModel: ObservableObject {
         rebuildMapper()
     }
 
+    // MARK: - Local cursor overlay (cursorless capture)
+
+    /// The fitted video content area in view coordinates — the overlay's clamp rect.
+    var cursorContentRect: CGRect? {
+        guard let rect = mapper?.fittedContentRect, rect.size.width > 0, rect.size.height > 0 else {
+            return nil
+        }
+        return CGRect(
+            x: rect.origin.x, y: rect.origin.y,
+            width: rect.size.width, height: rect.size.height)
+    }
+
+    /// View points per desktop point, for converting relative (desktop-space) pointer
+    /// deltas into local cursor movement in the overlay's coordinate space.
+    var cursorViewPointsPerDesktopPoint: Double? {
+        guard let display = selectedDisplay, let rect = mapper?.fittedContentRect,
+              rect.size.width > 0, display.frame.size.width > 0 else { return nil }
+        return rect.size.width / display.frame.size.width
+    }
+
     func updateViewportInsets(_ insets: DesktopEdgeInsets) {
         viewInsets = insets
         rebuildMapper()
@@ -136,8 +156,15 @@ final class RemoteInteractionViewModel: ObservableObject {
         rebuildMapper()
     }
 
+    /// The display on the main surface when it is not the selected one: in Show All
+    /// Displays, tapping a thumbnail focuses another display. Input has to follow the
+    /// picture, or taps land on the display that is no longer on screen.
+    var focusedDisplayOverride: DisplayDescriptor? {
+        didSet { if oldValue != focusedDisplayOverride { rebuildMapper() } }
+    }
+
     var selectedDisplay: DisplayDescriptor? {
-        displayLayoutViewModel.selectedDisplay ?? displayLayoutViewModel.primaryDisplay
+        focusedDisplayOverride ?? displayLayoutViewModel.selectedDisplay ?? displayLayoutViewModel.primaryDisplay
     }
 
     var targetDisplayID: String? {
@@ -199,7 +226,9 @@ final class RemoteInteractionViewModel: ObservableObject {
 
         let newMapper = ViewportCoordinateMapper(
             display: display,
-            streamConfiguration: displayLayoutViewModel.selectedStreamConfiguration,
+            // The stream configuration describes the selected display, not a focused one.
+            streamConfiguration: focusedDisplayOverride == nil
+                ? displayLayoutViewModel.selectedStreamConfiguration : nil,
             viewSize: viewSize,
             viewInsets: viewInsets,
             viewPixelScale: viewPixelScale,
@@ -351,15 +380,14 @@ final class RemoteInteractionViewModel: ObservableObject {
     // MARK: - Pointer dynamics
 
     private func accelerated(_ d: DesktopPoint) -> DesktopPoint {
-        guard pointerAccelerationEnabled else { return d }
-        let speed = (d.x * d.x + d.y * d.y).squareRoot()
-        // ~1x at low speed (preserves precise feel), up to ~2.5x at high speed.
-        let factor = 1.0 + min(speed / 50.0, 1.5)
-        return DesktopPoint(x: d.x * factor, y: d.y * factor)
+        PointerDynamics.accelerate(d, enabled: pointerAccelerationEnabled)
     }
 
     private func dynamics(_ d: DesktopPoint) -> DesktopPoint {
-        accelerated(DesktopPoint(x: d.x * pointerSensitivity, y: d.y * pointerSensitivity))
+        PointerDynamics.apply(
+            d,
+            sensitivity: pointerSensitivity,
+            accelerationEnabled: pointerAccelerationEnabled)
     }
 
     // MARK: - Guards
@@ -440,8 +468,13 @@ final class RemoteInteractionViewModel: ObservableObject {
     private func ensureFlushLink() {
         #if canImport(UIKit)
         guard flushLink == nil else { return }
-        let link = CADisplayLink(target: DisplayLinkProxy { [weak self] in self?.flushPending() },
-                                 selector: #selector(DisplayLinkProxy.tick))
+        let link = CADisplayLink(target: DisplayLinkProxy { [weak self] in
+            guard let self else { return }
+            self.flushPending()
+            // Nothing queued after this frame: park the link until the next input event. It
+            // used to run at 60–120 Hz on the main run loop for the rest of the session.
+            if self.pendingMove == nil && !self.hasPendingScroll { self.stopFlushLink() }
+        }, selector: #selector(DisplayLinkProxy.tick))
         link.add(to: .main, forMode: .common)
         flushLink = link
         #else
@@ -481,3 +514,8 @@ final class RemoteInteractionViewModel: ObservableObject {
         }
     }
 }
+
+/// Vamp Control's pointer surface for a paired Bluetooth mouse/keyboard. The methods already
+/// existed with exactly these signatures; declaring the conformance lets the shared
+/// `BluetoothInputController` drive Control and Stream alike.
+extension RemoteInteractionViewModel: RemotePointerInputSink {}

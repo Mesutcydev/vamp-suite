@@ -66,6 +66,26 @@ final class MacAssistantSession: ObservableObject {
         }
     }
 
+    /// The reconnect currently running, if it was started with `startReconnect()`. Only that
+    /// one can be cancelled; a pairing request runs to its URLSession timeout.
+    private var reconnectTask: Task<Void, Never>?
+
+    var canCancelWork: Bool { reconnectTask != nil && isWorking }
+
+    func startReconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = Task { [weak self] in
+            await self?.reconnect()
+            self?.reconnectTask = nil
+        }
+    }
+
+    /// Stops a reconnect that is waiting on the Assistant. Without this the spinner had no way out
+    /// short of the request timeout.
+    func cancelWork() {
+        reconnectTask?.cancel()
+    }
+
     func reconnect() async {
         guard !isWorking else { return }
         guard let savedAddress else {
@@ -91,6 +111,8 @@ final class MacAssistantSession: ObservableObject {
                 displayName: "Vamp Assistant",
                 status: status
             )
+        } catch is CancellationError {
+            // The user cancelled; leave the saved connection as it was.
         } catch {
             connected = nil
             errorMessage = Self.connectionMessage(for: error)

@@ -777,7 +777,12 @@ extension SwiftTermContainer: UIViewRepresentable {
         func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) { /* no-op */ }
 
         func clipboardCopy(source: TerminalView, content: Data) {
-            guard let text = String(data: content, encoding: .utf8) else { return }
+            // OSC 52 lets any text the terminal prints replace the clipboard (and Universal
+            // Clipboard carries it to the user's other devices). Respect the clipboard-sync
+            // switch and cap the size so output cannot flood it.
+            guard UserDefaults.standard.object(forKey: "client.clipboard.enabled") as? Bool ?? true,
+                  content.count <= 100_000,
+                  let text = String(data: content, encoding: .utf8) else { return }
             Task { @MainActor in
                 UIPasteboard.general.string = text
             }
@@ -788,7 +793,10 @@ extension SwiftTermContainer: UIViewRepresentable {
         func bell(source: TerminalView) { /* no-op */ }
 
         func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
-            guard let url = URL(string: link) else { return }
+            // OSC 8 can label any text with any target. Only web and mail links are opened;
+            // other schemes (tel:, shortcuts:, another app's URL scheme) are not for terminal output.
+            guard let url = URL(string: link),
+                  ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") else { return }
             Task { @MainActor in
                 UIApplication.shared.open(url)
             }

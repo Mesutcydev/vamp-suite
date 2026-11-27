@@ -1,0 +1,29 @@
+{
+  "envelope" : {
+    "event" : {
+      "offer" : {
+        "_0" : {
+          "clientCapabilities" : 147458,
+          "clientProductRole" : "remoteControl",
+          "qualityPreset" : "balanced",
+          "sdp" : "{\"sessionID\":\"44444444-4444-4444-8444-444444444444\",\"channels\":[],\"channelTags\":{}}",
+          "sealedSessionToken" : "\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/",
+          "sessionID" : "11111111-1111-4111-8111-111111111111"
+        }
+      }
+    },
+    "id" : "33333333-3333-4333-8333-333333333333",
+    "protocolVersion" : 1,
+    "sender" : {
+      "displayName" : "Test \/ iPhone & 📱",
+      "id" : "22222222-2222-4222-8222-222222222222",
+      "publicKeyFingerprint" : "8964233423574cbc50a15c713208ecb85f8c6a62e319bba9680978380dd67859",
+      "role" : "client"
+    },
+    "sentAt" : 617288244.1234567,
+    "sessionID" : "11111111-1111-4111-8111-111111111111"
+  },
+  "minimumProtocolVersion" : 1,
+  "senderPublicKey" : "BDrThhqVYhOSUWu1k+8FWD7S5YZvXLYmCjAXI3\/Ym5Cv0JYcfjcHWmeRo5xh9WKVsCttJlZ7YV5gqkHuHI6DOI0=",
+  "signature" : "MEUCIAyOYT21wjOBawi7okRAN+Rw5cd114NsJvIh6IJgRRJBAiEAuQPHSk6GEmsp1eslNppdB9W6ihtlKtH2j8Y4IDQbiX8="
+}

@@ -38,7 +38,7 @@ struct RemoteSessionLiveActivityWidget: Widget {
                             metricPill(systemImage: "wifi", text: context.state.qualitySummary)
                             metricPill(
                                 systemImage: context.state.isReconnecting ? "arrow.clockwise" : "lock.shield",
-                                text: context.state.isReconnecting ? "Restoring" : "Secure"
+                                text: context.state.isReconnecting ? "Restoring" : "Connected"
                             )
                         }
                     }
@@ -79,7 +79,7 @@ struct RemoteSessionLiveActivityWidget: Widget {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(context.state.isReconnecting ? .orange : .primary)
                         Spacer()
-                        Text(context.state.isReconnecting ? "Hold tight" : "Secure link")
+                        Text(context.state.isReconnecting ? "Hold tight" : "Live session")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }

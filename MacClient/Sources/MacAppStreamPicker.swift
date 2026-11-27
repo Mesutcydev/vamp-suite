@@ -15,6 +15,7 @@ struct MacAppStreamPicker: View {
     let onDisconnect: () -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 148, maximum: 220), spacing: 12)]
+    @State private var appPendingClose: RemoteApplication?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,6 +25,15 @@ struct MacAppStreamPicker: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MacBrand.pageBackdrop)
+        .confirmationDialog(
+            "Close \(appPendingClose?.name ?? "this app") on \(hostName)?",
+            isPresented: Binding(get: { appPendingClose != nil }, set: { if !$0 { appPendingClose = nil } }),
+            presenting: appPendingClose
+        ) { app in
+            Button("Close \(app.name)", role: .destructive) { vm.close(app) }
+        } message: { _ in
+            Text("Unsaved changes in the app on that Mac may be lost.")
+        }
     }
 
     private var header: some View {
@@ -98,8 +108,9 @@ struct MacAppStreamPicker: View {
                     ForEach(sortedApplications) { app in
                         MacAppStreamTile(application: app, isBusy: isBusy) { vm.select(app) }
                             .contextMenu {
-                                if app.isRunning, ApplicationClosePolicy.canClose(app.bundleIdentifier) {
-                                    Button("Close \(app.name)", role: .destructive) { vm.close(app) }
+                                if MacDistributionPolicy.allowsRemoteChanges, app.isRunning,
+                                   ApplicationClosePolicy.canClose(app.bundleIdentifier) {
+                                    Button("Close \(app.name)…", role: .destructive) { appPendingClose = app }
                                 }
                             }
                     }

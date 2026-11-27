@@ -2,6 +2,7 @@ import Combine
 import CoreGraphics
 import SwiftUI
 import SharedModels
+import SharedUtilities
 
 #if canImport(UIKit)
 import UIKit
@@ -14,19 +15,34 @@ import UIKit
 struct BeetCodeRemoteView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Assistant streams are requested by resolution, but the user is choosing an outcome.
+    /// The labels say what they get; the resolution stays visible as secondary detail so a
+    /// user who does think in pixels is not deprived of it.
     private enum StreamResolution: String, CaseIterable, Identifiable {
-        case p480 = "480p"
-        case p720 = "720p"
-        case p1080 = "1080p"
+        // Listed best-first so the picker reads in the same direction as the Sync path's.
+        // Raw values are the stored keys and are deliberately unchanged.
         case native
+        case p1080 = "1080p"
+        case p720 = "720p"
+        case p480 = "480p"
 
         var id: String { rawValue }
-        var title: String { rawValue == "native" ? "Native" : rawValue }
+
+        var title: String {
+            switch self {
+            case .native: return "Sharper text (Native)"
+            case .p1080: return "Balanced (1080p)"
+            case .p720: return "Lower bandwidth (720p)"
+            case .p480: return "Minimum bandwidth (480p)"
+            }
+        }
     }
 
     let session: BeetCodeRemoteSessionViewModel.Session
+    let clientName: String
+    let hostProductName: String
+    let presentationBackground: Color?
     let windowID: UInt32?
-    let streamTitle: String?
     let isTerminalApplication: Bool
     let streamGeometryRevision: String
     let onClose: () -> Void
@@ -43,11 +59,11 @@ struct BeetCodeRemoteView: View {
     let onOriginalSizing: (() -> Void)?
     @State private var videoHealthCheckTime = ProcessInfo.processInfo.systemUptime
     @State private var videoStartedAt = ProcessInfo.processInfo.systemUptime
+    @StateObject private var cursorModel = LocalCursorModel()
     @State private var startedStreamTaskID: String?
     @StateObject private var renderer: BeetCodeVideoRendererViewModel
     @StateObject private var input: BeetCodeRemoteInputController
     @State private var keyboardActive = false
-    @State private var keyboardOverlayBottomPad: CGFloat = 0
     @State private var adjustsViewport = false
     @State private var viewportZoom: CGFloat = 1
     @State private var viewportOffset: CGSize = .zero
@@ -60,11 +76,28 @@ struct BeetCodeRemoteView: View {
     @StateObject private var annotationStore = AnnotationOverlayStore()
     @AppStorage("vampstream.assistant.resolution") private var resolution = StreamResolution.native.rawValue
     @State private var fillScreen = false
+    @StateObject private var bluetoothInput = BluetoothInputController()
+    @State private var showsBluetoothStatus = false
+    /// Shared with the Sync path on purpose: the gestures are identical, so the one-time
+    /// introduction should appear on a user's first stream whichever kind of Mac it came from,
+    /// and never twice. Only the Sync path used to show it at all.
+    @AppStorage("vampstream.didShowGestureHelp") private var didShowGestureHelp = false
+
+    /// Cursorless capture contract (mirrors MacAssistantRemoteView's `usesLocalCursor`):
+    /// only a host that advertises `supportsCursorlessCapture` omits its cursor from the
+    /// frames. Requesting `cursor=0` from a host that ignores the parameter leaves the
+    /// real pointer in the video while the local overlay would draw a second one, so
+    /// both the request and the overlay are gated on this flag.
+    private var usesLocalCursor: Bool {
+        session.status.supportsCursorlessCapture == true
+    }
 
     init(
         session: BeetCodeRemoteSessionViewModel.Session,
+        clientName: String = VampProductIdentity.streamName,
+        hostProductName: String = "Vamp Assistant",
+        presentationBackground: Color? = nil,
         windowID: UInt32? = nil,
-        streamTitle: String? = nil,
         isTerminalApplication: Bool = false,
         streamGeometryRevision: String = "",
         onClose: @escaping () -> Void,
@@ -77,8 +110,10 @@ struct BeetCodeRemoteView: View {
         onOriginalSizing: (() -> Void)? = nil
     ) {
         self.session = session
+        self.clientName = clientName
+        self.hostProductName = hostProductName
+        self.presentationBackground = presentationBackground
         self.windowID = windowID
-        self.streamTitle = streamTitle
         self.isTerminalApplication = isTerminalApplication
         self.streamGeometryRevision = streamGeometryRevision
         self.onClose = onClose
@@ -100,6 +135,8 @@ struct BeetCodeRemoteView: View {
             } else if session.status.shouldOfferRemoteUnlock {
                 BeetCodeRemoteUnlockStateView(
                     message: session.status.remoteUnlockMessage,
+                    clientName: clientName,
+                    presentationBackground: presentationBackground,
                     client: session.client,
                     onRefresh: onRefresh,
                     onClose: onClose
@@ -117,10 +154,25 @@ struct BeetCodeRemoteView: View {
                 client: session.client,
                 resolution: resolution,
                 displayID: windowID == nil ? selectedDisplayID : nil,
-                windowID: windowID)
+                windowID: windowID,
+                showsCursor: !usesLocalCursor)
             startedStreamTaskID = streamTaskID
         }
         .onChangeCompat(of: canInteract) { enabled in input.isEnabled = enabled }
+        .task {
+            // Same shared GCMouse/GCKeyboard bridge the Sync path uses, so one paired mouse
+            // behaves identically on either kind of Mac.
+            bluetoothInput.sink = input
+            bluetoothInput.startObserving()
+        }
+        .onChangeCompat(of: canInteract) { enabled in
+            guard enabled, windowID != nil, !didShowGestureHelp else { return }
+            didShowGestureHelp = true
+            showsGestureHelp = true
+        }
+        .onChangeCompat(of: bluetoothInput.mouseSensitivity) { newValue in
+            input.pointerSensitivity = newValue
+        }
         .task(id: streamTaskID) {
             videoStartedAt = ProcessInfo.processInfo.systemUptime
             while !Task.isCancelled {
@@ -134,7 +186,8 @@ struct BeetCodeRemoteView: View {
                     client: session.client,
                     resolution: resolution,
                     displayID: windowID == nil ? selectedDisplayID : nil,
-                    windowID: windowID)
+                    windowID: windowID,
+                    showsCursor: !usesLocalCursor)
             } else {
                 renderer.stop()
                 input.stop()
@@ -143,6 +196,12 @@ struct BeetCodeRemoteView: View {
         .onDisappear {
             renderer.stop()
             input.stop()
+            // Detach the shared bridge so a paired mouse cannot keep driving a session this
+            // view no longer owns, and so re-entering does not double-subscribe.
+            bluetoothInput.stopObserving()
+        }
+        .sheet(isPresented: $showsBluetoothStatus) {
+            BluetoothInputStatusView(controller: bluetoothInput) { showsBluetoothStatus = false }
         }
     }
 
@@ -157,7 +216,7 @@ struct BeetCodeRemoteView: View {
     }
 
     private var streamTaskID: String {
-        "\(session.address)-\(session.status.ready)-\(windowID ?? 0)-\(selectedDisplayID ?? 0)-\(resolution)-\(streamGeometryRevision)"
+        "\(session.address)-\(session.status.ready)-\(usesLocalCursor)-\(windowID ?? 0)-\(selectedDisplayID ?? 0)-\(resolution)-\(streamGeometryRevision)"
     }
 
     private var permissionState: some View {
@@ -165,15 +224,15 @@ struct BeetCodeRemoteView: View {
             Image(systemName: "lock.shield")
                 .font(.system(size: 46, weight: .light))
                 .foregroundStyle(.white.opacity(0.92))
-            Text("Mac Control is not ready")
-                .font(.title3.weight(.semibold))
+            Text("Your Mac needs a moment.")
+                .font(.title2.weight(.medium))
                 .foregroundStyle(.white)
             Text(permissionMessage)
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.78))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 34)
-            Text("On the Mac, open Vamp Assistant → Settings → Permissions. Vamp Stream cannot grant these permissions remotely.")
+            Text("On the Mac, open \(hostProductName) → Settings → Permissions. \(clientName) cannot grant these permissions remotely.")
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.56))
                 .multilineTextAlignment(.center)
@@ -185,30 +244,25 @@ struct BeetCodeRemoteView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 34)
             }
-            Button {
+            StreamPrimaryButton(title: isRefreshing ? "Checking…" : "Check again", symbol: "arrow.clockwise", isDisabled: isRefreshing) {
                 Task {
                     isRefreshing = true
                     refreshError = await onRefresh()
                     isRefreshing = false
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    if isRefreshing { ProgressView().tint(.white) }
-                    Text(isRefreshing ? "Checking…" : "Check again")
-                }
             }
-            .buttonStyle(.bordered)
-            .tint(.white)
-            .disabled(isRefreshing)
-            .accessibilityLabel(isRefreshing ? "Checking Vamp Assistant permissions" : "Check Vamp Assistant permissions again")
-            Button("Back", action: onClose)
-                .buttonStyle(.borderedProminent)
-                .tint(.white)
-                .foregroundStyle(.black)
-                .padding(.top, 6)
-                .accessibilityHint("Return to the host picker")
+            .frame(maxWidth: 340)
+            VampGlassActionButton(title: "Back to Macs", systemImage: "chevron.left", action: onClose)
+                .frame(maxWidth: 340)
+
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background { permissionBackground }
+    }
+
+    @ViewBuilder private var permissionBackground: some View {
+        if let presentationBackground { presentationBackground.ignoresSafeArea() }
+        else { StreamAtmosphere().environment(\.colorScheme, .dark) }
     }
 
     private var permissionMessage: String {
@@ -218,20 +272,20 @@ struct BeetCodeRemoteView: View {
         return session.status.message ?? "Vamp Assistant is still preparing Mac Control."
     }
 
+    /// There is no top bar: like the Assistant's whole-Mac control surface, the picture owns
+    /// the screen and one machined bar carries every control — back to the apps, markup,
+    /// keyboard, adjust view, window sizing, and the stream options all live in that bar.
     private var streamSurface: some View {
         VStack(spacing: 0) {
-            if onChooseApplication != nil, !controlsHidden {
-                // This must occupy layout space. Overlaying it hides the first rows of a
-                // tall Mac window and also reports an oversized viewport back to the Mac.
-                appStreamTopBar
-                    .background(Color.black)
-                if onAdaptiveSizing != nil {
-                    Text(sizingNotice ?? " ").font(.caption).foregroundStyle(.white)
-                        .lineLimit(2).padding(.horizontal, 6).frame(maxWidth: .infinity).frame(height: 36)
-                }
-            }
-
             GeometryReader { proxy in
+                // The deck floats over the bottom of the surface, so the picture must stop
+                // above it — exactly as Vamp Sync lays out an app window. The Mac is asked
+                // for the unobstructed area's shape, never the full screen's, so the app's
+                // own bottom toolbar can never end up underneath the deck.
+                let videoArea = videoViewport(
+                    in: proxy.size, safeAreaBottom: proxy.safeAreaInsets.bottom)
+                let placement = picturePlacement(in: videoArea)
+                let picture = CGSize(width: placement.size.width, height: placement.size.height)
                 ZStack(alignment: .top) {
                     Color.black
 
@@ -241,18 +295,19 @@ struct BeetCodeRemoteView: View {
                             displayMode: fillScreen ? .fillScreen : .fitDisplay)
                             .scaleEffect(viewportZoom, anchor: .center)
                             .offset(viewportOffset)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(width: picture.width, height: picture.height)
+                            .frame(width: videoArea.width, height: videoArea.height, alignment: .top)
 
                         AppStreamGestureView(
                         allowsViewportAdjustment: adjustsViewport,
                             viewportZoom: viewportZoom,
                             viewportOffset: viewportOffset,
-                            viewSize: proxy.size,
-                            onTap: { input.tap(at: $0) },
-                            onDoubleTap: { input.doubleTap(at: $0) },
-                            onRightClick: { input.rightClick(at: $0) },
-                            onMiddleClick: { input.middleClick(at: $0) },
-                            onPointerMove: { input.pointerMoved(at: $0) },
+                            viewSize: picture,
+                            onTap: { cursorModel.place(at: $0); input.tap(at: $0) },
+                            onDoubleTap: { cursorModel.place(at: $0); input.doubleTap(at: $0) },
+                            onRightClick: { cursorModel.place(at: $0); input.rightClick(at: $0) },
+                            onMiddleClick: { cursorModel.place(at: $0); input.middleClick(at: $0) },
+                            onPointerMove: { cursorModel.place(at: $0); input.pointerMoved(at: $0) },
                             onPointerEnded: { input.pointerEnded() },
                             onScroll: { input.scroll(deltaX: $0, deltaY: $1) },
                             onViewportPan: { delta in
@@ -260,11 +315,11 @@ struct BeetCodeRemoteView: View {
                                     CGSize(width: viewportOffset.width + delta.width,
                                            height: viewportOffset.height + delta.height),
                                     zoom: viewportZoom,
-                                    in: proxy.size
+                                    in: picture
                                 )
                             },
                             onPinchChanged: { scale, focalPoint in
-                                updateViewportZoom(scale: scale, focalPoint: focalPoint, in: proxy.size)
+                                updateViewportZoom(scale: scale, focalPoint: focalPoint, in: picture)
                             },
                             onPinchEnded: {
                                 if viewportZoom < defaultViewportZoom * 1.15 {
@@ -273,11 +328,34 @@ struct BeetCodeRemoteView: View {
                                     }
                                 }
                             },
-                            onLongPress: { input.toggleDragLock(at: $0) },
+                            onLongPress: { cursorModel.place(at: $0); input.toggleDragLock(at: $0) },
                             onLongPressEnded: { if input.dragLocked { input.toggleDragLockCurrentPointer() } },
-                            onHoverDelta: { input.relativePointerMove(deltaX: $0, deltaY: $1) }
+                            onHoverDelta: { dx, dy in
+                                input.relativePointerMove(deltaX: dx, deltaY: dy)
+                                if let scale = input.cursorViewPointsPerDesktopPoint {
+                                    cursorModel.moveRelative(dx: dx, dy: dy, viewPointsPerDesktopPoint: scale)
+                                }
+                            }
                         )
+                        .frame(width: picture.width, height: picture.height)
+                        .overlay {
+                            // Cursorless capture: the host omits the macOS cursor from the
+                            // frames (only negotiated hosts — see usesLocalCursor), so the
+                            // pointer is drawn here at the touch/mouse positions the input
+                            // controller maps — zero-round-trip hover feedback. The overlay
+                            // carries the viewport's zoom/pan so it stays glued to the video
+                            // under magnify.
+                            if usesLocalCursor {
+                                LocalCursorOverlay(cursor: cursorModel, contentZoom: viewportZoom,
+                                                   pointsPerDesktopPoint: input.cursorViewPointsPerDesktopPoint)
+                                    .scaleEffect(viewportZoom, anchor: .center)
+                                    .offset(viewportOffset)
+                            }
+                        }
                         .allowsHitTesting(!keyboardActive && !annotationStore.isVisible && canInteract)
+                        // Placement last: a covered picture is exactly as tall as the
+                        // surface, so it cannot creep under the deck that sits at that edge.
+                        .frame(width: videoArea.width, height: videoArea.height, alignment: .top)
 
                         if annotationStore.isVisible {
                             AnnotationCanvasOverlay(store: annotationStore)
@@ -298,7 +376,8 @@ struct BeetCodeRemoteView: View {
                                         client: session.client,
                                         resolution: resolution,
                                         displayID: windowID == nil ? selectedDisplayID : nil,
-                                        windowID: windowID)
+                                        windowID: windowID,
+                                        showsCursor: !usesLocalCursor)
                                 }
                                 .buttonStyle(.bordered)
                                 .tint(.white)
@@ -331,12 +410,30 @@ struct BeetCodeRemoteView: View {
                 .overlay(alignment: .top) {
                     if AppStreamVideoHealth.needsRecovery(lastDecodedAt: renderer.lastDecodedAt,
                         startedAt: videoStartedAt, now: videoHealthCheckTime), renderer.lastError == nil {
-                        AppStreamVideoRecoveryBar {
-                            renderer.start(client: session.client, resolution: resolution,
-                                displayID: windowID == nil ? selectedDisplayID : nil, windowID: windowID)
-                            videoStartedAt = ProcessInfo.processInfo.systemUptime
-                        }
-                        .padding(12)
+                        AppStreamVideoRecoveryBar { restartStream() }
+                            .padding(.horizontal, AppSpacing.xs)
+                            .padding(.top, AppSpacing.xs)
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    if let notice = sizingNotice, !notice.isEmpty, !keyboardActive {
+                        Text(notice)
+                            .font(.caption)
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, AppSpacing.sm)
+                            .padding(.vertical, AppSpacing.xs)
+                            .background(
+                                .regularMaterial,
+                                in: RoundedRectangle(cornerRadius: PR.r8, style: .continuous))
+                            .padding(.horizontal, AppSpacing.md)
+                            // Derived from the deck so it follows the deck's height.
+                            .padding(
+                                .bottom,
+                                AppStreamChromeBar.reservedBand(safeAreaBottom: 0) + AppSpacing.xs)
+                            .allowsHitTesting(false)
+                            .accessibilityLabel("Stream notice: \(notice)")
                     }
                 }
                 .overlay(alignment: .bottom) {
@@ -353,188 +450,177 @@ struct BeetCodeRemoteView: View {
                             onDismiss: { keyboardActive = false }
                         )
                         .allowsHitTesting(canInteract)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .padding(.bottom, keyboardOverlayBottomPad)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if viewportZoom > defaultViewportZoom + 0.05 || viewportOffset != .zero {
+                        zoomResetChip()
                     }
                 }
                 .onAppear {
-                    configureInput(viewSize: proxy.size)
-                    onViewportSize?(proxy.size)
+                    configureInput(viewSize: picture)
+                    onViewportSize?(videoArea)
                 }
-                .onChangeCompat(of: proxy.size) {
-                    configureInput(viewSize: $0)
-                    viewportOffset = clampedViewportOffset(viewportOffset, zoom: viewportZoom, in: $0)
-                    if !keyboardActive { onViewportSize?($0) }
+                .onChangeCompat(of: proxy.size) { newSize in
+                    let area = videoViewport(
+                        in: newSize, safeAreaBottom: proxy.safeAreaInsets.bottom)
+                    let fitted = picturePlacement(in: area).size
+                    let fittedSize = CGSize(width: fitted.width, height: fitted.height)
+                    configureInput(viewSize: fittedSize)
+                    viewportOffset = clampedViewportOffset(viewportOffset, zoom: viewportZoom, in: fittedSize)
+                    if !keyboardActive { onViewportSize?(area) }
                 }
                 .onChangeCompat(of: renderer.geometry) { geometry in
-                    configureInput(viewSize: proxy.size)
+                    configureInput(viewSize: picture)
                     if geometry != nil {
-                        viewportOffset = clampedViewportOffset(viewportOffset, zoom: viewportZoom, in: proxy.size)
+                        viewportOffset = clampedViewportOffset(viewportOffset, zoom: viewportZoom, in: picture)
                     }
 
                 }
-#if canImport(UIKit) && !os(macOS)
-                .background(AppStreamKeyboardInsetReader { inset in
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { keyboardOverlayBottomPad = inset }
-                })
-#endif
             }
         }
         .background(Color.black)
-        .ignoresSafeArea(edges: [.horizontal, .bottom])
+        // `.container` only, so the keyboard region is respected: the deck rides above the
+        // system keyboard once instead of being shifted a second time by hand. The top safe
+        // area is respected — the streamed window must not run under the status bar, where the
+        // app's own title row would sit underneath the clock.
+        .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
     }
 
-    private var appStreamTopBar: some View {
-        HStack(spacing: 10) {
-            Button(action: { onChooseApplication?() }) {
-                Label("Apps", systemImage: "chevron.left")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back to apps")
-
-            Spacer()
-
-            Text(adjustsViewport ? "Adjust view" : (streamTitle ?? "Mac app"))
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial, in: Capsule())
-                .lineLimit(1)
-
-            Spacer()
-
-            Button {
+    /// The stream options, opened from the bar's trailing menu key. Everything the old top
+    /// bar's menu offered lives here, in the same place the Assistant control surface keeps
+    /// its options.
+    @ViewBuilder
+    private var streamOptionsMenu: some View {
+        Section("View on this device") {
+            Button("Fit window", systemImage: "arrow.down.right.and.arrow.up.left") {
                 if input.dragLocked { input.toggleDragLockCurrentPointer() }
-                adjustsViewport.toggle()
-            } label: {
-                Image(systemName: adjustsViewport ? "checkmark" : "viewfinder")
-                    .frame(minWidth: 44, minHeight: 44)
-                    .background(.ultraThinMaterial, in: Capsule())
+                resetViewportZoom()
+                adjustsViewport = false
             }
-            .accessibilityLabel(adjustsViewport ? "Done adjusting" : "Adjust view")
-            .accessibilityHint("Switch between controlling the Mac and moving or zooming the picture")
-            Menu {
-                Section("View on this device") {
-                    Button("Fit window", systemImage: "arrow.down.right.and.arrow.up.left") {
-                        if input.dragLocked { input.toggleDragLockCurrentPointer() }
-                        resetViewportZoom()
-                        adjustsViewport = false
-                    }
-                    Button("Larger text (2×)", systemImage: "plus.magnifyingglass") {
-                        if input.dragLocked { input.toggleDragLockCurrentPointer() }
-                        viewportZoom = 2
-                        viewportOffset = .zero
-                        adjustsViewport = true
-                    }
-                }
-                if onAdaptiveSizing != nil {
-                    Section("Mac window") {
-                        Button("Adaptive resize") { onAdaptiveSizing?() }
-                        Button("Original proportions") { onOriginalSizing?() }
-                    }
-                }
-                Picker("Resolution", selection: $resolution) {
-                    ForEach(StreamResolution.allCases) { option in Text(option.title).tag(option.rawValue) }
-                }
-                Button("Gesture help", systemImage: "hand.draw") { showsGestureHelp = true }
-                if input.dragLocked {
-                    Button("Release drag lock", systemImage: "lock.open") { input.toggleDragLockCurrentPointer() }
-                }
-            } label: { Image(systemName: "ellipsis.circle").frame(minWidth: 44, minHeight: 44) }
-            .accessibilityLabel("Stream options")
-            .sheet(isPresented: $showsGestureHelp) { AppStreamGestureHelpView() }
-            Button {
-                if !keyboardActive, isTerminalApplication { input.focusTerminal() }
-                keyboardActive.toggle()
-            } label: {
-                Image(systemName: keyboardActive ? "keyboard.chevron.compact.down" : "keyboard")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(keyboardActive ? "Hide keyboard" : "Show keyboard")
-            .accessibilityHint("Type into the Mac through the on-screen keyboard")
-
-            if viewportZoom > defaultViewportZoom + 0.05 || viewportOffset != .zero {
-                Button {
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.86)) {
-                        resetViewportZoom()
-                    }
-                } label: {
-                    Text("1×")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Reset zoom")
-                .accessibilityValue("Currently zoomed to \(Int(viewportZoom * 100)) percent")
+            Button("Larger text (2×)", systemImage: "plus.magnifyingglass") {
+                if input.dragLocked { input.toggleDragLockCurrentPointer() }
+                viewportZoom = 2
+                viewportOffset = .zero
+                adjustsViewport = true
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
+        // Named for the outcome, like the Sync path's picker, with the resolution
+        // kept as secondary detail so nothing is lost. "Resolution" asked the user
+        // to reason about pixels; every other quality control in the app does not.
+        Picker("Picture quality", selection: $resolution) {
+            ForEach(StreamResolution.allCases) { option in
+                Text(option.title).tag(option.rawValue)
+            }
+        }
+        Button("Gesture help", systemImage: "hand.draw") { showsGestureHelp = true }
+        if bluetoothInput.isMouseConnected || bluetoothInput.isKeyboardConnected {
+            Button("Bluetooth input", systemImage: "mouse") { showsBluetoothStatus = true }
+        }
+        if input.dragLocked {
+            Button("Release drag lock", systemImage: "lock.open") { input.toggleDragLockCurrentPointer() }
+        }
+        // The Sync path has always offered a manual restart; here the only way to
+        // recover a stuttering stream was to wait for the automatic recovery bar to
+        // decide the video had stalled, or to leave and reopen the app.
+        Button("Refresh video", systemImage: "arrow.clockwise") { restartStream() }
+        Divider()
+        Button("Disconnect from Mac", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive, action: onClose)
     }
 
+    /// Floating reset for the local zoom/pan, drawn like the Assistant surface's floating
+    /// pills. The bar owns every primary control; this appears only while the picture is
+    /// magnified or panned.
+    private func zoomResetChip() -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.86)) {
+                resetViewportZoom()
+            }
+        } label: {
+            Text("1×")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 13)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.30), in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.7))
+                .frame(minWidth: AppHostMetrics.iconControlTarget, minHeight: AppHostMetrics.iconControlTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, AppSpacing.xs)
+        .padding(.trailing, 14)
+        .accessibilityLabel("Reset zoom")
+        .accessibilityValue("Currently zoomed to \(Int(viewportZoom * 100)) percent")
+    }
+
+    /// The bottom control deck, drawn as the Vamp Assistant control bar: a machined pearl
+    /// housing of keycap controls in the Assistant's order — close, apps, markup, keyboard,
+    /// adjust view, window sizing, options, divider, hide — so an Assistant stream and the
+    /// Assistant app itself stop looking like two different products.
     @ViewBuilder
     private func classicBottomChrome(bottomInset: CGFloat) -> some View {
         if controlsHidden {
-            HStack {
-                Spacer()
-                Button {
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82)) {
-                        controlsHidden = false
-                    }
-                } label: {
-                    Image(systemName: "eye")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .frame(width: 32, height: 32)
-                        .background(Color.black.opacity(0.58), in: Capsule())
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.20), lineWidth: 0.8))
+            AppStreamChromeRevealButton(bottomInset: max(bottomInset, AppStreamChromeBar.bottomFloor)) {
+                withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82)) {
+                    controlsHidden = false
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Show remote controls")
             }
-            .padding(.horizontal, 18)
-            .padding(.bottom, max(bottomInset, 0) + 14)
         } else {
             classicChromePill
-                .padding(.horizontal, 14)
-                .padding(.bottom, max(bottomInset, 0) + 12)
+                .padding(.horizontal, AppStreamChromeBar.edgeInset)
+                .padding(.bottom, max(bottomInset, AppStreamChromeBar.bottomFloor) + AppStreamChromeBar.bottomMargin)
+                .sheet(isPresented: $showsGestureHelp) { AppStreamGestureHelpView() }
         }
     }
 
     private var classicChromePill: some View {
-        HStack(spacing: 0) {
-            classicIconButton(systemName: "xmark", isDestructive: true, action: onClose)
+        AppStreamChromePill {
+            if onChooseApplication != nil {
+                AppStreamChromeButton(
+                    systemName: "square.grid.2x2",
+                    accessibilityLabel: "Apps",
+                    accessibilityValue: "Back to the application list"
+                ) {
+                    onChooseApplication?()
+                }
+            }
 
-            classicUnavailableButton(
-                systemName: "magicmouse",
-                label: "Bluetooth input status is available for Vamp Sync sessions")
-
-            classicIconButton(
+            AppStreamChromeButton(
                 systemName: annotationStore.isVisible ? "pencil.slash" : "pencil.tip",
-                isActive: annotationStore.isVisible
+                isActive: annotationStore.isVisible,
+                accessibilityLabel: "Markup",
+                accessibilityValue: annotationStore.isVisible ? "On" : "Off"
             ) {
                 annotationStore.isVisible.toggle()
             }
 
-            classicIconButton(
+            AppStreamChromeButton(
                 systemName: keyboardActive ? "keyboard.chevron.compact.down" : "keyboard",
-                isActive: keyboardActive
+                isActive: keyboardActive,
+                accessibilityLabel: keyboardActive ? "Hide remote keyboard" : "Show remote keyboard",
+                accessibilityValue: keyboardActive ? "Visible" : "Hidden"
             ) {
+                if !keyboardActive, isTerminalApplication { input.focusTerminal() }
                 keyboardActive.toggle()
             }
 
+            AppStreamChromeButton(
+                systemName: adjustsViewport ? "checkmark" : "viewfinder",
+                isActive: adjustsViewport,
+                accessibilityLabel: adjustsViewport ? "Done adjusting" : "Adjust view",
+                accessibilityValue: adjustsViewport ? "Adjusting" : "Controlling"
+            ) {
+                if input.dragLocked { input.toggleDragLockCurrentPointer() }
+                adjustsViewport.toggle()
+            }
+
             if windowID == nil, let displays = session.status.displays, displays.count > 1 {
-                Menu {
+                AppStreamChromeMenu(
+                    systemName: "display.2",
+                    accessibilityLabel: "Switch display"
+                ) {
                     ForEach(displays) { display in
                         Button {
                             selectedDisplayID = display.id
@@ -546,33 +632,34 @@ struct BeetCodeRemoteView: View {
                             }
                         }
                     }
-                } label: {
-                    classicIconLabel(systemName: "display.2", isActive: false, isDimmed: false, isDestructive: false)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Switch display")
             }
 
-            classicUnavailableButton(
-                systemName: "terminal.fill",
-                label: "Terminal is not available in this Assistant control session")
-            classicUnavailableButton(
-                systemName: "speaker.slash.fill",
-                label: "Remote audio is not available in this Assistant control session")
-            classicUnavailableButton(
-                systemName: "pip.enter",
-                label: "Picture in Picture is not available in this Assistant control session")
-
-            Menu {
-                if windowID != nil {
-                    Button {
-                        fillScreen = false
-                        input.setFillScreen(false)
-                        resetViewportZoom()
-                    } label: {
-                        Label("Adaptive Fit", systemImage: "checkmark")
+            if windowID != nil {
+                // Window streams share the Sync deck's sizing control: the Mac window shape is
+                // what this button is about, and "Fit window" now lives only on the 1× chip so
+                // the same action is not offered three times over.
+                AppStreamChromeMenu(
+                    systemName: "aspectratio",
+                    isDimmed: onAdaptiveSizing == nil,
+                    accessibilityLabel: "Mac window sizing"
+                ) {
+                    Button("Adaptive resize", systemImage: "rectangle.arrowtriangle.2.inward") {
+                        onAdaptiveSizing?()
                     }
-                } else {
+                    Button("Original Size", systemImage: "arrow.up.left.and.arrow.down.right") {
+                        onOriginalSizing?()
+                    }
+                }
+            } else {
+                AppStreamChromeMenu(
+                    systemName: fillScreen
+                        ? "rectangle.arrowtriangle.2.outward"
+                        : "rectangle.arrowtriangle.2.inward",
+                    isActive: fillScreen,
+                    accessibilityLabel: "Remote display sizing",
+                    accessibilityValue: fillScreen ? "Fill Screen" : "Fit Display"
+                ) {
                     Button {
                         fillScreen = false
                         input.setFillScreen(false)
@@ -588,87 +675,31 @@ struct BeetCodeRemoteView: View {
                         Label("Fill Screen", systemImage: fillScreen ? "checkmark" : "rectangle.arrowtriangle.2.outward")
                     }
                 }
-            } label: {
-                classicIconLabel(
-                    systemName: fillScreen ? "rectangle.arrowtriangle.2.outward" : "rectangle.arrowtriangle.2.inward",
-                    isActive: fillScreen,
-                    isDimmed: false,
-                    isDestructive: false)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Remote display sizing")
-            .accessibilityValue(windowID != nil ? "Adaptive Fit" : (fillScreen ? "Fill Screen" : "Fit Display"))
 
-            classicUnavailableButton(
-                systemName: "chart.bar",
-                label: "Connection statistics are unavailable for this Assistant stream")
+            AppStreamChromeMenu(
+                systemName: input.dragLocked ? "lock.fill" : "ellipsis",
+                isActive: input.dragLocked,
+                accessibilityLabel: input.dragLocked ? "Stream options, drag lock on" : "Stream options"
+            ) {
+                streamOptionsMenu
+            }
 
-            Rectangle()
-                .fill(Color.white.opacity(0.18))
-                .frame(width: 1, height: 22)
-                .padding(.horizontal, 6)
+        } trailing: {
+            AppStreamChromeDivider()
 
-            classicIconButton(systemName: "eye.slash", isDimmed: true) {
+            AppStreamChromeButton(
+                systemName: "eye.slash",
+                isDimmed: true,
+                accessibilityLabel: "Hide controls"
+            ) {
                 withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82)) {
                     keyboardActive = false
+                    annotationStore.isVisible = false
                     controlsHidden = true
                 }
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        // The remote image can be nearly white or highly detailed. Native
-        // clear glass alone inherits too much of that content and makes the
-        // classic controls disappear, so retain colorless glass while giving
-        // it a neutral legibility backing and a stable edge.
-        .background(Color.black.opacity(0.62), in: Capsule(style: .continuous))
-        .prGlassSurface(in: Capsule(style: .continuous))
-        .overlay(Capsule(style: .continuous)
-            .strokeBorder(Color.white.opacity(0.20), lineWidth: 0.8))
-        .shadow(color: .black.opacity(0.28), radius: 12, y: 5)
-        .frame(maxWidth: .infinity, alignment: .center)
-    }
-
-    private func classicUnavailableButton(systemName: String, label: String) -> some View {
-        Button(action: {}) {
-            classicIconLabel(systemName: systemName, isActive: false, isDimmed: true, isDestructive: false)
-        }
-        .buttonStyle(.plain)
-        .disabled(true)
-        .accessibilityLabel(label)
-        .accessibilityHint(label)
-    }
-
-    private func classicIconButton(
-        systemName: String,
-        isActive: Bool = false,
-        isDimmed: Bool = false,
-        isDestructive: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            classicIconLabel(
-                systemName: systemName,
-                isActive: isActive,
-                isDimmed: isDimmed,
-                isDestructive: isDestructive)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func classicIconLabel(
-        systemName: String,
-        isActive: Bool,
-        isDimmed: Bool,
-        isDestructive: Bool
-    ) -> some View {
-        Image(systemName: systemName)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(
-                isDestructive ? Color.red.opacity(0.86)
-                    : (isActive ? Color.white : Color.white.opacity(isDimmed ? 0.42 : 0.82)))
-            .frame(maxWidth: .infinity, minHeight: 30)
-            .contentShape(Rectangle())
     }
 
     private func configureInput(viewSize: CGSize) {
@@ -676,42 +707,65 @@ struct BeetCodeRemoteView: View {
         input.setGeometry(renderer.geometry)
         input.setViewSize(viewSize)
         input.setFillScreen(fillScreen)
-    }
-
-    private func keyName(for keyCode: UInt16) -> String {
-        switch keyCode {
-        case 36: return "Return"
-        case 48: return "Tab"
-        case 51: return "Backspace"
-        case 53: return "Escape"
-        case 123: return "ArrowLeft"
-        case 124: return "ArrowRight"
-        case 125: return "ArrowDown"
-        case 126: return "ArrowUp"
-        case 115: return "Home"
-        case 119: return "End"
-        case 116: return "PageUp"
-        case 121: return "PageDown"
-        case 122: return "F1"
-        case 120: return "F2"
-        case 99: return "F3"
-        case 118: return "F4"
-        case 49: return "Space"
-        default:
-            // Every shortcut on the keyboard decks (⌘C, ⌃C, ⌘V, ⌘Z, ⌘⇧3 …) is a letter or digit
-            // keycode. Without this they went out as "key8" and the Mac silently ignored them.
-            return AppStreamKeyboardOverlayView.character(forKeyCode: keyCode) ?? "key\(keyCode)"
+        if let rect = input.cursorContentRect {
+            cursorModel.setSurface(size: viewSize, contentRect: rect)
         }
     }
 
+    /// The control deck floats over the bottom of the surface, so the picture must not be laid
+    /// out underneath it. Reserving the band keeps the streamed app's own bottom controls (a
+    /// toolbar, a send button) clear of the deck, and makes the Mac match the area the picture is
+    /// actually drawn in instead of one taller than the phone can show.
+    private static func controlDeckBand(safeAreaBottom: CGFloat) -> CGFloat {
+        AppStreamChromeBar.reservedBand(safeAreaBottom: safeAreaBottom)
+    }
+
+    /// Rebuild the capture stream from the current settings. Shared by the automatic recovery
+    /// bar and the manual "Refresh video" action so both do exactly the same thing.
+    private func restartStream() {
+        renderer.start(
+            client: session.client,
+            resolution: resolution,
+            displayID: windowID == nil ? selectedDisplayID : nil,
+            windowID: windowID,
+            showsCursor: !usesLocalCursor)
+        videoStartedAt = ProcessInfo.processInfo.systemUptime
+    }
+
+    /// The unobstructed part of the surface: the area the streamed app window may occupy.
+    /// Whole-display control keeps the full surface — Fill Screen has to reach every edge, and
+    /// the Mac display is never reshaped to the phone.
+    private func videoViewport(in size: CGSize, safeAreaBottom: CGFloat) -> CGSize {
+        guard windowID != nil else { return size }
+        return CGSize(
+            width: max(size.width, 1),
+            height: max(size.height - Self.controlDeckBand(safeAreaBottom: safeAreaBottom), 1))
+    }
+
+    /// How the streamed picture is sized inside `area`, matching Vamp Sync's placement. A Mac app
+    /// can decline the exact shape it was asked for by a few percent; covering absorbs that
+    /// shortfall so the app's own bottom controls stay put, clear of the deck. Whole-display
+    /// control keeps an honest fit.
+    private func picturePlacement(in area: CGSize) -> DisplayMappingEngine.StreamPicturePlacement {
+        let fallback = DisplayMappingEngine.StreamPicturePlacement(
+            size: DesktopSize(width: max(area.width, 1), height: max(area.height, 1)),
+            croppedFraction: 0)
+        guard windowID != nil,
+              let geometry = renderer.geometry,
+              geometry.imageWidth > 0, geometry.imageHeight > 0,
+              area.width > 0, area.height > 0 else { return fallback }
+        return DisplayMappingEngine.placePicture(
+            streamSize: DesktopSize(
+                width: Double(geometry.imageWidth), height: Double(geometry.imageHeight)),
+            container: DesktopSize(width: area.width, height: area.height))
+    }
+
+    private func keyName(for keyCode: UInt16) -> String {
+        BeetCodeRemoteInputController.keyName(for: keyCode)
+    }
+
     private func modifierNames(for flags: KeyboardModifierFlags) -> [String] {
-        var names: [String] = []
-        if flags.contains(.command) { names.append("command") }
-        if flags.contains(.shift) { names.append("shift") }
-        if flags.contains(.option) { names.append("option") }
-        if flags.contains(.control) { names.append("control") }
-        if flags.contains(.function) { names.append("function") }
-        return names
+        BeetCodeRemoteInputController.modifierNames(for: flags)
     }
 
     private func updateViewportZoom(scale: CGFloat, focalPoint: CGPoint, in viewSize: CGSize) {
@@ -784,12 +838,15 @@ struct BeetCodeRemoteView: View {
 /// The password is cleared before the request starts and is never retained by the view.
 private struct BeetCodeRemoteUnlockStateView: View {
     let message: String?
+    let clientName: String
+    let presentationBackground: Color?
     let client: BeetCodeRemoteClient
     let onRefresh: () async -> String?
     let onClose: () -> Void
 
     @State private var password = ""
     @State private var isSubmitting = false
+    @State private var confirmUnencryptedUnlock = false
     @State private var unlockError: String?
 
     var body: some View {
@@ -800,10 +857,10 @@ private struct BeetCodeRemoteUnlockStateView: View {
                     .foregroundStyle(.white.opacity(0.92))
 
                 Text("Mac is locked")
-                    .font(.title3.weight(.semibold))
+                    .font(.largeTitle.weight(.medium))
                     .foregroundStyle(.white)
 
-                Text(message ?? "Enter the Mac login password to resume Vamp Stream.")
+                Text(message ?? "Enter the Mac login password to resume \(clientName).")
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.78))
                     .multilineTextAlignment(.center)
@@ -818,34 +875,22 @@ private struct BeetCodeRemoteUnlockStateView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                     .foregroundStyle(.white)
-                    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppHostMetrics.chipRadius, style: .continuous)
                             .strokeBorder(.white.opacity(0.24), lineWidth: 1)
                     }
                     .frame(maxWidth: 340)
-                    .onSubmit(submitUnlock)
+                    .onSubmit { submitUnlock() }
 
-                Button(action: submitUnlock) {
-                    HStack(spacing: 8) {
-                        if isSubmitting {
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(.white)
-                        }
-                        Text(isSubmitting ? "Unlocking…" : "Unlock Mac")
-                    }
-                    .font(.body.weight(.semibold))
-                    .frame(maxWidth: 312)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.white)
-                .foregroundStyle(.black)
-                .disabled(password.isEmpty || isSubmitting)
+                StreamPrimaryButton(title: isSubmitting ? "Unlocking…" : "Unlock Mac", symbol: "lock.open", isDisabled: password.isEmpty || isSubmitting, action: { submitUnlock() })
+                    .frame(maxWidth: 340)
 
-                Text("Available only through the encrypted Tailscale connection. The password is sent once, then cleared from this field.")
+                Text(client.canSendUnlockPassword
+                     ? "Sent through the encrypted Tailscale connection. The password is sent once, then cleared from this field."
+                     : "This connection is not encrypted. Connect through Tailscale to protect the password; you will be asked before it is sent.")
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.56))
+                    .foregroundStyle(client.canSendUnlockPassword ? .white.opacity(0.56) : .orange)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 340)
 
@@ -857,9 +902,8 @@ private struct BeetCodeRemoteUnlockStateView: View {
                         .frame(maxWidth: 340)
                 }
 
-                Button("Back", action: onClose)
-                    .buttonStyle(.bordered)
-                    .tint(.white)
+                VampGlassActionButton(title: "Back to Macs", systemImage: "chevron.left", action: onClose)
+                    .frame(maxWidth: 340)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 32)
@@ -867,10 +911,24 @@ private struct BeetCodeRemoteUnlockStateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .scrollDismissesKeyboard(.interactively)
+        .background {
+            if let presentationBackground { presentationBackground.ignoresSafeArea() }
+            else { StreamAtmosphere().environment(\.colorScheme, .dark) }
+        }
+        .alert("Send your Mac password without encryption?", isPresented: $confirmUnencryptedUnlock) {
+            Button("Send Anyway", role: .destructive) { submitUnlock(confirmed: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This connection is not encrypted. Anyone on this network could read the password. Connect through Tailscale to protect it.")
+        }
     }
 
-    private func submitUnlock() {
+    private func submitUnlock(confirmed: Bool = false) {
         guard !password.isEmpty, !isSubmitting else { return }
+        if !client.canSendUnlockPassword, !confirmed {
+            confirmUnencryptedUnlock = true
+            return
+        }
         let submittedPassword = password
         password = ""
         unlockError = nil
@@ -878,7 +936,7 @@ private struct BeetCodeRemoteUnlockStateView: View {
 
         Task {
             do {
-                _ = try await client.unlockMac(password: submittedPassword)
+                _ = try await client.unlockMac(password: submittedPassword, allowUnencryptedRoute: !client.canSendUnlockPassword)
                 try? await Task.sleep(for: .milliseconds(700))
                 unlockError = await onRefresh()
             } catch {
@@ -897,6 +955,9 @@ final class BeetCodeRemoteInputController: ObservableObject {
     var isEnabled = false {
         willSet { if !newValue && isEnabled { if dragLocked { toggleDragLockCurrentPointer() }; flush() } }
     }
+    /// Multiplier applied to relative pointer movement, driven by the Bluetooth sensitivity
+    /// slider — the same knob the Sync path exposes.
+    var pointerSensitivity: Double = 1.0
     private let client: BeetCodeRemoteClient
     private var geometry: BeetCodeDisplayGeometry?
     private var viewSize: CGSize = .zero
@@ -922,6 +983,22 @@ final class BeetCodeRemoteInputController: ObservableObject {
     func setGeometry(_ geometry: BeetCodeDisplayGeometry?) { self.geometry = geometry }
     func setViewSize(_ size: CGSize) { viewSize = size }
     func setFillScreen(_ enabled: Bool) { fillScreen = enabled }
+
+    // MARK: - Local cursor overlay (cursorless capture)
+
+    /// The fitted video content area in view coordinates — the overlay's clamp rect.
+    var cursorContentRect: CGRect? {
+        guard let geometry else { return nil }
+        return contentRect(for: geometry)
+    }
+
+    /// View points per desktop point, for converting relative (desktop-space) pointer
+    /// deltas into local cursor movement in the overlay's coordinate space.
+    var cursorViewPointsPerDesktopPoint: Double? {
+        guard let geometry, let rect = contentRect(for: geometry),
+              rect.width > 0, geometry.displayWidth > 0 else { return nil }
+        return rect.width / geometry.displayWidth
+    }
 
     func clickCurrentPointer() {
         routeClick(x: nil, y: nil, button: "left", count: 1)
@@ -996,9 +1073,12 @@ final class BeetCodeRemoteInputController: ObservableObject {
     func relativePointerMove(deltaX: Double, deltaY: Double) {
         guard let geometry, let rect = contentRect(for: geometry) else { return }
         let scale = max(geometry.displayWidth / max(rect.width, 1), geometry.displayHeight / max(rect.height, 1))
-        let speed = hypot(deltaX * scale, deltaY * scale)
-        let acceleration = 1.0 + min(speed / 50.0, 1.5)
-        route(.relative(dx: deltaX * scale * acceleration, dy: deltaY * scale * acceleration))
+        // Same velocity curve and sensitivity as Vamp Control and the Sync path.
+        let moved = PointerDynamics.apply(
+            DesktopPoint(x: deltaX * scale, y: deltaY * scale),
+            sensitivity: pointerSensitivity,
+            accelerationEnabled: true)
+        route(.relative(dx: moved.x, dy: moved.y))
     }
 
     func sendText(_ text: String) {
@@ -1154,6 +1234,88 @@ final class BeetCodeRemoteInputController: ObservableObject {
                 self?.lastError = error.localizedDescription
             }
         }
+    }
+
+    // MARK: - Key naming
+
+    /// The Assistant control protocol names keys rather than numbering them, so a keycode has
+    /// to become a name before it goes on the wire. This lives on the controller — not on the
+    /// view — because the keyboard deck and the Bluetooth bridge both need it.
+    static func keyName(for keyCode: UInt16) -> String {
+        switch keyCode {
+        case 36: return "Return"
+        case 48: return "Tab"
+        case 51: return "Backspace"
+        case 53: return "Escape"
+        case 123: return "ArrowLeft"
+        case 124: return "ArrowRight"
+        case 125: return "ArrowDown"
+        case 126: return "ArrowUp"
+        case 115: return "Home"
+        case 119: return "End"
+        case 116: return "PageUp"
+        case 121: return "PageDown"
+        case 122: return "F1"
+        case 120: return "F2"
+        case 99: return "F3"
+        case 118: return "F4"
+        case 49: return "Space"
+        default:
+            // Every shortcut on the keyboard decks (⌘C, ⌃C, ⌘V, ⌘Z, ⌘⇧3 …) is a letter or digit
+            // keycode. Without this they went out as "key8" and the Mac silently ignored them.
+            return AppStreamKeyboardOverlayView.character(forKeyCode: keyCode) ?? "key\(keyCode)"
+        }
+    }
+
+    static func modifierNames(for flags: KeyboardModifierFlags) -> [String] {
+        var names: [String] = []
+        if flags.contains(.command) { names.append("command") }
+        if flags.contains(.shift) { names.append("shift") }
+        if flags.contains(.option) { names.append("option") }
+        if flags.contains(.control) { names.append("control") }
+        if flags.contains(.function) { names.append("function") }
+        return names
+    }
+}
+
+/// A paired Bluetooth mouse/keyboard drives the Assistant stream through the same shared
+/// bridge as the Sync stream and Vamp Control. Only the Sync path implemented this, so on an
+/// Assistant Mac a paired mouse moved the hover cursor but its buttons, its scroll wheel and
+/// any physical keyboard went nowhere.
+extension BeetCodeRemoteInputController: RemotePointerInputSink {
+    func sendPointerButton(_ button: MouseButton, action: ButtonAction) {
+        guard isEnabled else { return }
+        let name: String
+        switch button {
+        case .left: name = "left"
+        case .right: name = "right"
+        case .middle: name = "middle"
+        }
+        switch action {
+        case .down:
+            route(.down(button: name))
+            if name == "left" { dragLocked = true }
+        case .up:
+            route(.up(button: name))
+            if name == "left" { dragLocked = false }
+        case .click:
+            routeClick(x: nil, y: nil, button: name, count: 1)
+        case .doubleClick:
+            routeClick(x: nil, y: nil, button: name, count: 2)
+        }
+    }
+
+    func sendScrollInput(deltaX: Double, deltaY: Double) {
+        guard isEnabled else { return }
+        scrollRelative(deltaX: deltaX, deltaY: deltaY)
+    }
+
+    func sendKey(keyCode: UInt16, action: KeyAction, modifiers: KeyboardModifierFlags) {
+        guard isEnabled else { return }
+        // The Assistant protocol takes a whole key press, not separate down/up edges, so the
+        // key is sent once — on the down edge — and the up edge is dropped.
+        guard action == .down else { return }
+        sendKey(Self.keyName(for: keyCode), modifiers: Self.modifierNames(for: modifiers))
     }
 }
 

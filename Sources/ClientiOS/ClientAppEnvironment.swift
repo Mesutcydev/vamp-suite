@@ -112,15 +112,16 @@ final class ClientAppEnvironment: ObservableObject {
         self.sessionCoordinator.candidateEndpoints = { [weak self] endpoint in
             self?.sharedHostsViewModel.candidateEndpoints(matching: endpoint) ?? []
         }
-        self.sessionCoordinator.onVerifiedHostIdentity = { [weak self] endpoint, hostID, fingerprint in
+        self.sessionCoordinator.onVerifiedHostIdentity = { [weak self] endpoint, hostID, fingerprint, signedKeyExchange in
             self?.sharedHostsViewModel.recordVerifiedHostIdentity(
                 endpoint: endpoint,
                 hostID: hostID,
-                publicKeyFingerprint: fingerprint
+                publicKeyFingerprint: fingerprint,
+                signedKeyExchange: signedKeyExchange
             )
         }
-        self.sessionCoordinator.trustedFingerprintProvider = { [weak self] endpoint in
-            self?.sharedHostsViewModel.trustedFingerprint(matching: endpoint)
+        self.sessionCoordinator.trustedHostProvider = { [weak self] endpoint in
+            self?.sharedHostsViewModel.trustedIdentity(matching: endpoint)
         }
 
         settingsSyncService.observeRemoteChanges { [weak self] settings in
@@ -139,7 +140,8 @@ final class ClientAppEnvironment: ObservableObject {
     static func makeDefault(
         clientName: String,
         supportsTerminalOnlyHosts: Bool = false,
-        clientProductRole: ClientProductRole = .remoteControl
+        clientProductRole: ClientProductRole = .remoteControl,
+        requestsDesktop: Bool = false
     ) -> ClientAppEnvironment {
         CrashSafeStartupDiagnostics.mark("environment.default.begin", details: clientName)
         #if canImport(UIKit)
@@ -172,6 +174,10 @@ final class ClientAppEnvironment: ObservableObject {
         let eventLogStore = InMemoryEventLogStore()
         let sessionCoordinator = ClientSessionCoordinator(
             clientIdentity: client,
+            // Vamp Sync grants desktop capture only to clients advertising both
+            // .supportsDesktopControl and .supportsMacClient (every shipped Sync build).
+            // Control wants the desktop; Stream keeps Sync's app-first handshake.
+            isMacClient: requestsDesktop,
             clientProductRole: clientProductRole,
             webRTCSessionManager: webRTCSessionManager,
             peerConnectionProvider: peerConnectionProvider,
@@ -224,18 +230,31 @@ final class ClientAppEnvironment: ObservableObject {
         }
     }
 
+    @available(*, deprecated, message: "use supportsUltraQualityPreset(screen:) with the caller's window.windowScene.screen")
     var supportsUltraQualityPreset: Bool {
         #if canImport(UIKit)
-        Self.supportsUltraQualityPreset(
-            isPhone: UIDevice.current.userInterfaceIdiom == .phone,
-            deviceModelIdentifier: Self.currentDeviceModelIdentifier(),
-            nativeBounds: UIScreen.main.nativeBounds.size,
-            physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory
-        )
+        // TODO: Modernization - UIScreen.main is not necessarily the screen this scene is on: a foldable's
+        // cover and inner panels have different native bounds, and the panel changes while the app runs.
+        // Callers should pass their own window.windowScene.screen to supportsUltraQualityPreset(screen:).
+        // isUltraQualityEntitled, ultraQualityAvailabilityMessage and effectivePreferredQualityPreset still
+        // read this property, so their callers (SwiftUI views, and Vamp Stream's URL handler, which has no
+        // window) need a screen threaded in from their own window before this bridge can be removed.
+        supportsUltraQualityPreset(screen: UIScreen.main)
         #else
         true
         #endif
     }
+
+    #if canImport(UIKit)
+    func supportsUltraQualityPreset(screen: UIScreen) -> Bool {
+        Self.supportsUltraQualityPreset(
+            isPhone: UIDevice.current.userInterfaceIdiom == .phone,
+            deviceModelIdentifier: Self.currentDeviceModelIdentifier(),
+            nativeBounds: screen.nativeBounds.size,
+            physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory
+        )
+    }
+    #endif
 
     /// Ultra is available whenever the client hardware supports it.
     var isUltraQualityEntitled: Bool {

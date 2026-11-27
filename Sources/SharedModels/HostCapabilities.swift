@@ -50,6 +50,13 @@ public struct HostCapabilityFlags: OptionSet, Codable, Hashable, Sendable {
     /// Older Control and focused Stream clients keep the app-window handshake.
     public static let supportsDesktopControl = HostCapabilityFlags(rawValue: 1 << 16)
 
+    /// The client fetched the host's signed key bundle before this offer, so
+    /// its session token is sealed to an authenticated key. A host that sees
+    /// this flag rejects the offer unless the token is sealed: the flag sits
+    /// inside the client-signed offer, so nobody on the path can strip it to
+    /// force the plaintext form. Never advertised in Bonjour TXT.
+    public static let supportsSignedKeyExchange = HostCapabilityFlags(rawValue: 1 << 17)
+
     public init(rawValue: Int) {
         self.rawValue = rawValue
     }
@@ -74,7 +81,12 @@ public struct HostCapabilityFlags: OptionSet, Codable, Hashable, Sendable {
             .supportsWorkspaces,
             // Any client running this code can render a window (App Streaming) stream — it is
             // just H.264/HEVC video. The host gates whether streaming is actually offered.
-            .supportsAppStreaming
+            .supportsAppStreaming,
+            // Every video surface in this client stack draws a local cursor overlay
+            // (LocalCursorOverlay), so cursorless capture gives all clients zero-latency
+            // pointer feedback instead of waiting for a captured frame round trip.
+            .supportsCursorlessCapture,
+            .supportsSignedKeyExchange
         ]
         #if canImport(VideoToolbox)
         if VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC) {
@@ -85,7 +97,6 @@ public struct HostCapabilityFlags: OptionSet, Codable, Hashable, Sendable {
         if isMacClient {
             flags.insert(.supportsMacClient)
             flags.insert(.supportsDesktopControl)
-            flags.insert(.supportsCursorlessCapture)
         }
         return flags
     }
@@ -120,6 +131,7 @@ public extension HostCapabilityFlags {
         if contains(.supportsAppStreaming) { names.append("supportsAppStreaming") }
         if contains(.supportsDesktopControl) { names.append("supportsDesktopControl") }
         if contains(.supportsCursorlessCapture) { names.append("supportsCursorlessCapture") }
+        if contains(.supportsSignedKeyExchange) { names.append("supportsSignedKeyExchange") }
         return names
     }
 
@@ -161,6 +173,8 @@ public extension HostCapabilityFlags {
                 flags.insert(.supportsAppStreaming)
             case "supportsCursorlessCapture":
                 flags.insert(.supportsCursorlessCapture)
+            case "supportsSignedKeyExchange":
+                flags.insert(.supportsSignedKeyExchange)
             default:
                 continue
             }

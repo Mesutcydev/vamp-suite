@@ -337,6 +337,26 @@ final class FakeEncoderPipeline: EncoderPipelineProtocol, @unchecked Sendable {
         try await configure(for: display, qualityPreset: qualityPreset, codec: codec)
     }
 
+    func configure(
+        for display: DisplayDescriptor,
+        qualityPreset: StreamQualityPreset,
+        codec: EncodedFrameCodec,
+        dynamicRange: StreamDynamicRange,
+        minLongEdge: Int
+    ) async throws {
+        try await configure(for: display, qualityPreset: qualityPreset, codec: codec)
+    }
+
+    func reconfigure(
+        for display: DisplayDescriptor,
+        qualityPreset: StreamQualityPreset,
+        codec: EncodedFrameCodec,
+        dynamicRange: StreamDynamicRange,
+        minLongEdge: Int
+    ) async throws {
+        try await reconfigure(for: display, qualityPreset: qualityPreset, codec: codec)
+    }
+
     func startEncoding() async throws {
         let continuations = lock.withLock { () -> [AsyncStream<EncoderState>.Continuation] in
             isEncoding = true

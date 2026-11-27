@@ -1,0 +1,34 @@
+# The Mac App Store app uses the shared Control spec (no Sparkle), dependencies, tests,
+# icon, and version/build settings from the website spec. Only distribution
+# settings differ. Supply the publisher's team and profile when archiving.
+include:
+  - path: macclient-core-project.yml
+
+name: MacClient-AppStore
+
+targets:
+  MacClientApp:
+    settings:
+      base:
+        PRODUCT_NAME: Vamp Control
+        CODE_SIGN_ENTITLEMENTS: MacClient/Resources/MacClient.entitlements
+        # Scope the profile to the app; SwiftTerm's resource bundle cannot use it.
+        PROVISIONING_PROFILE_SPECIFIER: $(VAMP_CONTROL_DISTRIBUTION_PROFILE)
+        VAMP_DISTRIBUTION_CHANNEL: app-store
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) VAMP_APP_STORE"
+        # Store bundles carry no Sparkle updater configuration (see verify-vamp-store-bundle.py).
+        INFOPLIST_FILE: MacClient/Resources/MacClient-AppStore-Info.plist
+
+schemes:
+  MacClientAppStore:
+    build:
+      targets:
+        MacClientApp: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+    test:
+      config: Debug
+      targets:
+        - MacClientTests

@@ -3,13 +3,16 @@ import XCTest
 @testable import SharedProtocol
 
 final class CapabilityNegotiationTests: XCTestCase {
-    func testCursorlessCaptureRequiresBothPeersAndAMacClient() {
+    func testCursorlessCaptureRequiresBothPeers() {
         let host: HostCapabilityFlags = [.supportsH264, .supportsCursorlessCapture]
         let macClient = HostCapabilityFlags.currentClient(isMacClient: true)
         let iOSClient = HostCapabilityFlags.currentClient(isMacClient: false)
 
+        // Every client in this stack draws a local cursor overlay (LocalCursorOverlay),
+        // so all of them advertise cursorless capture — hover feedback is zero-latency
+        // on the phone, not just on the Mac client.
         XCTAssertTrue(CapabilityNegotiator.negotiate(host: host, client: macClient)?.supportsCursorlessCapture == true)
-        XCTAssertFalse(CapabilityNegotiator.negotiate(host: host, client: iOSClient)?.supportsCursorlessCapture == true)
+        XCTAssertTrue(CapabilityNegotiator.negotiate(host: host, client: iOSClient)?.supportsCursorlessCapture == true)
         XCTAssertFalse(CapabilityNegotiator.negotiate(host: [.supportsH264], client: macClient)?.supportsCursorlessCapture == true)
         XCTAssertEqual(
             HostCapabilityFlags(stableNames: host.stableNames),

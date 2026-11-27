@@ -16,13 +16,32 @@ final class HostClientAttachmentIdentityTests: XCTestCase {
 
     func testSamePeerIDCanReplaceItsTransport() {
         let peerID = UUID()
+        let candidate = SignalingPeer(id: peerID, role: .client, publicKeyFingerprint: fingerprint)
+
+        XCTAssertTrue(HostClientAttachmentIdentity.matches(
+            activeClientID: peerID,
+            activeClientFingerprint: fingerprint,
+            candidate: candidate
+        ))
+        // Legacy unsigned peers carry no key, so the ID is all there is to match on.
+        XCTAssertTrue(HostClientAttachmentIdentity.matches(
+            activeClientID: peerID,
+            activeClientFingerprint: nil,
+            candidate: SignalingPeer(id: peerID, role: .client, publicKeyFingerprint: nil)
+        ))
+    }
+
+    /// A device ID is self-declared. Reusing the active client's ID under a different key must
+    /// not count as that client, or an untrusted peer skips the host-busy check.
+    func testSamePeerIDWithDifferentKeyIsNotTheActiveClient() {
+        let peerID = UUID()
         let candidate = SignalingPeer(
             id: peerID,
             role: .client,
             publicKeyFingerprint: String(repeating: "cd", count: 32)
         )
 
-        XCTAssertTrue(HostClientAttachmentIdentity.matches(
+        XCTAssertFalse(HostClientAttachmentIdentity.matches(
             activeClientID: peerID,
             activeClientFingerprint: fingerprint,
             candidate: candidate
@@ -69,5 +88,27 @@ final class HostClientAttachmentIdentityTests: XCTestCase {
             activeClientFingerprint: "not-a-fingerprint",
             candidate: candidate
         ))
+    }
+
+    func testSessionSlotIsReleasedOnlyWhenItsDeviceIsGone() {
+        let now = Date()
+        func held(claimed: TimeInterval?, connected: Bool, activity: TimeInterval?) -> Bool {
+            HostSessionSlotPolicy.isHeld(
+                claimedAt: claimed.map { now.addingTimeInterval(-$0) },
+                transportConnected: connected,
+                lastActivity: activity.map { now.addingTimeInterval(-$0) },
+                now: now, negotiationWindow: 30, livenessTimeout: 30)
+        }
+        // A just-approved session keeps the slot while it negotiates.
+        XCTAssertTrue(held(claimed: 5, connected: false, activity: nil))
+        // A device that vanished mid-setup no longer blocks others.
+        XCTAssertFalse(held(claimed: 120, connected: false, activity: nil))
+        // A live, chatty session keeps the slot.
+        XCTAssertTrue(held(claimed: 600, connected: true, activity: 2))
+        // A half-open transport with a silent device is released.
+        XCTAssertFalse(held(claimed: 600, connected: true, activity: 90))
+        // Connected but never heard from: measured from the claim.
+        XCTAssertFalse(held(claimed: 600, connected: true, activity: nil))
+        XCTAssertTrue(held(claimed: 20, connected: true, activity: nil))
     }
 }

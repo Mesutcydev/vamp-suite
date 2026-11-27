@@ -1,88 +1,100 @@
 import SwiftUI
 import AppKit
+import SharedModels
 
 /// One-time welcome shown on the first launch of the Mac client. Explains the
-/// Vamp Host requirement and the basics of connecting, then never reappears
+/// Vamp Sync requirement and the code check, then never reappears
 /// (gated by `client.onboarding.completed`).
 struct MacOnboardingView: View {
+    /// This Mac's key fingerprint: the code Vamp Sync shows when it asks to approve this Mac.
+    var fingerprint: String?
     let onDone: () -> Void
 
+    init(fingerprint: String? = nil, onDone: @escaping () -> Void) {
+        self.fingerprint = fingerprint
+        self.onDone = onDone
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 10) {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable()
-                    .frame(width: 72, height: 72)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                Text("Welcome to Vamp Control")
-                    .font(.title2.weight(.semibold))
-                Text("Control another Mac from this one — full keyboard, mouse, and screen, over your local network or Tailscale.")
-                    .font(.callout)
+        VStack(spacing: 14) {
+            MacMarkTile(size: 72, arc: .control)
+                .padding(.top, 6)
+            VStack(spacing: 6) {
+                MacMetaLabel(text: "Welcome to Vamp Control")
+                Text("Your other Mac, right here")
+                    .font(.system(size: 24, weight: .bold))
+                    .tracking(-0.4)
+                    .multilineTextAlignment(.center)
+                Text(MacDistributionPolicy.isAppStoreEdition
+                     ? "See another Mac’s desktop over your local network or a private Tailscale network. App windows need your local network."
+                     : "See and control another Mac’s desktop or app windows over your local network or a private Tailscale network.")
+                    .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 410)
+                    .frame(maxWidth: 440)
             }
-            .padding(.top, 28)
-            .padding(.bottom, 22)
 
-            GroupBox {
-                VStack(alignment: .leading, spacing: 16) {
-                    step(number: 1,
-                         icon: "desktopcomputer",
-                         title: "Run a Vamp host on the other Mac",
-                         detail: "Vamp Host shares its whole desktop, Vamp Sync shares a single app window, and Vamp Assistant connects with a pairing code. Keep it running.")
-                    Divider()
-                    step(number: 2,
-                         icon: "wifi",
-                         title: "Stay on the same network",
-                         detail: "Both Macs should share a Wi-Fi or Ethernet network — or be reachable over Tailscale.")
-                    Divider()
-                    step(number: 3,
-                         icon: "cursorarrow.rays",
-                         title: "Connect and approve",
-                         detail: "Pick the Mac from the list, then approve this device once on the other computer. Vamp Assistant pairs with a code instead — use Pair Assistant in the toolbar.")
+            VStack(spacing: 10) {
+                step(1, title: "Open Vamp Sync on the other Mac",
+                     detail: "It lives in that Mac’s menu bar. Its Mac App Store edition is View Only. Vamp Assistant pairs with a code from the Assistant tab instead.")
+                step(2, title: "Check the code on both screens",
+                     detail: "When you connect, Vamp Sync shows this Mac’s code. Approve only when every group matches.") {
+                    if let fingerprint {
+                        MacFingerprintChunks(fingerprint: fingerprint)
+                            .padding(.top, 6)
+                            .accessibilityLabel("This Mac’s code")
+                    }
                 }
-                .padding(6)
+                step(3, title: "Connect over Wi-Fi or Tailscale",
+                     detail: "Your screen goes straight between your Macs. No Vamp server sits in the middle.")
             }
-            .padding(.horizontal, 28)
+            .padding(.top, 4)
 
-            Spacer(minLength: 20)
+            Spacer(minLength: 8)
 
-            Button(action: onDone) {
-                Text("Get Started")
-                    .frame(maxWidth: .infinity)
+            HStack(spacing: 8) {
+                Link("Get Vamp Sync", destination: VampProductLinks.syncEditions)
+                    .buttonStyle(MacCapsuleButtonStyle(kind: .quiet, large: true))
+                Button("Get started", action: onDone)
+                    .buttonStyle(MacCapsuleButtonStyle(kind: .primary, large: true))
+                    .keyboardShortcut(.defaultAction)
             }
-            .controlSize(.large)
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .padding(.horizontal, 28)
-            .padding(.bottom, 24)
+            .padding(.bottom, 4)
         }
-        .frame(width: 520, height: 540)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .padding(.horizontal, 32)
+        .padding(.vertical, 26)
+        .frame(width: 560, height: fingerprint == nil ? 580 : 640)
+        .background(MacBrand.pageBackdrop)
     }
 
-    private func step(number: Int, icon: String, title: String, detail: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: 26, height: 26)
-                Text("\(number)")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-            }
+    private func step(_ number: Int, title: String, detail: String) -> some View {
+        step(number, title: title, detail: detail) { EmptyView() }
+    }
+
+    private func step<Extra: View>(_ number: Int, title: String, detail: String,
+                                   @ViewBuilder extra: () -> Extra) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text("\(number)")
+                .font(MacBrand.mono(12, weight: .semibold))
+                .frame(width: 28, height: 28)
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(MacBrand.hairline, lineWidth: 0.5))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Label(title, systemImage: icon)
-                    .font(.body.weight(.semibold))
-                    .labelStyle(.titleAndIcon)
+                Text(title)
+                    .font(.system(size: 13.5, weight: .semibold))
                 Text(detail)
-                    .font(.callout)
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                extra()
             }
             Spacer(minLength: 0)
         }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .macCard(radius: 16)
+        .accessibilityElement(children: .combine)
     }
 }

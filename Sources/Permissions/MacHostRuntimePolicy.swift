@@ -11,14 +11,27 @@ public struct MacHostRuntimePolicy: Sendable, Equatable {
     }
 
     public static var current: MacHostRuntimePolicy {
-        MacHostRuntimePolicy(
-            isSandboxedDistribution: ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+        resolved(
+            distributionChannel: Bundle.main.object(forInfoDictionaryKey: "VampDistributionChannel") as? String,
+            environment: ProcessInfo.processInfo.environment
         )
     }
 
+    /// Store restrictions also apply to unsigned development builds. An actual
+    /// sandbox always wins over the distribution label.
+    public static func resolved(distributionChannel: String?, environment: [String: String]) -> MacHostRuntimePolicy {
+        MacHostRuntimePolicy(isSandboxedDistribution:
+            distributionChannel == "app-store" || environment["APP_SANDBOX_CONTAINER_ID"] != nil)
+    }
+
+    public var supportsApplicationManagement: Bool { supportsRemoteInput }
+    public var supportsWindowResizing: Bool { supportsRemoteInput }
+    public var supportsTerminalSessions: Bool { !isSandboxedDistribution }
+    public var supportsBrowserControl: Bool { !isSandboxedDistribution }
+
     public static var terminalOnly: MacHostRuntimePolicy {
         MacHostRuntimePolicy(
-            isSandboxedDistribution: ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil,
+            isSandboxedDistribution: current.isSandboxedDistribution,
             isTerminalOnly: true
         )
     }

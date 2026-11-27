@@ -137,6 +137,8 @@ public actor PersistentTrustedPeerStore: TrustedPeerStoreProtocol {
         do {
             peers = try JSONDecoder().decode([TrustedPeer].self, from: data)
             loaded = true
+            // Files written by older builds are 0644; tighten without waiting for the next write.
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         } catch {
             logger.error("Trusted peer store decode failed; moving aside: \(error.localizedDescription, privacy: .public)")
             let corruptURL = fileURL.deletingPathExtension().appendingPathExtension("corrupt.json")
@@ -168,7 +170,12 @@ public actor PersistentTrustedPeerStore: TrustedPeerStoreProtocol {
     private func persist() throws {
         let dir = fileURL.deletingLastPathComponent()
         if !FileManager.default.fileExists(atPath: dir.path) {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+            )
+        } else if dir.lastPathComponent == "RemoteDesktopTool" {
+            // The folder also holds the device identity keys. Older builds left it 0755.
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
         }
         let data = try JSONEncoder().encode(peers)
         // Use `...UntilFirstUserAuthentication`, NOT `.completeFileProtection`. On Apple
@@ -185,6 +192,8 @@ public actor PersistentTrustedPeerStore: TrustedPeerStoreProtocol {
         // whenever the host process is running (i.e. logged in) — exactly when trust is checked.
         // Writing here also migrates any legacy data-protected file to the readable format.
         try data.write(to: fileURL, options: [.atomic])
+        // This file decides who is trusted without a prompt, so keep it owner-only.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
     }
 
     private static var defaultDirectory: URL {

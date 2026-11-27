@@ -27,6 +27,99 @@ enum ClientVideoDynamicRangePolicy {
     }
 }
 
+/// What this device already knows about a Mac's identity before it connects: a fingerprint
+/// it verified on an earlier connection, or one scanned from the Mac's own pairing code.
+/// A fingerprint that only a Bonjour advertisement claims is not one of these.
+struct TrustedHostIdentity: Equatable {
+    var fingerprint: String
+    /// This Mac has completed the signed key exchange before, so it must never again be
+    /// talked to without it. This is what stops a downgrade to the older handshake.
+    var requiresSignedKeyExchange = false
+}
+
+/// A decision the user has to make before pairing continues.
+struct PendingHostConfirmation: Equatable {
+    var hostName: String
+    /// The Mac's fingerprint, to compare with the one Vamp Sync shows. Nil when the Mac runs
+    /// a Vamp Sync too old to prove its identity before pairing ("Connect anyway").
+    var fingerprint: String?
+}
+
+/// Decides how a connection may proceed once the Mac has (or has not) answered the request
+/// for its signed key bundle. Pure, so the first-contact and downgrade rules are testable.
+enum HostKeyExchangePolicy {
+    /// How long to wait for the bundle from a Mac not known to support the exchange. An
+    /// older Vamp Sync never answers, so this is the delay it costs on every connect.
+    static let unknownHostReplyTimeout: TimeInterval = 3
+    /// A Mac that has done the exchange before gets longer; no answer then fails the connect.
+    static let knownHostReplyTimeout: TimeInterval = 10
+
+    enum Reply: Equatable {
+        /// No bundle arrived in time: an older Vamp Sync, or someone dropping the request.
+        case none
+        /// A bundle arrived but its signature or nonce did not verify.
+        case invalid
+        /// A bundle signed by the key with this fingerprint.
+        case verified(fingerprint: String)
+    }
+
+    enum Rejection: LocalizedError, Equatable {
+        case invalidBundle
+        case identityChanged
+        case downgradeRefused
+
+        var errorDescription: String? { message }
+
+        var message: String {
+            switch self {
+            case .invalidBundle:
+                return "The Mac's security information could not be verified. Make sure Vamp Sync is up to date, then try again."
+            case .identityChanged:
+                return "This Mac's identity changed since you last connected. If you reinstalled the Mac host, remove this saved Mac and reconnect; otherwise don't proceed."
+            case .downgradeRefused:
+                return "This Mac used a verified connection before but did not offer one now, so the connection was stopped. Check that Vamp Sync is open and up to date. If you reinstalled an older Vamp Sync, remove this saved Mac and pair again."
+            }
+        }
+    }
+
+    enum Outcome: Equatable {
+        /// Seal the token to the bundle's key. `needsConfirmation`: nothing vouches for this
+        /// fingerprint yet, so the user must compare it before anything is sent or saved.
+        case verified(fingerprint: String, needsConfirmation: Bool)
+        /// Older Vamp Sync: fall back to the previous handshake. `needsConfirmation`: this is
+        /// a first contact, so the user must agree to pair without verification.
+        case legacy(needsConfirmation: Bool)
+        case rejected(Rejection)
+    }
+
+    /// Until the offer has gone out, the only thing a host has reason to send is its key
+    /// bundle. Anything else is dropped, so a host that has not been verified yet cannot steer
+    /// the session — in particular it cannot get an unsolicited answer accepted, and its
+    /// identity saved, while the user is still being asked whether to trust it.
+    static func acceptsBeforeOffer(_ kind: SignalingMessageKind) -> Bool {
+        kind == .hostKeyBundle
+    }
+
+    static func timeout(for trusted: TrustedHostIdentity?) -> TimeInterval {
+        trusted?.requiresSignedKeyExchange == true ? knownHostReplyTimeout : unknownHostReplyTimeout
+    }
+
+    static func evaluate(reply: Reply, trusted: TrustedHostIdentity?) -> Outcome {
+        switch reply {
+        case .invalid:
+            return .rejected(.invalidBundle)
+        case .verified(let fingerprint):
+            guard let trusted else { return .verified(fingerprint: fingerprint, needsConfirmation: true) }
+            return trusted.fingerprint == fingerprint
+                ? .verified(fingerprint: fingerprint, needsConfirmation: false)
+                : .rejected(.identityChanged)
+        case .none:
+            if trusted?.requiresSignedKeyExchange == true { return .rejected(.downgradeRefused) }
+            return .legacy(needsConfirmation: trusted == nil)
+        }
+    }
+}
+
 /// Orchestrates the complete client session lifecycle:
 ///
 /// 1. Browse for hosts via Bonjour
@@ -92,6 +185,14 @@ final class ClientSessionCoordinator: ObservableObject {
     @Published private(set) var connectedHostAddress: String?
     @Published private(set) var connectedSignalingPort: UInt16?
     @Published private(set) var connectedHostFingerprint: String?
+    /// Set while the connection is paused for the user to compare the Mac's fingerprint (or to
+    /// accept an older Vamp Sync). The UI answers with `confirmPendingHost()`; cancelling the
+    /// connection declines.
+    @Published private(set) var pendingHostConfirmation: PendingHostConfirmation?
+    /// The Mac being connected to runs a Vamp Sync from before the signed key exchange, so
+    /// this session is on the older, weaker handshake. Shown so the user knows to update it.
+    @Published private(set) var hostUsesLegacyHandshake = false
+    static let legacyHostNotice = "This Mac runs an older Vamp Sync, so this connection is less protected. Update Vamp Sync on the Mac."
 
     /// Derived from `connectedHostAddress`; `.lan` when no session is active.
     var connectionMode: ConnectionMode {
@@ -110,6 +211,7 @@ final class ClientSessionCoordinator: ObservableObject {
     @Published private(set) var blockedState: ClientHostBlockedState?
     @Published private(set) var sessionMode: SessionControlMode = .fullControl
     @Published private(set) var hostLockState: HostLockState = .unlockedActiveSession
+    @Published private(set) var canOfferRemoteUnlock = false
     @Published private(set) var networkQuality: NetworkQuality = .good
     @Published private(set) var lastRoundTripLatencyMs: Double?
     @Published private(set) var packetLossPercent: Double?
@@ -187,12 +289,15 @@ final class ClientSessionCoordinator: ObservableObject {
     /// across paths — e.g. fall back to the Tailscale address when the LAN address dies
     /// after the device leaves the home network.
     var candidateEndpoints: ((ResolvedHostEndpoint) -> [ResolvedHostEndpoint])?
-    var onVerifiedHostIdentity: ((ResolvedHostEndpoint, UUID, String) -> ResolvedHostEndpoint?)?
-    /// Returns the fingerprint we previously verified+stored for this host, if any. Used to pin
-    /// host identity (TOFU): we verify the signed answer against this stored anchor rather than the
-    /// fingerprint the current (attacker-influenceable) advertisement claims, so a same-LAN impostor
-    /// re-advertising a trusted Mac's name can't be silently trusted.
-    var trustedFingerprintProvider: ((ResolvedHostEndpoint) -> String?)?
+    /// Called once the host's signed answer has passed the fingerprint check. The last argument
+    /// is true when the host also completed the signed key exchange on this connection.
+    var onVerifiedHostIdentity: ((ResolvedHostEndpoint, UUID, String, Bool) -> ResolvedHostEndpoint?)?
+    /// Returns the identity we already trust for this host, if any: a fingerprint verified and
+    /// stored on an earlier connection, or one scanned from the Mac's pairing code. Host identity
+    /// is pinned against THIS rather than the fingerprint the current (attacker-influenceable)
+    /// advertisement claims, so a same-LAN impostor re-advertising a trusted Mac's name can't be
+    /// silently trusted.
+    var trustedHostProvider: ((ResolvedHostEndpoint) -> TrustedHostIdentity?)?
 
     // Dependencies
     private let clientIdentity: ClientIdentity
@@ -223,6 +328,10 @@ final class ClientSessionCoordinator: ObservableObject {
     private var disconnectTask: Task<Void, Never>?
     private let qualityService = NetworkQualityIndicatorService()
     private var pendingPings: [UUID: Date] = [:]
+    private var pingLoss = PingLossWindow()
+    private var reconnectFallbackTask: Task<Void, Never>?
+    private var lastQualityAdjustSentAt: Date?
+    private var qualityAdjustRetryTask: Task<Void, Never>?
     private var sentPingCount: UInt64 = 0
     private var receivedPongCount: UInt64 = 0
     private var lastPongReceivedAt: Date?
@@ -252,6 +361,15 @@ final class ClientSessionCoordinator: ObservableObject {
     /// their payload/session IDs decode correctly.
     private var lastAcceptedInboundAuthCounter: UInt64 = 0
     private var expectedHostFingerprint: String?
+    /// Nonce of the key request in flight; a bundle answering any other nonce is ignored.
+    private var pendingHostKeyNonce: Data?
+    private var receivedHostKeyBundle: SignedHostKeyBundle?
+    /// The host proved its key-agreement key on this connection.
+    private var hostKeyExchangeVerified = false
+    private var hostConfirmationAccepted = false
+    /// Session whose offer has been sent. Host messages other than the key bundle are
+    /// ignored until then (`HostKeyExchangePolicy.acceptsBeforeOffer`).
+    private var offerSentForSessionID: UUID?
     /// Last NWPath satisfaction state — used to detect heal transitions.
     private var lastPathWasSatisfied = true
     /// Consecutive recomputeQuality() calls that returned `.poor`.
@@ -401,18 +519,25 @@ final class ClientSessionCoordinator: ObservableObject {
         // different key, the signed-answer check rejects it as an identity change instead of
         // silently adopting (and persisting) the new key.
         let advertisedFingerprint = normalizedFingerprint(endpoint.metadata.publicKeyFingerprint)
-        let pinnedFingerprint = trustedFingerprintProvider?(endpoint).flatMap { $0.isEmpty ? nil : $0 }
+        let trustedHost = trustedHostProvider?(endpoint).flatMap { $0.fingerprint.isEmpty ? nil : $0 }
+        let pinnedFingerprint = trustedHost?.fingerprint
         connectedHostFingerprint = pinnedFingerprint ?? advertisedFingerprint
         expectedHostFingerprint = pinnedFingerprint ?? advertisedFingerprint
+        pendingHostConfirmation = nil
+        hostUsesLegacyHandshake = false
+        hostKeyExchangeVerified = false
+        offerSentForSessionID = nil
         let effectiveQualityPreset = adjustedQualityPreset(requested: qualityPreset, endpoint: endpoint)
         activeQualityPreset = effectiveQualityPreset
         sessionStartedAt = nil
         sessionMode = .fullControl
         hostLockState = .unlockedActiveSession
+        canOfferRemoteUnlock = false
         networkQuality = .good
         lastRoundTripLatencyMs = nil
         packetLossPercent = nil
         pendingPings.removeAll()
+        pingLoss = PingLossWindow()
         sentPingCount = 0
         receivedPongCount = 0
         lastPongReceivedAt = nil
@@ -441,7 +566,9 @@ final class ClientSessionCoordinator: ObservableObject {
 
         do {
             // Set the remote host on the provider so the peer connection knows where to connect
-            peerConnectionProvider.setRemoteHost(target.host)
+            let connectionHost = StorePrivateNetworkConnectionPolicy.requiresPrivateNetwork
+                ? try await StorePrivateNetworkConnectionPolicy.validatedHost(target.host) : target.host
+            peerConnectionProvider.setRemoteHost(connectionHost)
 
             // Set stable client identity on the signaling service so the host
             // can recognise us across reconnections (trust gate, pairing).
@@ -488,7 +615,7 @@ final class ClientSessionCoordinator: ObservableObject {
                 bonjourSig.connectionPIN = fingerprint
                 do {
                     try await withTimeout(seconds: connectTimeout) {
-                        try await sigSvc.connect(host: target.host, port: tlsPort)
+                        try await sigSvc.connect(host: connectionHost, port: tlsPort)
                     }
                     logger.info("Signaling connected via TLS on port \(tlsPort)")
                     signalingConnected = true
@@ -503,14 +630,14 @@ final class ClientSessionCoordinator: ObservableObject {
                     bonjourSig.connectionPIN = nil
                     sigSvc.disconnect()
                     throw RemoteDesktopError.connectionFailed(
-                        "Secure connection to the Mac failed. Make sure a Vamp host is running on that Mac — Vamp Host for the full desktop, Vamp Sync for a single app window, or Vamp Terminal Host for terminal tabs. Update it, then try again."
+                        "Secure connection to the Mac failed. Make sure Vamp Sync is open and up to date on that Mac, then try again."
                     )
                 }
             }
 
             if !signalingConnected {
                 try await withTimeout(seconds: connectTimeout) {
-                    try await sigSvc.connect(host: target.host, port: target.port)
+                    try await sigSvc.connect(host: connectionHost, port: target.port)
                 }
             }
             phase = .signalingConnected
@@ -548,6 +675,14 @@ final class ClientSessionCoordinator: ObservableObject {
             observeDataChannelMessages(sessionID: sessionID)
             startLatencyProbes()
 
+            // Authenticate the host's sealing key (and, on first contact, the host itself)
+            // before anything secret is sent. Nil means an older Vamp Sync.
+            let hostSealingKey = try await exchangeHostKey(
+                with: endpoint,
+                sessionID: sessionID,
+                trusted: trustedHost
+            )
+
             // Prepare WebRTC session
             try await webRTCSessionManager.prepareSession(id: sessionID, role: .client)
 
@@ -560,17 +695,30 @@ final class ClientSessionCoordinator: ObservableObject {
             )
             let sessionTokenHex = ConnectionSecurity.tokenToHex(ConnectionSecurity.generateSessionToken())
             offerWasSealed = false
-            if let kaPublicKey = endpoint.metadata.keyAgreementPublicKey,
-               let kaKey = try? P256.KeyAgreement.PublicKey(x963Representation: kaPublicKey),
-               let tokenData = ConnectionSecurity.tokenFromHex(sessionTokenHex),
-               let sealed = try? SessionTokenSealing.seal(tokenData, to: kaKey) {
-                // Seal the token to the host's advertised key-agreement key.
-                // A passive observer on plaintext signaling never sees it.
+            if let hostSealingKey {
+                // The host proved this key is its own. Seal to it or do not connect: there is
+                // no plaintext fallback for a host that completed the key exchange.
+                guard let tokenData = ConnectionSecurity.tokenFromHex(sessionTokenHex),
+                      let sealed = try? SessionTokenSealing.seal(tokenData, to: hostSealingKey) else {
+                    throw RemoteDesktopError.connectionFailed("Could not secure the connection to the Mac. Try again.")
+                }
                 offer.sealedSessionToken = sealed
                 offerWasSealed = true
-            }
-            if !offerWasSealed {
-                offer.sessionToken = sessionTokenHex
+            } else {
+                // Older Vamp Sync (no signed key bundle): the previous handshake, unchanged.
+                // Seal to the advertised key when there is one, else send the token as that
+                // host expects it. An updated Vamp Sync rejects this plaintext form, because
+                // the offer carries `supportsSignedKeyExchange`.
+                if let kaPublicKey = endpoint.metadata.keyAgreementPublicKey,
+                   let kaKey = try? P256.KeyAgreement.PublicKey(x963Representation: kaPublicKey),
+                   let tokenData = ConnectionSecurity.tokenFromHex(sessionTokenHex),
+                   let sealed = try? SessionTokenSealing.seal(tokenData, to: kaKey) {
+                    offer.sealedSessionToken = sealed
+                    offerWasSealed = true
+                }
+                if !offerWasSealed {
+                    offer.sessionToken = sessionTokenHex
+                }
             }
             offer.clientCapabilities = .currentClient(isMacClient: isMacClient)
             offer.clientProductRole = clientProductRole
@@ -581,6 +729,8 @@ final class ClientSessionCoordinator: ObservableObject {
             )
             expectedSessionTokenHex = sessionTokenHex
             webRTCSessionManager.configureControlChannelAuth(sessionTokenHex: sessionTokenHex)
+            // Set before the send: a fast host's answer can be handled while it is in flight.
+            offerSentForSessionID = sessionID
             try await signalingService.sendOffer(offer, to: HostIdentity(
                 displayName: endpoint.metadata.displayName,
                 modelName: "Mac",
@@ -607,16 +757,22 @@ final class ClientSessionCoordinator: ObservableObject {
                     // firewalled).  Phase tells us where we got stuck.
                     if phase == .signalingConnected {
                         throw RemoteDesktopError.timeout(
-                            "Host didn't approve the connection. Open Vamp Host on your Mac and tap “Allow”."
+                            "The Mac didn't approve this device. Open Vamp Sync on your Mac, check that the codes match, and approve it."
                         )
                     }
                     throw RemoteDesktopError.timeout(
-                        "No answer from the Mac. Make sure Vamp Host is running and that your firewall isn't blocking it."
+                        "No answer from the Mac. Make sure Vamp Sync is running and that your firewall isn't blocking it."
                     )
                 }
                 try await Task.sleep(nanoseconds: 500_000_000)
             }
 
+        } catch where Self.isCancellation(error) {
+            // A cancelled attempt is the user's choice, not a failure to report.
+            if phase == .connecting || phase == .signalingConnected || phase == .negotiating {
+                phase = .idle
+                errorMessage = nil
+            }
         } catch {
             // Only update phase if we haven't already moved past negotiating
             if phase == .connecting || phase == .signalingConnected || phase == .negotiating {
@@ -633,6 +789,124 @@ final class ClientSessionCoordinator: ObservableObject {
                 message: "Connection failed: \(error.localizedDescription)"
             ))
         }
+    }
+
+    /// Ask the Mac for its signed key bundle and decide, under `HostKeyExchangePolicy`, how this
+    /// connection may proceed. Returns the authenticated sealing key, or nil for a Mac whose
+    /// Vamp Sync predates the exchange. Throws when the connection must not proceed.
+    private func exchangeHostKey(
+        with endpoint: ResolvedHostEndpoint,
+        sessionID: UUID,
+        trusted: TrustedHostIdentity?
+    ) async throws -> P256.KeyAgreement.PublicKey? {
+        let nonce = ConnectionSecurity.generateSessionToken()
+        receivedHostKeyBundle = nil
+        pendingHostKeyNonce = nonce
+        defer { pendingHostKeyNonce = nil }
+        try await signalingService.sendSignalingMessage(VersionedSignalingMessage(envelope: SignalingEnvelope(
+            protocolVersion: RemoteDesktopConstants.protocolVersion,
+            sessionID: sessionID,
+            sender: SignalingPeer(
+                id: clientIdentity.id,
+                role: .client,
+                displayName: clientIdentity.displayName,
+                publicKeyFingerprint: clientIdentity.publicKeyFingerprint
+            ),
+            event: .hostKeyRequest(HostKeyRequestMessage(nonce: nonce))
+        )))
+
+        let deadline = Date().addingTimeInterval(HostKeyExchangePolicy.timeout(for: trusted))
+        while receivedHostKeyBundle == nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            try ensureStillConnecting(sessionID: sessionID)
+        }
+
+        let hostName = endpoint.metadata.displayName
+        var acknowledgedOlderHost = false
+        while true {
+            var sealingKey: P256.KeyAgreement.PublicKey?
+            let reply: HostKeyExchangePolicy.Reply
+            if let bundle = receivedHostKeyBundle {
+                if let verified = SessionTokenSealing.verifyKeyBundle(bundle, nonce: nonce) {
+                    sealingKey = verified.keyAgreementKey
+                    reply = .verified(fingerprint: verified.fingerprint)
+                } else {
+                    reply = .invalid
+                }
+            } else {
+                reply = .none
+            }
+
+            switch HostKeyExchangePolicy.evaluate(reply: reply, trusted: trusted) {
+            case .verified(let fingerprint, let needsConfirmation):
+                if needsConfirmation {
+                    try await confirmHostWithUser(
+                        PendingHostConfirmation(hostName: hostName, fingerprint: fingerprint),
+                        sessionID: sessionID
+                    )
+                }
+                // From here the signed answer must come from this same key.
+                expectedHostFingerprint = fingerprint
+                connectedHostFingerprint = fingerprint
+                hostKeyExchangeVerified = true
+                return sealingKey
+
+            case .legacy(let needsConfirmation):
+                if needsConfirmation, !acknowledgedOlderHost {
+                    try await confirmHostWithUser(
+                        PendingHostConfirmation(hostName: hostName, fingerprint: nil),
+                        sessionID: sessionID
+                    )
+                    acknowledgedOlderHost = true
+                    // A slow Mac may have answered while the user was reading: look again
+                    // rather than fall back to the older handshake for an up-to-date host.
+                    continue
+                }
+                hostUsesLegacyHandshake = true
+                logger.notice("Host did not answer the key request; using the older handshake")
+                await eventLogStore.append(EventLogItem(
+                    severity: .warning,
+                    category: "Trust",
+                    message: "\(hostName) runs an older Vamp Sync without the signed key exchange. Update Vamp Sync on that Mac."
+                ))
+                return nil
+
+            case .rejected(let rejection):
+                await eventLogStore.append(EventLogItem(
+                    severity: .warning,
+                    category: "Trust",
+                    message: "Stopped connecting to \(hostName): \(rejection.message)"
+                ))
+                throw rejection
+            }
+        }
+    }
+
+    /// Pause until the user accepts via `confirmPendingHost()`. Declining is cancelling the
+    /// connection (`disconnect()`), which this loop notices. Nothing is sent to the host and
+    /// nothing is saved while it waits.
+    private func confirmHostWithUser(_ confirmation: PendingHostConfirmation, sessionID: UUID) async throws {
+        hostConfirmationAccepted = false
+        pendingHostConfirmation = confirmation
+        defer { pendingHostConfirmation = nil }
+        let deadline = Date().addingTimeInterval(300)
+        while !hostConfirmationAccepted {
+            guard Date() < deadline else {
+                throw RemoteDesktopError.timeout("Pairing was not confirmed in time. Connect again when you can compare the Mac's fingerprint.")
+            }
+            try await Task.sleep(nanoseconds: 100_000_000)
+            try ensureStillConnecting(sessionID: sessionID)
+        }
+    }
+
+    /// The user compared the fingerprint (or accepted an older Vamp Sync): continue pairing.
+    func confirmPendingHost() {
+        guard pendingHostConfirmation != nil else { return }
+        hostConfirmationAccepted = true
+    }
+
+    private func ensureStillConnecting(sessionID: UUID) throws {
+        guard activeSessionID == sessionID, phase == .signalingConnected else { throw CancellationError() }
     }
 
     private func signalingConnectTimeout(for endpoint: ResolvedHostEndpoint) -> TimeInterval {
@@ -659,7 +933,19 @@ final class ClientSessionCoordinator: ObservableObject {
         requested
     }
 
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if (error as? URLError)?.code == .cancelled { return true }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+    }
+
     private func userFacingConnectionError(_ error: Error, endpoint: ResolvedHostEndpoint) -> String {
+        // The negotiation loop's timeouts are already written for the user. Show them as
+        // they are, without the "Timeout: " prefix `errorDescription` puts in front.
+        if case RemoteDesktopError.timeout(let message) = error, !message.hasPrefix("Operation timed out") {
+            return message
+        }
         let raw = error.localizedDescription
         let lower = raw.lowercased()
         let nsError = error as NSError
@@ -910,7 +1196,9 @@ final class ClientSessionCoordinator: ObservableObject {
             await connect(to: candidate, qualityPreset: qualityPreset, isReconnect: true)
             if phase != .error {
                 // Remember the address that actually worked so the next resume tries it first.
-                lastEndpoint = candidate
+                // Idle is not a success: the user ended the session while this attempt was in
+                // flight, and writing the endpoint back would reconnect it on next foreground.
+                if phase != .idle { lastEndpoint = candidate }
                 return
             }
             logger.warning("Reconnect candidate \(candidate.hostname):\(candidate.port) failed, trying next path")
@@ -983,11 +1271,13 @@ final class ClientSessionCoordinator: ObservableObject {
         self.blockedState = nil
         self.sessionMode = .fullControl
         self.hostLockState = .unlockedActiveSession
+        self.canOfferRemoteUnlock = false
         self.networkQuality = .good
         self.lastRoundTripLatencyMs = nil
         self.packetLossPercent = nil
         self.sessionStartedAt = nil
         self.pendingPings.removeAll()
+        self.pingLoss = PingLossWindow()
         self.sentPingCount = 0
         self.receivedPongCount = 0
         self.lastLoggedQuality = nil
@@ -999,6 +1289,11 @@ final class ClientSessionCoordinator: ObservableObject {
         self.offerWasSealed = false
         self.lastAcceptedInboundAuthCounter = 0
         self.expectedHostFingerprint = nil
+        self.pendingHostConfirmation = nil
+        self.hostUsesLegacyHandshake = false
+        self.hostKeyExchangeVerified = false
+        self.receivedHostKeyBundle = nil
+        self.offerSentForSessionID = nil
         self.webRTCSessionManager.configureControlChannelAuth(sessionTokenHex: nil)
         self.chatMessages = []
         self.negotiatedCapabilities = nil
@@ -1043,14 +1338,14 @@ final class ClientSessionCoordinator: ObservableObject {
                 if self.activeSessionID == sessionID,
                    (self.phase == .negotiating || self.phase == .signalingConnected) {
                     self.phase = .error
-                    self.errorMessage = "The Mac closed the pairing request. Open its Vamp host window — Vamp Sync or Vamp Assistant — approve this device, then connect again."
+                    self.errorMessage = "The Mac closed the pairing request. Click Vamp Sync in the Mac's menu bar, approve this device, then connect again."
                 }
             } catch {
                 self.logger.warning("Signaling receive ended: \(error.localizedDescription)")
                 if self.activeSessionID == sessionID,
                    (self.phase == .negotiating || self.phase == .signalingConnected) {
                     self.phase = .error
-                    self.errorMessage = "Waiting for approval ended. Open the Mac's Vamp host window — Vamp Sync or Vamp Assistant — approve this device, then connect again."
+                    self.errorMessage = "Approval timed out. Click Vamp Sync in the Mac's menu bar, approve this device, then connect again."
                 }
             }
         }
@@ -1068,12 +1363,17 @@ final class ClientSessionCoordinator: ObservableObject {
 
         let event = message.envelope.event
 
+        guard offerSentForSessionID == sessionID || HostKeyExchangePolicy.acceptsBeforeOffer(event.kind) else {
+            logger.warning("Ignoring \(event.kind.rawValue, privacy: .public) from the host before the offer was sent")
+            return
+        }
+
         switch event {
         case .answer(let answer):
             let claimed = normalizedFingerprint(message.envelope.sender.publicKeyFingerprint)
             if let expected = expectedHostFingerprint, !expected.isEmpty {
                 guard claimed == expected else {
-                    logger.warning("Rejected answer due to host fingerprint mismatch expected=\(expected, privacy: .public) claimed=\(claimed, privacy: .public)")
+                    logger.warning("Rejected answer due to host fingerprint mismatch expected=\(expected, privacy: .private) claimed=\(claimed, privacy: .private)")
                     phase = .error
                     errorMessage = "This Mac's identity changed since you last connected. If you reinstalled the Mac host, remove this saved Mac and reconnect; otherwise don't proceed."
                     await eventLogStore.append(EventLogItem(
@@ -1092,12 +1392,19 @@ final class ClientSessionCoordinator: ObservableObject {
             if isValidNormalizedFingerprint(claimed), var endpoint = lastEndpoint {
                 endpoint.metadata.hostID = message.envelope.sender.id
                 endpoint.metadata.publicKeyFingerprint = claimed
-                endpoint = onVerifiedHostIdentity?(endpoint, message.envelope.sender.id, claimed) ?? endpoint
+                endpoint = onVerifiedHostIdentity?(endpoint, message.envelope.sender.id, claimed, hostKeyExchangeVerified) ?? endpoint
                 lastEndpoint = endpoint
                 connectedHostFingerprint = claimed
                 expectedHostFingerprint = claimed
             }
             await handleHostAnswer(answer, sessionID: sessionID)
+
+        case .hostKeyBundle(let bundle):
+            // Verified in `exchangeHostKey`; only the bundle answering the request in flight
+            // is kept, so a late or replayed one cannot be mistaken for it.
+            if let pendingHostKeyNonce, bundle.nonce == pendingHostKeyNonce {
+                receivedHostKeyBundle = bundle
+            }
 
         case .iceCandidate(let candidate):
             guard candidate.sessionID == sessionID else {
@@ -1197,6 +1504,8 @@ final class ClientSessionCoordinator: ObservableObject {
                 message: "Session negotiated, waiting for video"
             ))
 
+        } catch where Self.isCancellation(error) {
+            errorMessage = nil
         } catch {
             phase = .error
             errorMessage = error.localizedDescription
@@ -1205,6 +1514,22 @@ final class ClientSessionCoordinator: ObservableObject {
     }
 
     // MARK: - Observation
+
+    /// The data transport retries its own socket for about 16 s. If it has not come back by
+    /// then, nothing else reconnected on iOS while the app stayed in the foreground on a
+    /// network path that never went down (the Mac restarted Vamp Sync, an AP roam): the
+    /// banner read "reconnecting…" indefinitely. macOS has `ClientReconnectCoordinator`.
+    private func armReconnectFallback(sessionID: UUID) {
+        #if os(iOS)
+        reconnectFallbackTask?.cancel()
+        reconnectFallbackTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 18_000_000_000)
+            guard let self, !Task.isCancelled,
+                  self.phase == .error, self.activeSessionID == sessionID else { return }
+            await self.reconnectLast()
+        }
+        #endif
+    }
 
     private func observeConnectionState(sessionID: UUID) {
         connectionObserverTask = Task { [weak self] in
@@ -1256,6 +1581,7 @@ final class ClientSessionCoordinator: ObservableObject {
                     self.errorMessage = self.lastEndpoint != nil
                         ? "Connection lost — reconnecting…"
                         : "Connection failed"
+                    self.armReconnectFallback(sessionID: sessionID)
                     await self.eventLogStore.append(EventLogItem(
                         severity: .warning,
                         category: "Session",
@@ -1264,6 +1590,7 @@ final class ClientSessionCoordinator: ObservableObject {
                 case .failed:
                     self.connectionDebugger.connectionLost(reason: "Peer connection failed — transport-level error")
                     self.phase = .error
+                    self.armReconnectFallback(sessionID: sessionID)
                     // When we still know where the host lives, reconnect will sweep its
                     // known addresses (LAN → Tailscale) automatically, so frame this as a
                     // recoverable drop rather than a dead end.
@@ -1451,6 +1778,14 @@ final class ClientSessionCoordinator: ObservableObject {
                         if let sessionMode = message.sessionMode {
                             self.sessionMode = sessionMode
                         }
+                        if message.activeSessionID == sessionID,
+                           let allowsUnlock = message.allowsRemoteUnlockEntry {
+                            // The password is typed on this device's word that the Mac wants it, so it is
+                            // offered only on a session whose host proved its key. On the older handshake
+                            // the session token crossed the network unsealed.
+                            self.canOfferRemoteUnlock = allowsUnlock
+                                && self.hostKeyExchangeVerified && !self.hostUsesLegacyHandshake
+                        }
                         if let quality = message.quality {
                             self.networkQuality = quality
                         }
@@ -1623,6 +1958,7 @@ final class ClientSessionCoordinator: ObservableObject {
 
     func sendUnlockPassword(_ password: String) {
         guard webRTCSessionManager.connectionState == .connected,
+              hostKeyExchangeVerified, !hostUsesLegacyHandshake,
               let sessionID = activeSessionID,
               !password.isEmpty else { return }
         let message = UnlockPasswordMessage(sessionID: sessionID, password: password)
@@ -1815,19 +2151,17 @@ final class ClientSessionCoordinator: ObservableObject {
         lastPongReceivedAt = Date()
         let latency = Date().timeIntervalSince(sentAt) * 1000
         lastRoundTripLatencyMs = latency
-        let lost = max(0, Int(sentPingCount) - Int(receivedPongCount) - pendingPings.count)
-        packetLossPercent = sentPingCount == 0
-            ? nil
-            : (Double(lost) / Double(sentPingCount)) * 100
+        pingLoss.record(answered: true)
+        packetLossPercent = pingLoss.lossPercent
         recomputeQuality()
     }
 
     private func pruneExpiredPings(now: Date) {
-        pendingPings = pendingPings.filter { now.timeIntervalSince($0.value) < 8 }
-        let lost = max(0, Int(sentPingCount) - Int(receivedPongCount) - pendingPings.count)
-        packetLossPercent = sentPingCount == 0
-            ? nil
-            : (Double(lost) / Double(sentPingCount)) * 100
+        for (id, sentAt) in pendingPings where now.timeIntervalSince(sentAt) >= 8 {
+            pendingPings[id] = nil
+            pingLoss.record(answered: false)
+        }
+        packetLossPercent = pingLoss.lossPercent
     }
 
     private func recomputeQuality() {
@@ -1843,7 +2177,10 @@ final class ClientSessionCoordinator: ObservableObject {
         )
         let quality = qualityService.classify(
             metrics: snapshot,
-            isReconnecting: phase == .connecting || phase == .negotiating || diagnostics.isStalled()
+            // Not `diagnostics.isStalled()`: a remote screen that is simply not changing sends
+            // no frames, which read as "reconnecting" and froze preset recovery while idle.
+            // A real network stall still shows up here as lost pings and latency.
+            isReconnecting: phase == .connecting || phase == .negotiating
         )
         networkQuality = quality
         connectionDebugger.record("quality", quality.rawValue, metadata: [
@@ -1867,7 +2204,9 @@ final class ClientSessionCoordinator: ObservableObject {
         if quality == .poor {
             consecutivePoorQualitySamples += 1
             consecutiveGoodQualitySamples = 0
-        } else if quality == .good {
+        } else if quality == .good || quality == .excellent {
+            // `.excellent` must count: it used to fall through and reset this counter, so a
+            // preset lowered during a dip never came back on the best links.
             consecutiveGoodQualitySamples += 1
             consecutivePoorQualitySamples = 0
             // Allow a future downgrade once quality recovers.
@@ -1882,6 +2221,9 @@ final class ClientSessionCoordinator: ObservableObject {
             if let targetPreset = nextDowngradedPreset(from: activeQualityPreset),
                targetPreset != lastDowngradeRequestPreset {
                 lastDowngradeRequestPreset = targetPreset
+                // Re-arm recovery: without this the second dip of a session could never
+                // climb back to a preset it had already been restored to once.
+                lastUpgradeRequestPreset = nil
                 activeQualityPreset = targetPreset
                 consecutivePoorQualitySamples = 0
                 sendQualityAdjust(targetPreset, reason: "poor_network", upgrade: false)
@@ -1918,6 +2260,21 @@ final class ClientSessionCoordinator: ObservableObject {
     }
 
     private func sendQualityAdjust(_ preset: StreamQualityPreset, reason: String, upgrade: Bool) {
+        // The host accepts one quality change per 10 s and drops any other without a reply,
+        // so a second pick inside that window showed as applied here while the Mac stayed on
+        // the first. Hold it and send the latest choice when the window reopens.
+        qualityAdjustRetryTask?.cancel()
+        let wait = lastQualityAdjustSentAt.map { 10.5 - Date().timeIntervalSince($0) } ?? 0
+        if wait > 0 {
+            let sessionID = activeSessionID
+            qualityAdjustRetryTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                guard let self, !Task.isCancelled, self.activeSessionID == sessionID else { return }
+                self.sendQualityAdjust(preset, reason: reason, upgrade: upgrade)
+            }
+            return
+        }
+        lastQualityAdjustSentAt = Date()
         let msg = QualityAdjustMessage(
             requestedPreset: preset,
             reason: reason
@@ -1952,5 +2309,23 @@ final class ClientSessionCoordinator: ObservableObject {
               let ceilingIdx = ladder.firstIndex(of: ceiling),
               currentIdx < ceilingIdx else { return nil }
         return ladder[currentIdx + 1]
+    }
+}
+
+/// Ping loss over the most recent probes (≈ 60 s at the 2 s probe interval). A
+/// session-lifetime average kept one early Wi-Fi blip in the reading for 20+ minutes, which
+/// held the stream on a downgraded preset long after the link had recovered.
+struct PingLossWindow {
+    private var outcomes: [Bool] = []
+    private let capacity = 30
+
+    mutating func record(answered: Bool) {
+        outcomes.append(answered)
+        if outcomes.count > capacity { outcomes.removeFirst() }
+    }
+
+    var lossPercent: Double? {
+        guard !outcomes.isEmpty else { return nil }
+        return Double(outcomes.filter { !$0 }.count) / Double(outcomes.count) * 100
     }
 }

@@ -66,6 +66,11 @@ struct MacClientApp: App {
                 MacDisconnectCommand(environment: environment)
             }
             CommandGroup(after: .toolbar) { MacDisplayModeCommands() }
+            CommandGroup(after: .appInfo) { MacUpdateCommands() }
+            CommandGroup(replacing: .help) {
+                Link("Vamp Control Help", destination: VampProductLinks.support)
+                Link("Privacy Policy", destination: VampProductLinks.privacy)
+            }
         }
         Settings { MacSettingsScreen(environment: environment) }
     }

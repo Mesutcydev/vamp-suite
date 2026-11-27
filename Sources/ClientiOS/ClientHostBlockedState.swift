@@ -9,7 +9,7 @@ struct ClientHostBlockedState: Equatable {
 
     init(terminalOnlyHostNamed name: String) {
         self.title = "Terminal-only host"
-        self.message = "\(name) is running Vamp Terminal Host. It provides terminal tabs, not screen sharing or remote control. Open Vamp Terminal for terminal access, or run Vamp Host on the Mac for this client."
+        self.message = "\(name) is running Vamp Terminal Host. It provides terminal tabs, not screen sharing or remote control. Open Vamp Terminal for terminal access, or run Vamp Sync on the Mac for this client."
         self.blockedPermissions = []
     }
 
@@ -17,7 +17,7 @@ struct ClientHostBlockedState: Equatable {
         self.blockedPermissions = message.blockedPermissions
         if message.reason == .terminalOnlyHost {
             self.title = "Use Vamp Terminal"
-            self.message = "This Mac is running Vamp Terminal Host. It supports terminal tabs only. Open Vamp Terminal for the session, or start Vamp Host on the Mac to use screen sharing and remote control."
+            self.message = "This Mac is running Vamp Terminal Host. It supports terminal tabs only. Open Vamp Terminal for the session, or start Vamp Sync on the Mac to use screen sharing and remote control."
             return
         }
 
@@ -29,9 +29,9 @@ struct ClientHostBlockedState: Equatable {
         // to an unauthenticated client) and on a generic pipeline-start failure — so don't render
         // "approval for  before…" with a blank. Give actionable guidance instead.
         if names.isEmpty {
-            self.message = "Vamp Host needs permission on the Mac before it can stream or accept control. On the Mac, open Vamp Host and grant Screen Recording (and Accessibility for control) — macOS can reset these after an app identity changes."
+            self.message = "Vamp Sync needs permission on the Mac before it can stream or accept control. On the Mac, open Vamp Sync and grant Screen Recording (and Accessibility for control) — macOS can reset these after an app identity changes."
         } else {
-            self.message = "Vamp Host needs approval for \(names) before streaming or control can start."
+            self.message = "Vamp Sync needs approval for \(names) before streaming or control can start."
         }
     }
 }

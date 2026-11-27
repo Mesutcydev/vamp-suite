@@ -148,12 +148,9 @@ enum HostBrowserPairingCode {
                 guard let base = buffer.baseAddress else { return false }
                 return SecRandomCopyBytes(kSecRandomDefault, buffer.count, base) == errSecSuccess
             }
-            guard drawn else {
-                var fallback = [UInt8](repeating: 0, count: 8)
-                _ = SecRandomCopyBytes(kSecRandomDefault, fallback.count, &fallback)
-                let reduced = fallback.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) } % modulus
-                return String(format: "%012llu", reduced)
-            }
+            // Failing closed: a pairing code drawn from anything else would be guessable, and a
+            // predictable code is worse than no host. This used to fall back to all-zero bytes.
+            guard drawn else { fatalError("System randomness unavailable; refusing to issue a browser pairing code") }
         } while value >= unbiasedLimit
         return String(format: "%012llu", value % modulus)
     }
@@ -209,6 +206,21 @@ final class HostBrowserControlService: @unchecked Sendable {
     static let webSocketAuthProtocol = "vamp-auth"
     static let maxHTTPBodyBytes = 4 * 1024
     static let maxWebSocketFrameBytes = 64 * 1024
+    /// Open connections that have not become the terminal WebSocket. Every request is short and
+    /// answered with `Connection: close`, so anything still waiting after the timeout is idle.
+    /// Without these two limits a handful of silent sockets can use up the host's file descriptors,
+    /// which the signaling and data listeners share.
+    static let maxConcurrentConnections = 32
+    static let unupgradedConnectionTimeout: TimeInterval = 15
+    /// A terminal socket with no input and no output for this long is closed. The pairing token
+    /// lasts this long, but it was only checked at the upgrade, so an established socket (and its
+    /// shells) outlived it forever. Activity keeps a session open, so a working user is never cut off.
+    static let browserIdleTimeout: TimeInterval = 30 * 60
+    private static let idleSweepInterval: TimeInterval = 60
+
+    static func isIdle(lastActivity: Date, now: Date, timeout: TimeInterval = HostBrowserControlService.browserIdleTimeout) -> Bool {
+        now.timeIntervalSince(lastActivity) > timeout
+    }
 
     private let logger = Logger(subsystem: "com.remotedesktop.host", category: "BrowserControl")
     private let queue = DispatchQueue(label: "com.remotedesktop.host.browser-control", qos: .userInitiated)
@@ -224,6 +236,7 @@ final class HostBrowserControlService: @unchecked Sendable {
     /// value after the ten-minute window. The work item runs on `queue`, the
     /// same serial queue that owns all pairing state.
     private var pairingCodeExpiryWorkItem: DispatchWorkItem?
+    private var idleSweepTimer: DispatchSourceTimer?
     private var browserToken: String?
     private var browserTokenExpiresAt: Date?
     private struct PairFailureWindow {
@@ -331,6 +344,7 @@ final class HostBrowserControlService: @unchecked Sendable {
             listener = newListener
             listenerReady = false
             tailscaleListenerHost = hasTailscaleHost ? tailscaleHost : nil
+            startIdleSweep()
             newListener.start(queue: queue)
             publishStatus()
         } catch {
@@ -367,6 +381,10 @@ final class HostBrowserControlService: @unchecked Sendable {
             host: host,
             port: NWEndpoint.Port(rawValue: port) ?? .any
         )
+        // The all-interface bind exists only so loopback and the Tailscale utun are both served.
+        // Keep it off the LAN and cellular interfaces entirely; `allowsBrowserPath` still checks
+        // every accepted connection.
+        parameters.prohibitedInterfaceTypes = [.wifi, .wiredEthernet, .cellular]
         let newListener = try NWListener(using: parameters)
         newListener.stateUpdateHandler = { [weak self, weak newListener] state in
             guard let self else { return }
@@ -401,7 +419,26 @@ final class HostBrowserControlService: @unchecked Sendable {
         return newListener
     }
 
+    private func startIdleSweep() {
+        idleSweepTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + Self.idleSweepInterval, repeating: Self.idleSweepInterval)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            let now = Date()
+            for client in self.clients.values where client.mode == .webSocket
+                && Self.isIdle(lastActivity: client.lastActivityAt, now: now) {
+                self.logger.info("Closing an idle browser terminal")
+                self.remove(clientID: client.id, connection: client.connection)
+            }
+        }
+        idleSweepTimer = timer
+        timer.resume()
+    }
+
     private func _stop() {
+        idleSweepTimer?.cancel()
+        idleSweepTimer = nil
         pairingCodeExpiryWorkItem?.cancel()
         pairingCodeExpiryWorkItem = nil
         lastError = nil
@@ -417,9 +454,18 @@ final class HostBrowserControlService: @unchecked Sendable {
     }
 
     private func accept(_ connection: NWConnection) {
+        guard clients.count < Self.maxConcurrentConnections else {
+            logger.warning("Rejecting browser connection: too many open connections")
+            connection.cancel()
+            return
+        }
         let id = UUID()
         let client = BrowserClient(id: id, connection: connection)
         clients[id] = client
+        queue.asyncAfter(deadline: .now() + Self.unupgradedConnectionTimeout) { [weak self] in
+            guard let self, let pending = self.clients[id], pending.mode != .webSocket else { return }
+            self.remove(clientID: id, connection: pending.connection)
+        }
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             guard let self else { return }
             switch state {
@@ -552,6 +598,14 @@ final class HostBrowserControlService: @unchecked Sendable {
             headers[name] = value
         }
 
+        // DNS rebinding: a web page can make its own name resolve to 127.0.0.1 and then pass the
+        // same-origin check below. Only names this service is meant to be reached by are served.
+        guard Self.isAllowedHostHeader(headers["host"]) else {
+            logger.warning("Rejected browser request with an unexpected Host header")
+            sendHTTP(.forbidden, body: "Host not allowed", to: client)
+            return
+        }
+
         let contentLength: Int
         if let rawContentLength = headers["content-length"] {
             guard let parsedContentLength = Int(rawContentLength),
@@ -579,7 +633,17 @@ final class HostBrowserControlService: @unchecked Sendable {
 
         switch (request.method, request.path) {
         case ("GET", "/"), ("GET", "/index.html"):
-            sendHTTP(.ok, contentType: "text/html; charset=utf-8", body: BrowserControlWebAssets.indexHTML, to: client)
+            // Scripts run only with this response's nonce, so markup injected into the page cannot
+            // execute (there is no inline handler left either). Inline styles stay allowed.
+            let nonce = Self.makeToken()
+            let page = Self.nonced(BrowserControlWebAssets.indexHTML, nonce: nonce)
+            sendHTTP(
+                .ok,
+                contentType: "text/html; charset=utf-8",
+                body: page,
+                contentSecurityPolicy: "default-src 'self'; style-src 'unsafe-inline'; script-src 'nonce-\(nonce)'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+                to: client
+            )
         case ("GET", "/api/status"):
             sendHTTP(.ok, contentType: "application/json", body: statusJSON(), to: client)
         case ("GET", let path) where path.hasPrefix("/assets/providers/"):
@@ -664,6 +728,8 @@ final class HostBrowserControlService: @unchecked Sendable {
         // have failed.
         revokeWebSocketSessions(reason: "browser-replaced")
         pairFailuresByAddress.removeValue(forKey: remoteAddress)
+        // The code stays valid until it expires, so a second browser can pair while it is shown.
+        // Rotating it on success breaks that handoff (HostTerminalServiceTests pins it).
         let token = Self.makeToken()
         browserToken = token
         browserTokenExpiresAt = Date().addingTimeInterval(Self.browserTokenLifetime)
@@ -691,7 +757,9 @@ final class HostBrowserControlService: @unchecked Sendable {
         // one IP is an attack, not a typo.
         if window.count >= Self.maxPairFailuresPerWindow {
             logger.warning("Pairing guess budget exhausted from \(address); rotating pairing code")
-            issuePairingCode()
+            // Rotating the code must not clear the budget that just ran out (that made the
+            // 429 unreachable), and must not end a browser that is already paired.
+            issuePairingCode(resetFailureWindows: false, revokeSession: false)
             publishStatus()
         }
     }
@@ -855,6 +923,34 @@ final class HostBrowserControlService: @unchecked Sendable {
         }
     }
 
+    /// Names the Safari terminal is reached by: IP literals (not rebindable), loopback and
+    /// single-label names, MagicDNS (`*.ts.net`) and mDNS (`*.local`) names. Another domain is
+    /// served only when listed in the `com.remotedesktop.host.browserAllowedHosts` default
+    /// (exact name, or a leading-dot suffix such as `.example.test`).
+    static func isAllowedHostHeader(_ hostHeader: String?, extraAllowed: [String]? = nil) -> Bool {
+        guard let hostHeader, !hostHeader.isEmpty else { return true }
+        var name = hostHeader.lowercased()
+        if name.hasPrefix("[") {
+            guard let close = name.firstIndex(of: "]") else { return false }
+            return IPv6Address(String(name[name.index(after: name.startIndex)..<close])) != nil
+        }
+        if let colon = name.lastIndex(of: ":"), name.filter({ $0 == ":" }).count == 1 {
+            name = String(name[..<colon])
+        }
+        if name.hasSuffix(".") { name.removeLast() }
+        guard !name.isEmpty else { return false }
+        if IPv4Address(name) != nil || IPv6Address(name) != nil { return true }
+        if name == "localhost" || name.hasSuffix(".localhost") { return true }
+        if !name.contains(".") { return true }
+        if name.hasSuffix(".ts.net") || name.hasSuffix(".local") { return true }
+        let extra = extraAllowed
+            ?? UserDefaults.standard.stringArray(forKey: "com.remotedesktop.host.browserAllowedHosts")
+            ?? []
+        return extra.map { $0.lowercased() }.contains { entry in
+            entry.hasPrefix(".") ? name.hasSuffix(entry) : name == entry
+        }
+    }
+
     static func isAllowedBrowserOrigin(_ origin: String?, hostHeader: String?) -> Bool {
         guard let origin, !origin.isEmpty else { return true }
         guard origin != "null",
@@ -909,6 +1005,7 @@ final class HostBrowserControlService: @unchecked Sendable {
             sendError("terminal-disabled", terminalID: command.terminalID, to: client)
             return
         }
+        if type != "ping" { client.lastActivityAt = Date() }
 
         switch type {
         case "open":
@@ -1004,6 +1101,7 @@ final class HostBrowserControlService: @unchecked Sendable {
     }
 
     private func sendTerminalEnvelope(_ envelope: DataChannelEnvelope, to client: BrowserClient) {
+        client.lastActivityAt = Date()
         guard client.mode == .webSocket else {
             logger.warning("Dropping terminal envelope because browser client is not in WebSocket mode")
             return
@@ -1066,10 +1164,15 @@ final class HostBrowserControlService: @unchecked Sendable {
 
     // MARK: Wire helpers
 
+    static func nonced(_ html: String, nonce: String) -> String {
+        html.replacingOccurrences(of: "<script>", with: "<script nonce=\"\(nonce)\">")
+    }
+
     private func sendHTTP(
         _ status: HTTPStatus,
         contentType: String = "text/plain; charset=utf-8",
         body: String,
+        contentSecurityPolicy: String = "default-src 'none'; frame-ancestors 'none'",
         to client: BrowserClient
     ) {
         let data = Data(body.utf8)
@@ -1078,7 +1181,7 @@ final class HostBrowserControlService: @unchecked Sendable {
             + "Content-Length: \(data.count)\r\n"
             + "Cache-Control: no-store\r\n"
             + "X-Content-Type-Options: nosniff\r\n"
-            + "Content-Security-Policy: default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'\r\n"
+            + "Content-Security-Policy: \(contentSecurityPolicy)\r\n"
             + "Connection: close\r\n\r\n"
         sendRaw(Data(response.utf8) + data, to: client) { [weak self] in
             self?.remove(clientID: client.id, connection: client.connection)
@@ -1226,13 +1329,17 @@ final class HostBrowserControlService: @unchecked Sendable {
         return BrowserWebSocketFrame(opcode: opcode, payload: payload)
     }
 
-    private func issuePairingCode() {
+    private func issuePairingCode(resetFailureWindows: Bool = true, revokeSession: Bool = true) {
         pairingCodeExpiryWorkItem?.cancel()
         pairingCode = HostBrowserPairingCode.generate()
         pairingCodeIssuedAt = Date()
-        browserToken = nil
-        browserTokenExpiresAt = nil
-        pairFailuresByAddress.removeAll()
+        if revokeSession {
+            browserToken = nil
+            browserTokenExpiresAt = nil
+        }
+        if resetFailureWindows {
+            pairFailuresByAddress.removeAll()
+        }
 
         // Keep the host's displayed code and the listener's accepted code in
         // lockstep. Previously the code simply stayed on screen forever after
@@ -1281,6 +1388,7 @@ final class HostBrowserControlService: @unchecked Sendable {
         clients.removeAll()
         for client in currentClients {
             client.terminalService?.sessionDidEnd(reason: reason)
+            client.agentSemanticService?.sessionDidEnd()
             client.connection.cancel()
         }
     }
@@ -1290,6 +1398,7 @@ final class HostBrowserControlService: @unchecked Sendable {
         for client in websocketClients {
             clients.removeValue(forKey: client.id)
             client.terminalService?.sessionDidEnd(reason: reason)
+            client.agentSemanticService?.sessionDidEnd()
             client.connection.cancel()
         }
     }
@@ -1329,6 +1438,8 @@ private final class BrowserClient: @unchecked Sendable {
     var receiveBuffer = Data()
     var sessionID: UUID?
     var terminalService: HostTerminalService?
+    /// Last time the browser sent input or the shell produced output. A ping does not count.
+    var lastActivityAt = Date()
     var agentSemanticService: HostAgentSemanticService?
 
     init(id: UUID, connection: NWConnection) {
@@ -1544,7 +1655,7 @@ enum BrowserControlWebAssets {
 .workspace-list{display:grid;gap:8px;max-height:min(52vh,420px);overflow:auto}.workspace-choice{display:flex!important;flex-direction:column;align-items:flex-start;gap:4px;width:100%;margin:0!important;padding:12px 14px!important;background:rgba(255,255,255,.08)!important;color:#fff!important;text-align:left}.workspace-choice small{color:#aaa;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
 </style></head>
 <body class="pairing"><div class="shell">
-<header class="top"><button class="back" id="back" aria-label="Open sessions dashboard" title="Open sessions dashboard" onclick="vampToggleDashboard()">‹</button><div class="title" id="page-title">Task chat</div><div class="state"><span class="dot"></span><span id="state">Pairing</span></div></header>
+<header class="top"><button class="back" id="back" aria-label="Open sessions dashboard" title="Open sessions dashboard">‹</button><div class="title" id="page-title">Task chat</div><div class="state"><span class="dot"></span><span id="state">Pairing</span></div></header>
 <nav class="tabs" id="tabs" aria-label="Terminal tabs"><button class="newtab" id="newtab" aria-label="New terminal">＋</button></nav>
 <nav class="mode-switch" id="mode-switch" aria-label="Session mode"><button id="mode-chat" type="button" aria-pressed="true"><span aria-hidden="true">▤</span> Chat</button><button id="mode-terminal" type="button" aria-pressed="false"><span aria-hidden="true">›_</span> Terminal</button></nav>
 <main class="content">
@@ -2467,6 +2578,7 @@ function vampToggleDashboard(force) {
 }
 
 $('dashboard-open').onclick = () => vampToggleDashboard(false);
+$('back').addEventListener('click', () => vampToggleDashboard());
 
 createTab = (startup = null, title = null, agent = null, workspace = null) => {
   if (order.length >= 8) {

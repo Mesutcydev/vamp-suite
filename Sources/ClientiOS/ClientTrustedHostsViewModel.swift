@@ -23,7 +23,11 @@ final class ClientTrustedHostsViewModel: ObservableObject {
         defer { isLoading = false }
         do {
             let peers = try await peerStore.trustedPeers()
-            trustedHosts = peers
+            // The Macs this device pinned live with the saved hosts, not in the peer store (only a
+            // host writes that), so list them too or Settings could never show or undo a pairing.
+            let pinned = HostsListViewModel.pinnedMacs()
+                .filter { mac in !peers.contains { $0.fingerprint == mac.fingerprint } }
+            trustedHosts = (peers + pinned)
                 .sorted { ($0.lastSeenAt ?? $0.trustedAt) > ($1.lastSeenAt ?? $1.trustedAt) }
             errorMessage = nil
         } catch {
@@ -39,7 +43,10 @@ final class ClientTrustedHostsViewModel: ObservableObject {
     /// Forget a host (remove trust).
     func forget(_ host: TrustedPeer) async {
         do {
-            try await peerStore.revokePeer(id: host.id)
+            if HostsListViewModel.pinnedMacs().contains(where: { $0.id == host.id }) {
+                HostsListViewModel.forgetSavedMac(host.id)
+            }
+            try? await peerStore.revokePeer(id: host.id)
             await refresh()
         } catch {
             errorMessage = "Failed to forget: \(error.localizedDescription)"

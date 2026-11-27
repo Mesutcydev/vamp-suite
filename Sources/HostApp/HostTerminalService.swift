@@ -36,6 +36,8 @@ final class HostTerminalService: @unchecked Sendable {
     /// Hard cap per authenticated connection. This keeps a client from
     /// turning one host session into an unbounded process/fd farm.
     static let maxActiveTerminals = 8
+    /// Host-wide ceiling across every session, including detached ones kept for reattach.
+    static let maxTotalTerminals = 24
 
     /// Defensive output limits for runaway commands such as `yes` or
     /// `cat /dev/urandom`. Each terminal gets a fair cap and the connection
@@ -240,6 +242,19 @@ final class HostTerminalService: @unchecked Sendable {
         }
     }
 
+    /// Ends the terminals of one session (a revoked device's, for example) and leaves other
+    /// devices' detached sessions running.
+    func sessionDidEnd(sessionID: UUID, reason: String) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.detachTimers.removeValue(forKey: sessionID)?.cancel()
+            self.detachedSessions.remove(sessionID)
+            for session in self.activeTerminals.values.filter({ $0.sessionID == sessionID }) {
+                self._teardown(session, reason: reason, notifyClient: false)
+            }
+        }
+    }
+
     // MARK: - Internal (queue-isolated)
 
     private func _handleOpen(_ message: TerminalOpenMessage) {
@@ -288,7 +303,8 @@ final class HostTerminalService: @unchecked Sendable {
         // same IDs consumes no extra capacity, but one session can never turn
         // the host into an unbounded process/fd farm.
         let sameSessionCount = activeTerminals.values.filter { $0.sessionID == message.sessionID }.count
-        guard sameSessionCount < Self.maxActiveTerminals else {
+        // The per-session cap is keyed by an ID the client chooses, so it also needs a host-wide one.
+        guard sameSessionCount < Self.maxActiveTerminals, activeTerminals.count < Self.maxTotalTerminals else {
             logger.warning("Rejecting terminal open: capacity limit \(Self.maxActiveTerminals) reached for session \(message.sessionID.uuidString)")
             sendCloseNotice(
                 sessionID: message.sessionID,

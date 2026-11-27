@@ -613,9 +613,32 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
     /// SwiftUI's onOpenURL. We hand off via the shared action file + Darwin ping,
     /// which the running app's widget bridge consumes (and also polls), so this
     /// works whether the app was already running or just launched by the link.
+    /// Stop, restart and reject change what a connected device or a waiting request can do. Any
+    /// app or web page can open a vamphost:// link, so those need the user's own word first.
+    private func confirmURLAction(_ action: HostWidgetAction) -> Bool {
+        let consequence: String
+        switch action {
+        case .stop: consequence = "stop hosting, which disconnects any connected device"
+        case .restart: consequence = "restart hosting, which disconnects any connected device"
+        case .rejectPairing, .rejectConnection: consequence = "reject the waiting connection request"
+        default: return true
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Allow a link to \(consequence)?"
+        alert.informativeText = "Only continue if you asked for this."
+        alert.addButton(withTitle: "Allow")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             guard let action = HostWidgetAction.from(url: url) else { continue }
+            if [.stop, .restart, .rejectPairing, .rejectConnection].contains(action),
+               !confirmURLAction(action) {
+                continue
+            }
             if let environment = HostAppEnvironment.shared {
                 if action == .approvePairing || action == .approveConnection {
                     _ = environment.consumeCLITrustApproval()

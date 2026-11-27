@@ -66,6 +66,9 @@ struct MacVideoStreamView: NSViewRepresentable {
         input.updateDisplayMode(displayMode)
         context.coordinator.cancellable = renderer.framePublisher
             .sink { [weak view] buffer in view?.display(pixelBuffer: buffer) }
+        // The publisher does not replay: draw the frame already decoded, or a Mac screen
+        // that is not changing leaves this view black until something moves.
+        if let latest = renderer.latestPixelBuffer { view.display(pixelBuffer: latest) }
         return view
     }
 
@@ -104,13 +107,24 @@ final class RemoteStreamNSView: NSView {
     var input: (any MacRemoteInputHandling)?
     var isInputEnabled = true {
         willSet {
-            if !newValue { arrowKeyMonitor.releasePressedKeys(); setLocalCursorHidden(false) }
+            if !newValue { arrowKeyMonitor.releasePressedKeys(); releaseHeldModifiers(); setLocalCursorHidden(false) }
         }
         didSet { reportKeyboardFocus() }
     }
     var onKeyboardFocusChange: (Bool) -> Void = { _ in }
     var keepsDisplayShortcutsLocal = true
     private var reportedKeyboardFocus = false
+    /// Modifier keys the host currently has down, with the event that pressed each. Their
+    /// release only reaches this view while it is first responder in the key window, so
+    /// Command-Tab away, or a ⌃⌥ shortcut that opens a sheet, left them held on the Mac
+    /// until the same key was pressed again.
+    private var heldModifierEvents: [UInt16: NSEvent] = [:]
+
+    private func releaseHeldModifiers() {
+        let held = Array(heldModifierEvents.values)
+        heldModifierEvents.removeAll()
+        for event in held { input?.keyEvent(event, action: .up) }
+    }
     private var focusObservers: [NSObjectProtocol] = []
     private let arrowKeyMonitor = RemoteArrowKeyMonitor()
     var usesLocalCursor = false {
@@ -124,6 +138,9 @@ final class RemoteStreamNSView: NSView {
 
     private var displayLayer = AVSampleBufferDisplayLayer()
     private var formatDescription: CMVideoFormatDescription?
+    /// The layer frame last applied in `layoutDisplayLayer`, so per-frame refreshes
+    /// (see `refreshActualSizeLayout`) can no-op without touching the layer tree.
+    private var lastAppliedLayerFrame: NSRect?
     private var trackingArea: NSTrackingArea?
     /// Set when a double-click was forwarded as `.doubleClick` so the matching
     /// local mouse-up isn't also forwarded (the host posts the full pair itself).
@@ -178,23 +195,45 @@ final class RemoteStreamNSView: NSView {
     /// pixels and the input mapping always agree (the source of the
     /// offset/double-cursor bug); other modes fill the view bounds.
     private func layoutDisplayLayer() {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        defer { CATransaction.commit() }
+        let target: NSRect
         if displayMode == .actualSize, let rect = input?.remoteContentRect(in: bounds.size) {
-            displayLayer.frame = NSRect(
+            target = NSRect(
                 x: rect.origin.x,
                 y: rect.origin.y,
                 width: rect.size.width,
                 height: rect.size.height
             )
         } else {
-            displayLayer.frame = bounds
+            target = bounds
         }
+        guard target != lastAppliedLayerFrame || displayLayer.frame != target else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        displayLayer.frame = target
+        lastAppliedLayerFrame = target
+    }
+
+    /// The pinned 1:1 rect depends on the mapped stream size, which can change
+    /// without any layout pass — a mid-session quality change reconfigures the
+    /// encoder and the next frames arrive at different dimensions. Refresh on
+    /// frame arrival (cheap: the guard in `layoutDisplayLayer` no-ops when the
+    /// rect is unchanged) so the picture and the input mapping never drift.
+    func refreshActualSizeLayout() {
+        guard displayMode == .actualSize else { return }
+        layoutDisplayLayer()
+    }
+
+    /// Keep the video layer at the window's own backing scale, so frames are not resampled on
+    /// Retina screens. Explicitly set because the layer is a sublayer, not the view's backing layer.
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        displayLayer.contentsScale = window?.backingScaleFactor ?? 2
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        displayLayer.contentsScale = window?.backingScaleFactor ?? displayLayer.contentsScale
         notifyGeometry()
         window?.makeFirstResponder(self)
         if let window {
@@ -204,8 +243,12 @@ final class RemoteStreamNSView: NSView {
                     MainActor.assumeIsolated {
                         if name == NSWindow.willBeginSheetNotification {
                             self?.arrowKeyMonitor.releasePressedKeys()
+                            self?.releaseHeldModifiers()
                             self?.reportKeyboardFocus(focused: false)
-                        } else { self?.reportKeyboardFocus() }
+                        } else {
+                            if name == NSWindow.didResignKeyNotification { self?.releaseHeldModifiers() }
+                            self?.reportKeyboardFocus()
+                        }
                     }
                 })
             }
@@ -225,6 +268,7 @@ final class RemoteStreamNSView: NSView {
 
     override func resignFirstResponder() -> Bool {
         arrowKeyMonitor.releasePressedKeys()
+        releaseHeldModifiers()
         reportKeyboardFocus(focused: false)
         return super.resignFirstResponder()
     }
@@ -285,6 +329,7 @@ final class RemoteStreamNSView: NSView {
         // the actual decoded buffer, not the user's quality preset or the first
         // frame that happened to create this view.
         VideoLayerPresenter.updateDynamicRange(for: pixelBuffer, on: displayLayer)
+        if displayMode == .actualSize { refreshActualSizeLayout() }
 
         // `flush()` does not clear a failed layer; `flushAndRemoveImage()` does.
         if displayLayer.status == .failed {
@@ -490,6 +535,7 @@ final class RemoteStreamNSView: NSView {
         guard isInputEnabled else { return }
         guard let flag = Self.modifierFlag(forKeyCode: event.keyCode) else { return }
         let isDown = event.modifierFlags.contains(flag)
+        heldModifierEvents[event.keyCode] = isDown ? event : nil
         input?.keyEvent(event, action: isDown ? .down : .up)
     }
 

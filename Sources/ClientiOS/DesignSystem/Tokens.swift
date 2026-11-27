@@ -27,9 +27,14 @@ enum PR {
     static let warn = Color.primary
     static let err = Color.primary
 
+    // Radii are named for what they are, not for a number they no longer carry.
+    // `r12` used to be 16, so a view that wanted 12 points could not use the token and
+    // hardcoded the literal instead — which is how this tree accumulated nine different
+    // raw corner radii next to a design system that already had a scale.
     static let r6: CGFloat = 6
     static let r8: CGFloat = 8
-    static let r12: CGFloat = 16
+    /// Card/sheet radius. Matches `AppRadius` — see that scale for the full set.
+    static let rCard: CGFloat = 16
 }
 
 /// User-selectable accent palette. `glass` (colorless) is the default;
@@ -131,15 +136,19 @@ struct PRAppBackground: View {
                     // Brand wallpaper backdrop (shared by both iOS apps). Its explicit
                     // geometry prevents the source image's intrinsic width from widening
                     // a root ZStack and clipping the leading edge on compact iPhones.
+                    // Held below the scrim so the artwork stays recognizable but
+                    // subordinate to the interface instead of competing with labels.
                     Image("AppBackdrop")
                         .resizable()
                         .scaledToFill()
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .clipped()
-                        .opacity(colorScheme == .dark ? 0.85 : 0.55)
+                        .opacity(colorScheme == .dark ? 0.72 : 0.44)
 
-                // Legibility scrim keeps glass cards readable over the art.
-                Color.black.opacity(colorScheme == .dark ? 0.22 : 0.04)
+                // Legibility scrim keeps glass cards readable over the art. The light-scheme
+                // value used to be so faint (0.04) that bright artwork washed out row labels,
+                // metadata, and helper text; it is now a real scrim in both schemes.
+                Color.black.opacity(colorScheme == .dark ? 0.26 : 0.12)
 
                 LinearGradient(
                     colors: [
@@ -250,15 +259,18 @@ private struct PRBackdropGrid: View {
                 majorPath: &majorLines
             )
 
+            // Barely perceptible: enough structure for the native glass to refract as it moves,
+            // not enough to read as a visible grid competing with content. It is background
+            // artwork only, never a simulated glass overlay.
             context.stroke(
                 minorLines,
-                with: .color(Color.primary.opacity(colorScheme == .dark ? 0.055 : 0.045)),
+                with: .color(Color.primary.opacity(colorScheme == .dark ? 0.020 : 0.016)),
                 lineWidth: 0.5
             )
             context.stroke(
                 majorLines,
-                with: .color(Color.primary.opacity(colorScheme == .dark ? 0.105 : 0.078)),
-                lineWidth: 0.75
+                with: .color(Color.primary.opacity(colorScheme == .dark ? 0.036 : 0.028)),
+                lineWidth: 0.6
             )
         }
         .allowsHitTesting(false)
@@ -305,28 +317,13 @@ extension View {
     @ViewBuilder
     func prGlassSurface<S: InsettableShape>(
         in shape: S,
-        isInteractive: Bool = false
+        isInteractive: Bool = false,
+        role: PRGlassRole? = nil
     ) -> some View {
-#if os(iOS) && compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            self.background {
-                GeometryReader { geometry in
-                    Color.clear
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .glassEffect(
-                            prNativeGlass(isInteractive: isInteractive),
-                            in: shape
-                        )
-                }
-            }
-        } else {
-            self
-                .background(.ultraThinMaterial, in: shape)
-        }
-#else
-        self
-            .background(.ultraThinMaterial, in: shape)
-#endif
+        modifier(PRGlassSurfaceModifier(
+            shape: shape,
+            role: role ?? (isInteractive ? .button : .card)
+        ))
     }
 
 }
@@ -344,6 +341,118 @@ private func prNativeGlass(isInteractive: Bool) -> Glass {
     return glass
 }
 #endif
+
+extension View {
+    /// Live video is always framed in black, whatever the app's appearance, and its controls float
+    /// over the picture as glass rather than solid cards.
+    func vampStreamVideoSurface() -> some View {
+        environment(\.colorScheme, .dark)
+            .environment(\.prSolidSurfaces, false)
+            .environment(\.prGlassBacking, nil)
+    }
+}
+
+extension EnvironmentValues {
+    /// Set when there is no artwork behind the UI. Clear glass over a flat fill has nothing to
+    /// refract and reads as a missing card, so every glass surface becomes an opaque card instead.
+    @Entry var prSolidSurfaces = false
+    /// A reading plate drawn under every glass surface. Set over busy artwork, where clear glass
+    /// alone leaves labels sitting on the art's lines. nil keeps pure glass.
+    @Entry var prGlassBacking: Color? = nil
+}
+
+/// Lifts a card off a light page. Dark cards already separate by fill, so it is clear there.
+private let prCardShadow = Color.dynamic(light: 0x000000, dark: 0x000000, lightAlpha: 0.07, darkAlpha: 0)
+
+private struct PRGlassSurfaceModifier<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let role: PRGlassRole
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.prSolidSurfaces) private var solidSurfaces
+    @Environment(\.prGlassBacking) private var backing
+
+    func body(content: Content) -> some View {
+        if solidSurfaces {
+            content.background { plate(PR.card) }
+        } else if let backing {
+            glass(content).background { plate(backing) }
+        } else {
+            glass(content)
+        }
+    }
+
+    /// Cards lift with a shadow and no stroke: rows and cards draw their own hairline, and a
+    /// second one on top is what made every plain card read as a grey wireframe. Controls sit
+    /// inside cards, so they keep a hairline instead of casting a smudge onto their card.
+    @ViewBuilder
+    private func plate(_ fill: Color) -> some View {
+        if role.isInteractive {
+            shape.fill(fill).overlay { shape.strokeBorder(PR.border, lineWidth: 1) }
+        } else {
+            shape.fill(fill).shadow(color: prCardShadow, radius: 12, y: 4)
+        }
+    }
+
+    @ViewBuilder
+    private func glass(_ content: Content) -> some View {
+#if os(iOS) && compiler(>=6.2)
+        if #available(iOS 26.0, *), !reduceTransparency {
+            content.background {
+                GeometryReader { geometry in
+                    Color.clear
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .glassEffect(
+                            prNativeGlass(isInteractive: role.isInteractive),
+                            in: shape
+                        )
+                        .opacity(role.materialOpacity)
+                }
+            }
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+        }
+#else
+        content
+            .background(.ultraThinMaterial, in: shape)
+#endif
+    }
+}
+
+/// Material density tiers used by the shared colorless-glass system.
+enum PRGlassRole {
+    case hero
+    case card
+    case listRow
+    case button
+    case composer
+    case composerField
+    case capsule
+    case icon
+    case badge
+    case toolbarButton
+    case tabBar
+
+    var isInteractive: Bool {
+        switch self {
+        case .button, .composer, .composerField, .capsule, .icon, .badge,
+             .toolbarButton, .tabBar:
+            return true
+        case .hero, .card, .listRow:
+            return false
+        }
+    }
+
+    var materialOpacity: Double {
+        switch self {
+        case .hero, .card, .listRow: return 0.30
+        case .button: return 0.34
+        case .composer: return 0.72
+        case .composerField: return 0.62
+        case .capsule, .icon, .badge, .toolbarButton, .tabBar: return 0.52
+        }
+    }
+}
 
 struct PRGlassPressButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {

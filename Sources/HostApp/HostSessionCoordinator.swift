@@ -20,17 +20,17 @@ enum HostClientAttachmentIdentity {
         activeClientFingerprint: String?,
         candidate: SignalingPeer
     ) -> Bool {
-        if let activeClientID, activeClientID == candidate.id {
-            return true
-        }
-
         let activeFingerprint = normalized(activeClientFingerprint)
         let candidateFingerprint = normalized(candidate.publicKeyFingerprint)
-        guard PublicKeyFingerprint.isValid(activeFingerprint),
-              PublicKeyFingerprint.isValid(candidateFingerprint) else {
-            return false
+        // When both sides present a key, the key decides. A device ID is self-declared and
+        // travels in plaintext signaling, so the same ID under a different key is not the
+        // active device: it must get "host busy", not a path into the live session. (The
+        // trust gate would refuse it anyway as a changed fingerprint.)
+        if PublicKeyFingerprint.isValid(activeFingerprint),
+           PublicKeyFingerprint.isValid(candidateFingerprint) {
+            return activeFingerprint == candidateFingerprint
         }
-        return activeFingerprint == candidateFingerprint
+        return activeClientID != nil && activeClientID == candidate.id
     }
 
     static func matchesRevokedPeer(activeClientID: UUID?, activeClientFingerprint: String?, peer: TrustedPeer) -> Bool {
@@ -42,6 +42,116 @@ enum HostClientAttachmentIdentity {
 
     private static func normalized(_ value: String?) -> String {
         value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    }
+}
+
+/// Decides whether the client-liveness watchdog should reclaim a session. Pure and nonisolated so
+/// the phantom-session rule is unit-testable without a transport.
+///
+/// The client pings every 2 s while its transport reports `.connected`, so a session with no
+/// inbound traffic for `timeout` seconds has no working data channel — even when the transport
+/// itself still claims `.connected` (a half-open TCP path after an AP roam, NAT timeout, or host
+/// sleep).
+///
+/// `lastActivity == nil` must NOT mean "alive". It means the data channel never opened, which is
+/// exactly the session that used to hold `activeSessionID` forever: capture and encode kept
+/// running for nobody, and every real client was rejected as "already connected to another
+/// device" until the host process was quit.
+enum HostClientLiveness {
+    /// Seconds of client silence, or nil when the watchdog should not act.
+    static func clientSilence(
+        isStreaming: Bool,
+        isConnected: Bool,
+        lastActivity: Date?,
+        sessionStartedAt: Date,
+        now: Date,
+        timeout: TimeInterval
+    ) -> TimeInterval? {
+        guard isStreaming, isConnected else { return nil }
+        let silentFor = now.timeIntervalSince(lastActivity ?? sessionStartedAt)
+        return silentFor > timeout ? silentFor : nil
+    }
+}
+
+/// Sync serves one device at a time. A different device may take the slot once the
+/// current session's device is gone: the transport is down, or it has gone silent.
+/// A just-approved session keeps the slot while it negotiates. Without this, a phone
+/// that vanished mid-setup (app switched away, updated, or the user cancelled) left the
+/// slot claimed forever: no transport event fires for a peer that never connected, and
+/// the liveness watchdog only runs while streaming, so every later device was told
+/// "already connected to another device".
+enum HostSessionSlotPolicy {
+    static func isHeld(
+        claimedAt: Date?,
+        transportConnected: Bool,
+        lastActivity: Date?,
+        now: Date,
+        negotiationWindow: TimeInterval,
+        livenessTimeout: TimeInterval
+    ) -> Bool {
+        if let claimedAt, now.timeIntervalSince(claimedAt) < negotiationWindow { return true }
+        guard transportConnected else { return false }
+        guard let reference = lastActivity ?? claimedAt else { return true }
+        return now.timeIntervalSince(reference) <= livenessTimeout
+    }
+}
+
+/// Which form of session token an offer may carry. Pure, so the sealed-only rule and the
+/// transition rule for older apps are unit-testable without a coordinator.
+enum HostSessionTokenPolicy {
+    /// Apps released before the signed key exchange send the token in plaintext whenever they
+    /// have no Bonjour key for this Mac (typed, scanned and Tailscale addresses). They stay
+    /// accepted for the transition. Flip this in the release that stops supporting them.
+    /// Accepted by default so no installed app stops working. An older app's plaintext token is the
+    /// TLS-PSK key for its data channel, so anyone who read it on the network can take the session.
+    /// A Mac whose devices are all updated can end the transition for itself (the same switch
+    /// becomes the default in the release that drops support):
+    /// `defaults write com.mesutcy.remotedesktop.host com.remotedesktop.host.acceptLegacyClients -bool false`
+    static let legacyClientsDefaultsKey = "com.remotedesktop.host.acceptLegacyClients"
+
+    static var acceptsLegacyPlaintextToken: Bool {
+        UserDefaults.standard.object(forKey: legacyClientsDefaultsKey) as? Bool ?? true
+    }
+
+    /// Decides the default once. A Mac that already has paired devices keeps accepting older apps,
+    /// because one of those devices may be running one and must not stop working. A Mac with no
+    /// paired device starts out refusing them, so a new install is sealed-only unless its owner
+    /// allows older apps from the Vamp Sync menu. An explicit choice is never overwritten.
+    static func settleLegacyDefault(hasPairedDevices: Bool, defaults: UserDefaults = .standard) {
+        guard defaults.object(forKey: legacyClientsDefaultsKey) == nil else { return }
+        defaults.set(hasPairedDevices, forKey: legacyClientsDefaultsKey)
+    }
+
+    enum Form: Equatable {
+        case sealed(Data)
+        /// Plaintext from an app that predates the signed key exchange.
+        case legacyPlaintext(String)
+        case rejected(String)
+    }
+
+    static func form(
+        of offer: SessionOfferMessage,
+        acceptsLegacyPlaintextToken: Bool = HostSessionTokenPolicy.acceptsLegacyPlaintextToken
+    ) -> Form {
+        if offer.clientCapabilities?.contains(.supportsSignedKeyExchange) == true {
+            // An updated app is sealed-only. The flag is inside the offer the client signed, so
+            // it cannot be stripped on the path to push that app back to plaintext; a plaintext
+            // copy beside the seal would defeat the seal just the same.
+            guard let sealed = offer.sealedSessionToken, offer.sessionToken == nil else {
+                return .rejected("the session token was not sealed")
+            }
+            return .sealed(sealed)
+        }
+        if let sealed = offer.sealedSessionToken { return .sealed(sealed) }
+        guard acceptsLegacyPlaintextToken else {
+            return .rejected("the app on that device is too old; update it, or choose Allow Older Vamp Apps in the Vamp Sync menu")
+        }
+        guard let plain = offer.sessionToken,
+              let data = ConnectionSecurity.tokenFromHex(plain),
+              data.count == 32 else {
+            return .rejected("the session token was missing or invalid")
+        }
+        return .legacyPlaintext(plain)
     }
 }
 
@@ -78,6 +188,11 @@ final class HostSessionCoordinator: ObservableObject {
     }
     @Published private(set) var activeSessionID: UUID?
     @Published private(set) var connectedClientName: String?
+    /// The connected device sent its session token in plaintext (an app that predates the
+    /// signed key exchange). Shown in the Sync panel so the user knows to update that app.
+    @Published private(set) var activeClientUsesLegacyToken = false {
+        didSet { inputCommandRouter.setLegacyTokenSession(activeClientUsesLegacyToken) }
+    }
     @Published private(set) var errorMessage: String?
     /// Non-nil only while an app window is actively captured. Vamp Sync uses
     /// this to distinguish an attached client from a real video stream.
@@ -105,6 +220,7 @@ final class HostSessionCoordinator: ObservableObject {
     private let eventLogStore: any EventLogStoreProtocol
     private let signalingService: any SessionCoordinatorSignaling
     private let sessionModeController: HostSessionModeController
+    private let runtimePolicy: MacHostRuntimePolicy
     private let performanceStateController: HostPerformanceStateController
     private let fileTransferManager: HostFileTransferManager
     private let productMode: HostProductMode
@@ -160,6 +276,9 @@ final class HostSessionCoordinator: ObservableObject {
     /// (pings stop) but keeps the socket alive, and pings resume on foreground —
     /// the old 15 s killed sessions that would have resumed seamlessly.
     private let clientLivenessTimeoutSeconds: Double = 30.0
+    /// How long a just-approved session keeps the slot before it must show a live transport.
+    private let sessionNegotiationWindowSeconds: Double = 30.0
+    private var activeSessionClaimedAt: Date?
     private var displayLayoutObserverTask: Task<Void, Never>?
     private var pendingDisplayLayoutChangeTask: Task<Void, Never>?
     private var initialDataChannelRetryTask: Task<Void, Never>?
@@ -208,6 +327,12 @@ final class HostSessionCoordinator: ObservableObject {
     /// Low-frequency task that keeps the window origin aligned for input and detects window loss.
     var windowTrackingTask: Task<Void, Never>?
     private var targetSwitchTask: Task<Void, Never>?
+    /// Switch requests queued behind the running one and not yet started. A quality re-target
+    /// must not cancel them: that used to drop the user's pick with no reply.
+    private var queuedTargetSwitches = 0
+    private var lastKeyframeRequestAt: Date?
+    /// The newest request still waiting to start. Superseded requests get a reply, not silence.
+    private var waitingTargetSwitch: StreamTargetSwitchRequestMessage?
     private var applicationListSnapshot: [RemoteApplication] = []
     #endif
 
@@ -227,6 +352,7 @@ final class HostSessionCoordinator: ObservableObject {
         performanceStateController: HostPerformanceStateController,
         fileTransferManager: HostFileTransferManager,
         productMode: HostProductMode = .full,
+        runtimePolicy: MacHostRuntimePolicy = .current,
         sessionTokenUnsealer: ((Data) -> Data?)? = nil,
         streamWindowGeometry: StreamWindowGeometryStore = StreamWindowGeometryStore(),
         ensureDiscoveryAdvertising: @escaping @MainActor @Sendable () async -> Void = {}
@@ -247,6 +373,7 @@ final class HostSessionCoordinator: ObservableObject {
         self.performanceStateController = performanceStateController
         self.fileTransferManager = fileTransferManager
         self.productMode = productMode
+        self.runtimePolicy = runtimePolicy
         self.sessionTokenUnsealer = sessionTokenUnsealer
         self.ensureDiscoveryAdvertising = ensureDiscoveryAdvertising
         self.connectionDebugger = ConnectionDebugger(role: "host", eventLogStore: eventLogStore)
@@ -381,7 +508,8 @@ final class HostSessionCoordinator: ObservableObject {
             case .terminalOnly:
                 otherProduct = "Vamp Host"
             case .mini:
-                otherProduct = "Vamp Host or Vamp Terminal Host"
+                // Both are discontinued; name them only as the leftovers they would be.
+                otherProduct = "any other app using that port (such as an older Vamp Host or Vamp Terminal Host)"
             }
             return "\(productMode.productTitle) could not open port \(RemoteDesktopConstants.defaultSignalingPort). Quit \(otherProduct) if it is running, then restart this host."
         }
@@ -456,6 +584,7 @@ final class HostSessionCoordinator: ObservableObject {
         activeClientFingerprint = nil
         activeSessionIsTerminalOnly = false
         connectedClientName = nil
+        activeClientUsesLegacyToken = false
         latestObservedLayout = nil
         activeStreamDisplayRestartKey = nil
         isApplyingPerformanceProfile = false
@@ -511,15 +640,36 @@ final class HostSessionCoordinator: ObservableObject {
                    activeClientFingerprint: activeClientFingerprint,
                    candidate: message.envelope.sender
                ) {
-                await rejectAdditionalClient(
-                    offerSessionID: offer.sessionID,
-                    activeSessionID: activeSessionID,
-                    sender: message.envelope.sender
+                let held = HostSessionSlotPolicy.isHeld(
+                    claimedAt: activeSessionClaimedAt,
+                    transportConnected: webRTCSessionManager.connectionState == .connected,
+                    lastActivity: lastClientActivityAt,
+                    now: Date(),
+                    negotiationWindow: sessionNegotiationWindowSeconds,
+                    livenessTimeout: clientLivenessTimeoutSeconds
                 )
-                return
+                guard !held else {
+                    await rejectAdditionalClient(
+                        offerSessionID: offer.sessionID,
+                        activeSessionID: activeSessionID,
+                        sender: message.envelope.sender
+                    )
+                    return
+                }
+                // The release itself waits for trust (see handleClientOffer). Tearing the old
+                // session down here let any untrusted offer claim a reconnecting device's slot.
             }
-            phase = .signalingConnected
-            connectedClientName = message.envelope.sender.displayName
+            // While another device's session is still running, leave its phase and name alone until
+            // this offer is trusted; the newcomer's name is not the client of that session.
+            let displacesLiveSession = activeSessionID != nil && !HostClientAttachmentIdentity.matches(
+                activeClientID: activeClientID,
+                activeClientFingerprint: activeClientFingerprint,
+                candidate: message.envelope.sender
+            )
+            if !displacesLiveSession {
+                phase = .signalingConnected
+                connectedClientName = message.envelope.sender.displayName
+            }
             await handleClientOffer(offer, sender: message.envelope.sender)
 
         case .iceCandidate(let candidate):
@@ -566,14 +716,20 @@ final class HostSessionCoordinator: ObservableObject {
         ))
     }
 
+    /// Called with the session ID of a device whose access was just revoked, so its shells and
+    /// agent runs end with it instead of living on as detached sessions for hours.
+    var onSessionRevoked: ((UUID) -> Void)?
+
     func revokePeer(_ peer: TrustedPeer, store: any TrustedPeerStoreProtocol) async throws {
         trustRevision &+= 1
         revokingFingerprints.insert(peer.fingerprint)
         defer { revokingFingerprints.remove(peer.fingerprint) }
         if HostClientAttachmentIdentity.matchesRevokedPeer(activeClientID: activeClientID, activeClientFingerprint: activeClientFingerprint, peer: peer) {
             // Synchronous invalidation precedes every suspension. stopListening detaches
-            // terminals and releases held input; it does not destroy persistent sessions.
+            // terminals and releases held input; a revoked device's sessions are then ended.
+            let revokedSessionID = activeSessionID
             inputCommandRouter.stopListening()
+            if let revokedSessionID { onSessionRevoked?(revokedSessionID) }
             activeSessionID = nil
             webRTCSessionManager.configureControlChannelAuth(sessionTokenHex: nil)
             await resetForNextClient(reason: "Device access revoked")
@@ -585,20 +741,16 @@ final class HostSessionCoordinator: ObservableObject {
         let revision = trustRevision
         guard !revokingFingerprints.contains(sender.publicKeyFingerprint ?? "") else { return }
 
-        // Record the client's advertised decoder capabilities so codec negotiation
-        // reflects what this specific client can actually decode (e.g. HEVC).
-        advertisedClientCapabilities = offer.clientCapabilities
-        // A compatible Mac client renders its own cursor immediately. Keep the
-        // cursor in captured video for every older peer and non-Mac client.
-        captureEngine.setShowsCursor(!negotiatedCapabilities.supportsCursorlessCapture)
-        requestedDynamicRange = offer.preferredDynamicRange ?? .sdr
-        webRTCSessionManager.configureVideoTransport(
-            fragmentationEnabled: offer.clientCapabilities?.contains(.supportsVideoFragmentation) == true,
-            fecEnabled: offer.clientCapabilities?.contains(.supportsVideoFEC) == true
+        // An offer from a device other than the one whose session is running must not change that
+        // session's phase, name or settings unless it is trusted and the slot is free.
+        var displacesLiveSession = activeSessionID != nil && !HostClientAttachmentIdentity.matches(
+            activeClientID: activeClientID,
+            activeClientFingerprint: activeClientFingerprint,
+            candidate: sender
         )
 
         // Trust evaluation
-        phase = .trustPending
+        if !displacesLiveSession { phase = .trustPending }
         let clientID = sender.id
         let clientName = sender.displayName ?? "Unknown Client"
         let isTerminalSession = offer.clientProductRole == .terminal
@@ -619,7 +771,7 @@ final class HostSessionCoordinator: ObservableObject {
                 )
                 logger.warning("Rejected non-terminal client '\(clientName)' from terminal-only host")
                 signalingService.dropCurrentConnection()
-                phase = .awaitingClient
+                if !displacesLiveSession { phase = .awaitingClient }
                 errorMessage = "This host accepts Vamp Terminal clients only."
                 await eventLogStore.append(EventLogItem(
                     severity: .warning,
@@ -635,7 +787,7 @@ final class HostSessionCoordinator: ObservableObject {
         guard let fingerprint = sender.publicKeyFingerprint, !fingerprint.isEmpty else {
             logger.warning("Rejected client '\(clientName)' — missing public key fingerprint")
             signalingService.dropCurrentConnection()
-            phase = .awaitingClient
+            if !displacesLiveSession { phase = .awaitingClient }
             await eventLogStore.append(EventLogItem(
                 severity: .warning,
                 category: "Trust",
@@ -659,14 +811,14 @@ final class HostSessionCoordinator: ObservableObject {
             // Clear the stuck trust gate so future connections aren't silently rejected
             await peerTrustGate.cancelPendingPrompt()
             signalingService.dropCurrentConnection()
-            phase = .awaitingClient
+            if !displacesLiveSession { phase = .awaitingClient }
             return
         }
 
         guard trusted else {
             logger.warning("Client \(clientName) rejected by trust gate")
             signalingService.dropCurrentConnection()
-            phase = .awaitingClient
+            if !displacesLiveSession { phase = .awaitingClient }
             let reason = await peerTrustGate.lastDenialReason
                 ?? "Rejected connection from \(clientName)"
             await eventLogStore.append(EventLogItem(
@@ -677,18 +829,79 @@ final class HostSessionCoordinator: ObservableObject {
             return
         }
 
-        guard let sessionTokenHex = await resolveSessionToken(from: offer, clientName: clientName) else {
+        // This peer is approved. Let the signaling layer stop counting its own reconnect
+        // sockets against its connection budget, so a healthy client that drops and
+        // re-attaches is not locked out by the attempts its failure already consumed.
+        if let bonjourSignaling = signalingService as? BonjourSignalingService {
+            bonjourSignaling.noteTrustedPeer(fingerprint: fingerprint)
+        }
+
+
+        guard let sessionToken = await resolveSessionToken(from: offer, clientName: clientName) else {
             signalingService.dropCurrentConnection()
-            phase = .awaitingClient
+            if !displacesLiveSession { phase = .awaitingClient }
             return
         }
+        let sessionTokenHex = sessionToken.hex
         guard revision == trustRevision else { return }
+
+        // Only now, with the offer trusted and its session token known, may the previous device's
+        // session be released. Re-check whether it is still gone: the trust prompt can take a minute.
+        if let previousSessionID = activeSessionID,
+           !HostClientAttachmentIdentity.matches(
+               activeClientID: activeClientID,
+               activeClientFingerprint: activeClientFingerprint,
+               candidate: sender
+           ) {
+            let held = HostSessionSlotPolicy.isHeld(
+                claimedAt: activeSessionClaimedAt,
+                transportConnected: webRTCSessionManager.connectionState == .connected,
+                lastActivity: lastClientActivityAt,
+                now: Date(),
+                negotiationWindow: sessionNegotiationWindowSeconds,
+                livenessTimeout: clientLivenessTimeoutSeconds
+            )
+            guard !held else {
+                logger.info("Declined offer: session \(previousSessionID.uuidString) is still held by its device")
+                await rejectAdditionalClient(
+                    offerSessionID: offer.sessionID,
+                    activeSessionID: previousSessionID,
+                    sender: sender
+                )
+                if !displacesLiveSession { phase = .awaitingClient }
+                return
+            }
+            logger.info("Releasing session \(previousSessionID.uuidString): its device is no longer connected")
+            await resetForNextClient(reason: "Released a session whose device was no longer connected",
+                                     keepsSignalingConnection: true)
+            guard revision == trustRevision else { return }
+            displacesLiveSession = false
+            connectedClientName = sender.displayName
+        }
+
+        // Configured only now: the release above resets the requested range, and a declined offer
+        // must not change the live session's codec, cursor or transport settings.
+        // Record the client's advertised decoder capabilities so codec negotiation
+        // reflects what this specific client can actually decode (e.g. HEVC).
+        advertisedClientCapabilities = offer.clientCapabilities
+        // A compatible Mac client renders its own cursor immediately. Keep the
+        // cursor in captured video for every older peer and non-Mac client.
+        captureEngine.setShowsCursor(!negotiatedCapabilities.supportsCursorlessCapture)
+        requestedDynamicRange = offer.preferredDynamicRange ?? .sdr
+        webRTCSessionManager.configureVideoTransport(
+            fragmentationEnabled: offer.clientCapabilities?.contains(.supportsVideoFragmentation) == true,
+            fecEnabled: offer.clientCapabilities?.contains(.supportsVideoFEC) == true
+        )
         webRTCSessionManager.configureControlChannelAuth(sessionTokenHex: sessionTokenHex)
+        // Set only now that this offer owns the session: releasing the previous device's session
+        // above clears the flag, and an offer declined above must not change it for that device.
+        activeClientUsesLegacyToken = sessionToken.isLegacyPlaintext
 
         // Proceed with session
         phase = .negotiating
         let sessionID = offer.sessionID
         activeSessionID = sessionID
+        activeSessionClaimedAt = Date()
         activeClientID = sender.id
         activeClientFingerprint = fingerprint
         activeSessionIsTerminalOnly = isTerminalSession
@@ -706,7 +919,7 @@ final class HostSessionCoordinator: ObservableObject {
                     sessionID: sessionID,
                     recipient: sender
                 )
-                phase = .awaitingClient
+                if !displacesLiveSession { phase = .awaitingClient }
                 errorMessage = "Host permissions are required before streaming can start."
                 activeSessionID = nil
                 activeClientID = nil
@@ -731,6 +944,13 @@ final class HostSessionCoordinator: ObservableObject {
             // Apply client offer and generate answer
             let answer = try await webRTCSessionManager.applyRemoteOffer(offer)
             guard revision == trustRevision else { await webRTCSessionManager.closeSession(); return }
+            // The answer lets a fast client open the data connection and send its
+            // one-shot authentication packet. Subscribe before exposing that answer.
+            startInputRouting(
+                sessionID: sessionID,
+                sessionTokenHex: sessionTokenHex,
+                terminalOnly: isTerminalSession
+            )
             // Never put the session token on the signaling answer. The client
             // already holds the value it generated; echoing it re-exposes the
             // control-channel secret on plaintext 9471.
@@ -767,7 +987,6 @@ final class HostSessionCoordinator: ObservableObject {
             await startPipeline(
                 sessionID: sessionID,
                 offer: offer,
-                sessionTokenHex: sessionTokenHex,
                 terminalOnly: isTerminalSession
             )
 
@@ -784,23 +1003,26 @@ final class HostSessionCoordinator: ObservableObject {
             // (Using dropCurrentConnection instead of disconnect so the message stream
             // stays alive for the next incoming offer.)
             signalingService.dropCurrentConnection()
+            inputCommandRouter.stopListening()
             await webRTCSessionManager.closeSession()
             activeSessionID = nil
             activeClientID = nil
             activeClientFingerprint = nil
             activeSessionIsTerminalOnly = false
             connectedClientName = nil
-            phase = .awaitingClient
+            activeClientUsesLegacyToken = false
+            if !displacesLiveSession { phase = .awaitingClient }
         }
     }
 
-    /// Resolve the session token from an offer. Prefers the ECIES-sealed form
-    /// (which only this host's identity key can open) and rejects the offer if
-    /// it cannot be opened, so a client cannot silently downgrade to the
-    /// plaintext path. Falls back to the legacy plaintext token only when the
-    /// offer carries no seal at all.
-    private func resolveSessionToken(from offer: SessionOfferMessage, clientName: String) async -> String? {
-        if let sealed = offer.sealedSessionToken {
+    /// Resolve the session token from an offer under `HostSessionTokenPolicy`. A sealed token
+    /// that cannot be opened rejects the offer; it never falls back to a plaintext one.
+    private func resolveSessionToken(
+        from offer: SessionOfferMessage,
+        clientName: String
+    ) async -> (hex: String, isLegacyPlaintext: Bool)? {
+        switch HostSessionTokenPolicy.form(of: offer) {
+        case .sealed(let sealed):
             guard let unseal = sessionTokenUnsealer,
                   let opened = unseal(sealed),
                   opened.count == 32 else {
@@ -812,47 +1034,40 @@ final class HostSessionCoordinator: ObservableObject {
                 ))
                 return nil
             }
-            let hex = ConnectionSecurity.tokenToHex(opened)
             logger.info("Offer session token opened from ECIES seal (\(clientName))")
-            return hex
-        }
-        guard let plain = offer.sessionToken,
-              let data = ConnectionSecurity.tokenFromHex(plain),
-              data.count == 32 else {
-            logger.warning("Rejected offer with missing/invalid session token from \(clientName)")
+            return (ConnectionSecurity.tokenToHex(opened), false)
+        case .legacyPlaintext(let plain):
+            logger.notice("Accepted a legacy plaintext session token from \(clientName)")
             await eventLogStore.append(EventLogItem(
                 severity: .warning,
                 category: "Trust",
-                message: "Rejected connection from \(clientName) due to invalid session token"
+                message: "\(clientName) uses an older app that sends its session key unencrypted. Update the app on that device."
+            ))
+            return (plain, true)
+        case .rejected(let reason):
+            logger.warning("Rejected offer from \(clientName): \(reason, privacy: .public)")
+            await eventLogStore.append(EventLogItem(
+                severity: .warning,
+                category: "Trust",
+                message: "Rejected connection from \(clientName): \(reason)"
             ))
             return nil
         }
-        return plain
     }
 
     // MARK: - Pipeline
 
-    private func startPipeline(
+    private func startInputRouting(
         sessionID: UUID,
-        offer: SessionOfferMessage,
         sessionTokenHex: String?,
         terminalOnly: Bool
-    ) async {
-        guard activeSessionID == sessionID else { return }
-        phase = .pipelineStarting
-
+    ) {
         // Wire the lock state provider into the input router BEFORE startListening, so an input
         // command processed during startup can't bypass the lock-screen gate. (startListening spawns
         // an async receive loop; if a command arrived before this assignment, the router's default
         // provider reports "unlocked" and would inject at the login window.)
         inputCommandRouter.lockStateProvider = lockStateProvider
 
-        // Start the input command router regardless of capture/encode success
-        inputCommandRouter.startListening(
-            sessionID: sessionID,
-            expectedSessionTokenHex: sessionTokenHex,
-            terminalOnly: terminalOnly
-        )
         inputCommandRouter.onQualityAdjust = { [weak self] preset in
             guard let self else { return }
             Task { await self.applyRuntimeQualityAdjust(preset) }
@@ -865,6 +1080,20 @@ final class HostSessionCoordinator: ObservableObject {
         inputCommandRouter.onSetActiveDisplays = { [weak self] message in
             await self?.handleSetActiveDisplays(message)
         }
+        inputCommandRouter.startListening(
+            sessionID: sessionID,
+            expectedSessionTokenHex: sessionTokenHex,
+            terminalOnly: terminalOnly
+        )
+    }
+
+    private func startPipeline(
+        sessionID: UUID,
+        offer: SessionOfferMessage,
+        terminalOnly: Bool
+    ) async {
+        guard activeSessionID == sessionID else { return }
+        phase = .pipelineStarting
 
         if terminalOnly {
             // The terminal-only product still uses the authenticated WebRTC
@@ -1123,16 +1352,26 @@ final class HostSessionCoordinator: ObservableObject {
 
     private func startLivenessWatchdog() {
         livenessWatchdogTask?.cancel()
+        // A session that never receives a single data-channel message used to be
+        // immortal here: `lastClientActivityAt` stayed nil, the `let … else { continue }`
+        // skipped every tick, and a half-open transport reporting `.connected` kept the
+        // capture/encode pipeline running for nobody — while `activeSessionID` made the
+        // host answer every real client with "already connected to another device".
+        // Baseline activity at session start so silence is always measurable.
+        let sessionBaseline = Date()
         livenessWatchdogTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 guard !Task.isCancelled else { break }
-                guard self.phase == .streaming,
-                      self.webRTCSessionManager.connectionState == .connected,
-                      let lastActivity = self.lastClientActivityAt else { continue }
-                let silentFor = Date().timeIntervalSince(lastActivity)
-                guard silentFor > self.clientLivenessTimeoutSeconds else { continue }
+                let silence = HostClientLiveness.clientSilence(
+                    isStreaming: self.phase == .streaming,
+                    isConnected: self.webRTCSessionManager.connectionState == .connected,
+                    lastActivity: self.lastClientActivityAt,
+                    sessionStartedAt: sessionBaseline,
+                    now: Date(),
+                    timeout: self.clientLivenessTimeoutSeconds)
+                guard let silentFor = silence else { continue }
                 self.logger.error("Client liveness timeout — no inbound traffic for \(String(format: "%.0f", silentFor))s")
                 self.connectionDebugger.connectionLost(
                     reason: "Client liveness timeout — no inbound traffic for \(String(format: "%.0f", silentFor))s while transport reported connected"
@@ -1316,6 +1555,12 @@ final class HostSessionCoordinator: ObservableObject {
     }
 
     private func handleKeyframeRequest() {
+        // A keyframe is large, and on a constrained link each one queues behind the send
+        // backlog. The client asks again every second while it is stalled, so requests that
+        // arrive inside one second of an earlier one add nothing: that keyframe is still due.
+        let now = Date()
+        if let last = lastKeyframeRequestAt, now.timeIntervalSince(last) < 1.0 { return }
+        lastKeyframeRequestAt = now
         encoderPipeline.forceKeyframe()
         #if os(macOS)
         // Refresh secondary displays too, so a client focus-switch shows the newly-focused
@@ -1329,6 +1574,11 @@ final class HostSessionCoordinator: ObservableObject {
         guard let initialBitrate = encoderPipeline.encoderDiagnostics.configuredBitrate else {
             return
         }
+        // The encoder re-applies the last adaptive bitrate to every rebuilt session, but this
+        // fresh controller assumes the new configuration's full bitrate and never raises a
+        // rate it believes is already at maximum. Without this, one congestion dip pinned the
+        // encoder at that reduced rate across every later restart and session.
+        encoderPipeline.setBitrate(initialBitrate)
         var controller = AdaptiveStreamingController(
             initialBitrate: initialBitrate,
             preferredFrameRate: EncoderConfiguration.frameRate(for: preset)
@@ -1430,7 +1680,8 @@ final class HostSessionCoordinator: ObservableObject {
                     quality: nil,
                     thermalState: performanceStateController.thermalState,
                     lowPowerModeEnabled: performanceStateController.lowPowerModeEnabled,
-                    lockState: lockStateProvider()
+                    lockState: lockStateProvider(),
+                    supportsRemoteUnlock: runtimePolicy.supportsRemoteUnlock
                 )
             )
             try webRTCSessionManager.sendDataMessage(statusEnvelope)
@@ -1491,6 +1742,9 @@ final class HostSessionCoordinator: ObservableObject {
         // fall back to the primary display, silently replacing the app stream.
         if activeWindowTarget != nil || isWindowStreamTransitioning { return }
         #endif
+        // An app-window session with no window picked yet has nothing to restart, and must
+        // never fall through to capturing a whole display.
+        if sessionStartsWithAppBrowser { return }
         let requestedDisplayID = captureEngine.diagnostics.currentDisplayID ?? layout.primaryDisplayID ?? layout.displays.first?.id
         guard let requestedDisplayID else {
             _ = sendDisplayStateMessages(layout: layout, sessionID: sessionID, reason: "layout_changed_empty")
@@ -1579,7 +1833,9 @@ final class HostSessionCoordinator: ObservableObject {
         let effective = performanceStateController.setActivePreset(requested)
         #if os(macOS)
         if let target = activeWindowTarget, let clientID = activeClientID {
-            guard !isWindowStreamTransitioning else { return }
+            // The preset is already applied above, so the next window start uses it. Re-targeting
+            // here would cancel a window the user has just picked.
+            guard !isWindowStreamTransitioning, queuedTargetSwitches == 0 else { return }
             await handleStreamTargetSwitchRequest(StreamTargetSwitchRequestMessage(
                 sessionID: sessionID, target: .window(String(target.windowID)),
                 launchIfNeeded: false, senderDeviceID: clientID))
@@ -1611,7 +1867,8 @@ final class HostSessionCoordinator: ObservableObject {
     private func resetForNextClient(
         reason: String,
         severity: EventSeverity = .warning,
-        userErrorMessage: String? = nil
+        userErrorMessage: String? = nil,
+        keepsSignalingConnection: Bool = false
     ) async {
         connectionDebugger.mark("resetForNextClient: \(reason)")
         cancelDisconnectGraceTimer()
@@ -1630,21 +1887,36 @@ final class HostSessionCoordinator: ObservableObject {
         // only the current session and returning to awaitingClient.
         inputCommandRouter.stopListening()
         streamingCoordinator.stopCoordinating()
+        // Per-session observers must end with the session. A display-layout observer left
+        // over from a desktop session kept running into the next client's app-window
+        // session, where a monitor change then started whole-display capture.
+        displayLayoutObserverTask?.cancel()
+        displayLayoutObserverTask = nil
+        adaptiveStreamingTask?.cancel()
+        adaptiveStreamingTask = nil
 
         await captureEngine.stopCapture()
         await encoderPipeline.stopEncoding()
+        // Extra displays were only stopped on a full host stop, so they kept capturing
+        // (Screen Recording indicator on) after the client that asked for them had gone.
+        await stopAllSecondaryStreamers()
         await webRTCSessionManager.closeSession()
         webRTCSessionManager.configureControlChannelAuth(sessionTokenHex: nil)
 
-        // Drop stale signaling connection so the next client can attach cleanly.
-        signalingService.dropCurrentConnection()
+        // Drop stale signaling connection so the next client can attach cleanly. A
+        // takeover keeps it: the new device's offer arrived on it.
+        if !keepsSignalingConnection {
+            signalingService.dropCurrentConnection()
+        }
         performanceStateController.resetActivePreset()
 
         activeSessionID = nil
+        activeSessionClaimedAt = nil
         activeClientID = nil
         activeClientFingerprint = nil
         activeSessionIsTerminalOnly = false
         connectedClientName = nil
+        activeClientUsesLegacyToken = false
         hasPublishedInitialSessionState = false
         hasSentInitialDataChannelState = false
         pendingDisplayLayoutChangeTask?.cancel()
@@ -1882,7 +2154,8 @@ final class HostSessionCoordinator: ObservableObject {
                         quality: nil,
                         thermalState: performanceStateController.thermalState,
                         lowPowerModeEnabled: performanceStateController.lowPowerModeEnabled,
-                        lockState: lockStateProvider()
+                        lockState: lockStateProvider(),
+                        supportsRemoteUnlock: runtimePolicy.supportsRemoteUnlock
                     )
                 )
             )
@@ -1987,7 +2260,8 @@ final class HostSessionCoordinator: ObservableObject {
                     quality: nil,
                     thermalState: performanceStateController.thermalState,
                     lowPowerModeEnabled: performanceStateController.lowPowerModeEnabled,
-                    lockState: lockStateProvider()
+                    lockState: lockStateProvider(),
+                    supportsRemoteUnlock: runtimePolicy.supportsRemoteUnlock
                 )
             )
             try webRTCSessionManager.sendDataMessage(statusEnvelope)
@@ -2092,6 +2366,23 @@ final class HostSessionCoordinator: ObservableObject {
         guard activeSessionID == request.sessionID else { return }
 
         let startTime = Date()
+        // A session that streams application windows must not be moved to a whole display by a raw
+        // display-switch message. The target-switch path rejects it for the same reason, and the
+        // client's own UI never sends one, so only a modified client gets here.
+        guard !sessionStartsWithAppBrowser else {
+            let result = DisplaySwitchResultMessage(
+                sessionID: request.sessionID,
+                selectedDisplayID: captureEngine.diagnostics.currentDisplayID ?? request.targetDisplayID,
+                senderDeviceID: request.senderDeviceID,
+                status: .failed,
+                reason: "Vamp Sync streams application windows only.",
+                startedAt: startTime
+            )
+            if let envelope = try? DataChannelEnvelope.displaySwitchResult(result) {
+                try? webRTCSessionManager.sendDataMessage(envelope)
+            }
+            return
+        }
         let currentDisplayID = captureEngine.diagnostics.currentDisplayID
         #if os(macOS)
         let previousWindow = activeWindowTarget
@@ -2131,10 +2422,9 @@ final class HostSessionCoordinator: ObservableObject {
             return
         }
 
-        let qualityPreset = minQualityPreset(
-            performanceStateController.profile.effectivePreset,
-            .balanced
-        )
+        // Keep the session's preset across a display switch. A fixed Balanced cap here left a
+        // Quality/Ultra session at 30 fps (and 1080p on H.264) for the rest of the session.
+        let qualityPreset = performanceStateController.profile.effectivePreset
 
         let accepted = DisplaySwitchResultMessage(
             sessionID: request.sessionID,
@@ -2148,6 +2438,15 @@ final class HostSessionCoordinator: ObservableObject {
         }
 
         do {
+            // A window stream must not outlive the switch to a display. Its tracking
+            // loop polls every 200 ms and would otherwise restart the window capture
+            // right after the display capture settles (the video snapping back to the
+            // app), and its synthetic input geometry (see `streamWindowGeometry`)
+            // would keep translating display-local input against the window's origin —
+            // clicks landing on a different display than the one on screen.
+            windowTrackingTask?.cancel()
+            windowTrackingTask = nil
+            streamWindowGeometry.set(nil)
             try await restartStreamingPipeline(
                 for: display,
                 layout: layout,
@@ -2155,6 +2454,8 @@ final class HostSessionCoordinator: ObservableObject {
                 qualityPreset: qualityPreset,
                 reason: "display_switch"
             )
+            activeWindowTarget = nil
+            activeApplicationName = nil
             await publishHostStatusUpdate()
 
             let completed = DisplaySwitchResultMessage(
@@ -2184,6 +2485,11 @@ final class HostSessionCoordinator: ObservableObject {
             #endif
             if let fallbackID = currentDisplayID,
                let fallbackDisplay = layout.display(withID: fallbackID) {
+                // The failed attempt may have left capture running on the target display
+                // (first-frame timeout). Without this stop, the start below throws
+                // "already capturing", is swallowed, and the stream stays on that display
+                // while the client is told the previous screen was kept.
+                await captureEngine.stopCapture()
                 try? await encoderPipeline.configure(
                     for: fallbackDisplay,
                     qualityPreset: qualityPreset,
@@ -2301,7 +2607,8 @@ extension HostSessionCoordinator {
             targetSwitchTask?.cancel()
             await targetSwitchTask?.value
             targetSwitchTask = nil
-            applicationListSnapshot = applicationRegistry.snapshot()
+            applicationListSnapshot = applicationRegistry.snapshot(
+                includeInstalledApplications: runtimePolicy.supportsApplicationManagement)
         }
         // Returning to the app browser is also the explicit end of a window stream. Stop
         // capture before publishing the new inventory so the host does not keep encoding
@@ -2369,6 +2676,11 @@ extension HostSessionCoordinator {
     /// Client → host: quit a running application with a normal terminate request.
     func handleApplicationCloseRequest(_ message: ApplicationCloseRequestMessage) async {
         guard activeSessionID == message.sessionID else { return }
+        guard runtimePolicy.supportsApplicationManagement else {
+            sendCloseResult(request: message, status: .rejected,
+                            reason: "This Vamp Sync build shares existing windows in View Only mode. Close apps on the Mac.")
+            return
+        }
         let hostBundle = Bundle.main.bundleIdentifier
         guard let bundleID = ApplicationClosePolicy.normalizedBundleIdentifier(message.bundleIdentifier),
               ApplicationClosePolicy.canClose(bundleID, hostBundleIdentifier: hostBundle) else {
@@ -2451,9 +2763,19 @@ extension HostSessionCoordinator {
         guard activeSessionID == message.sessionID else { return }
         let previous = targetSwitchTask
         previous?.cancel()
+        if let superseded = waitingTargetSwitch {
+            // The client was told nothing about a pick it made earlier that never started.
+            sendTargetResult(request: superseded, resolved: superseded.target, status: .rejected,
+                             reason: "Superseded by a newer request.", descriptor: nil, startTime: Date())
+        }
+        waitingTargetSwitch = message
+        queuedTargetSwitches += 1
         targetSwitchTask = Task { [weak self] in
+            // Runs on every exit, including the cancelled ones, so the count stays true.
+            defer { self?.queuedTargetSwitches -= 1 }
             await previous?.value
             guard let self, !Task.isCancelled, self.activeSessionID == message.sessionID else { return }
+            if self.waitingTargetSwitch?.requestedAt == message.requestedAt { self.waitingTargetSwitch = nil }
             await self.performStreamTargetSwitch(message)
         }
     }
@@ -2516,6 +2838,21 @@ extension HostSessionCoordinator {
 
     private func switchToApplication(bundleID: String, launchIfNeeded: Bool, request: StreamTargetSwitchRequestMessage, startTime: Date) async {
         let existing = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first
+        if !runtimePolicy.supportsApplicationManagement {
+            guard let existing,
+                  let window = applicationRegistry.streamableWindow(forPID: existing.processIdentifier),
+                  await applicationRegistry.isShareableWindow(window.windowID) else {
+                sendTargetResult(request: request, resolved: request.target, status: .failed,
+                                 reason: "Open a window on the Mac first. This Vamp Sync build shares existing windows in View Only mode.",
+                                 descriptor: nil, startTime: startTime)
+                return
+            }
+            sendTargetResult(request: request, resolved: request.target, status: .accepted,
+                             reason: nil, descriptor: nil, startTime: startTime)
+            await beginWindowStream(window: window, bundleID: bundleID,
+                                    name: existing.localizedName ?? "Application", request: request, startTime: startTime)
+            return
+        }
         if existing == nil && !launchIfNeeded {
             sendTargetResult(request: request, resolved: request.target, status: .failed,
                              reason: "\(bundleID) is not running.", descriptor: nil, startTime: startTime)
@@ -2651,7 +2988,7 @@ extension HostSessionCoordinator {
         }
         originalAppWindowBounds[originalKey] = original
         var sizingNotice: String?
-        if request.sizingMode != nil || request.clientViewportAspect != nil {
+        if runtimePolicy.supportsWindowResizing && (request.sizingMode != nil || request.clientViewportAspect != nil) {
             let display = HostApplicationRegistry.displayBounds(containing:
                 CGRect(x: window.bounds.origin.x, y: window.bounds.origin.y,
                        width: window.bounds.size.width, height: window.bounds.size.height))
@@ -2660,19 +2997,53 @@ extension HostSessionCoordinator {
             let viewport = DesktopSize(width: request.viewportWidth ?? aspect, height: request.viewportHeight ?? 1)
             let desired = request.sizingMode == .original ? original.size : AdaptiveWindowSizing.size(
                 original: original.size, available: available, viewport: viewport, bundleIdentifier: bundleID)
-            if !Self.resizeWindow(pid: window.ownerPID, matching: window.bounds, toSize: desired, display: display) {
+            // One consolidated sizing line per resize. Geometry numbers only: never the window
+            // title or any content, which is the user's private material.
+            logger.info("""
+                Window sizing: window=\(window.windowID) pid=\(window.ownerPID) \
+                mode=\(request.sizingMode?.rawValue ?? "none", privacy: .public) \
+                viewport=\(Int(viewport.width))x\(Int(viewport.height)) \
+                display=\(Int(display.width))x\(Int(display.height)) \
+                requested=\(Int(desired.width))x\(Int(desired.height))
+                """)
+            let resizeAccepted = Self.resizeWindow(
+                pid: window.ownerPID, matching: window.bounds, toSize: desired, display: display)
+            if !resizeAccepted {
                 sizingNotice = "The selected window could not be resized safely. Keeping its current size."
             }
             try? await Task.sleep(nanoseconds: 350_000_000)
             if let resized = applicationRegistry.windowInfo(windowID: window.windowID) { window = resized }
+            logger.info("""
+                Window sizing accepted: window=\(window.windowID) resizeApplied=\(resizeAccepted) \
+                bounds=\(Int(window.bounds.size.width))x\(Int(window.bounds.size.height)) \
+                aspect=\(String(format: "%.3f", window.bounds.size.width / max(window.bounds.size.height, 1)), privacy: .public)
+                """)
             if request.sizingMode == .original,
                abs(window.bounds.size.width - desired.width) > 2 || abs(window.bounds.size.height - desired.height) > 2 {
                 sizingNotice = "The Mac constrained the original window size to its available space."
             }
+            // One bounded retry. An app that constrains its first AX resize (before accepting
+            // the new origin, or while it relayouts) otherwise leaves the phone with a window
+            // that kept its own shape — the exact regression this sizing exists to remove. The
+            // retry re-anchors from the *accepted* bounds, since the AX match keys on them.
+            if sizingNotice == nil, request.sizingMode != .original,
+               Self.aspectMismatch(window.bounds, desired: desired) {
+                let retried = Self.resizeWindow(
+                    pid: window.ownerPID, matching: window.bounds, toSize: desired, display: display)
+                logger.info("""
+                    Window sizing retry: window=\(window.windowID) retryApplied=\(retried) \
+                    observed=\(Int(window.bounds.size.width))x\(Int(window.bounds.size.height)) \
+                    requested=\(Int(desired.width))x\(Int(desired.height))
+                    """)
+                if retried {
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    if let resized = applicationRegistry.windowInfo(windowID: window.windowID) { window = resized }
+                }
+            }
             let actualAspect = window.bounds.size.width / max(window.bounds.size.height, 1)
             if sizingNotice == nil, request.sizingMode != .original,
-               abs(actualAspect - viewport.width / max(viewport.height, 1)) > 0.05 {
-                sizingNotice = "Keeping a usable app width. Zoom or pan for a closer view."
+               abs(actualAspect - desired.width / max(desired.height, 1)) > 0.05 {
+                sizingNotice = "The Mac kept a different window shape. Zoom or pan for a closer view."
             }
         }
         guard !Task.isCancelled, activeSessionID == request.sessionID, !lockStateProvider().blocksRemoteInput else { return }
@@ -2708,6 +3079,9 @@ extension HostSessionCoordinator {
             sendTargetResult(request: request, resolved: .window(String(window.windowID)), status: .completed,
                              reason: sizingNotice, descriptor: descriptor, startTime: startTime)
         } catch {
+            // A start that timed out waiting for its first frame has capture, the encoder and
+            // the adaptive loop running; stop them or they outlive the failure we report.
+            await stopWindowStreamPipeline()
             clearWindowStreaming()
             sendTargetResult(request: request, resolved: request.target, status: .failed,
                              reason: "Could not start window capture: \(error.localizedDescription)",
@@ -2720,12 +3094,15 @@ extension HostSessionCoordinator {
         await captureEngine.stopCapture()
         await encoderPipeline.stopEncoding()
         // Window capture is SDR-only (ScreenCaptureEngine.startCapture(windowID:)); pin the
-        // encoder to SDR so capture/encode never disagree on bit depth.
+        // encoder to SDR so capture/encode never disagree on bit depth. The performance
+        // floor keeps "Lower bandwidth" from quartering a window's already-small pixel
+        // count (capture passes the identical floor).
         try await encoderPipeline.configure(
             for: descriptor,
             qualityPreset: qualityPreset,
             codec: negotiatedEncoderCodec,
-            dynamicRange: .sdr
+            dynamicRange: .sdr,
+            minLongEdge: StreamScaling.windowPerformanceMinLongEdge
         )
         try await encoderPipeline.startEncoding()
         try await captureEngine.startCapture(
@@ -2756,7 +3133,11 @@ extension HostSessionCoordinator {
                 if let info = self.applicationRegistry.windowInfo(windowID: target.windowID) {
                     misses = 0
                     let scale = self.applicationRegistry.windowScaleFactor(bounds: info.bounds)
-                    let sizeChanged = info.bounds.size != target.descriptor.frame.size
+                    // Tolerate a couple of pixels of rounding so a trivial size
+                    // change (AppKit re-layout, 1px drag settle) doesn't pay for
+                    // a full capture+encoder restart. Real resizes exceed it.
+                    let sizeChanged = abs(info.bounds.size.width - target.descriptor.frame.size.width) > 2
+                        || abs(info.bounds.size.height - target.descriptor.frame.size.height) > 2
                     let scaleChanged = abs(scale - target.descriptor.scaleFactor) > 0.01
                     // Movement only needs a cheap geometry update. A resize or moving to a
                     // differently-scaled screen requires a fresh encoder/capture configuration
@@ -2924,8 +3305,30 @@ extension HostSessionCoordinator {
         ))
     }
 
+    /// Whether an accepted window frame still disagrees with the requested shape by more than
+    /// `tolerance` of aspect. Pure, and shared by the retry decision and the user-visible
+    /// notice, so "we retried" and "we told the user" can never disagree.
+    static func aspectMismatch(_ accepted: DesktopRect, desired: DesktopSize,
+                               tolerance: Double = 0.05) -> Bool {
+        guard accepted.size.width.isFinite, accepted.size.height.isFinite,
+              accepted.size.width > 0, accepted.size.height > 0,
+              desired.width.isFinite, desired.height.isFinite,
+              desired.width > 0, desired.height > 0 else { return false }
+        let acceptedAspect = accepted.size.width / accepted.size.height
+        let desiredAspect = desired.width / desired.height
+        return abs(acceptedAspect - desiredAspect) > tolerance
+    }
+
     /// Resize only the selected window and honor the bounds actually accepted by macOS.
     /// A missing or ambiguous AX match leaves every window unchanged.
+    ///
+    /// **Order matters.** AppKit constrains a window's frame to the screen when its size is
+    /// applied, so growing a window that sits low on the display silently clamps the height:
+    /// the client then receives a window that kept its own shape and a smaller capture surface
+    /// that the phone has to upscale ("The Mac kept a different window shape" + soft video).
+    /// Anchoring the window's top-left inside the usable area *first* makes the full requested
+    /// height reachable, and re-asserting the size once covers apps whose AX set lands before
+    /// the move has settled.
     private static func resizeWindow(pid: pid_t, matching bounds: DesktopRect,
                                      toSize size: DesktopSize, display: CGRect) -> Bool {
         guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return false }
@@ -2933,13 +3336,30 @@ extension HostSessionCoordinator {
         guard let axWindow = axWindow(in: axApp, matching: bounds) else { return false }
         var requestedSize = CGSize(width: min(size.width, max(display.width - 48, 1)),
                                    height: min(size.height, max(display.height - 76, 1)))
+
+        // 1. Anchor the top-left inside the usable area so the full height fits on screen.
+        //    Clamp against the *requested* size, not a freshly-read AX frame: an AX size set is
+        //    applied asynchronously, so an immediate read returns the old frame.
+        var anchor = CGPoint(
+            x: max(display.minX + 24, min(bounds.origin.x, max(display.maxX - requestedSize.width - 24, display.minX + 24))),
+            y: max(display.minY + 52, min(bounds.origin.y, max(display.maxY - requestedSize.height - 24, display.minY + 52))))
+        if let value = AXValueCreate(.cgPoint, &anchor) {
+            _ = AXUIElementSetAttributeValue(axWindow, kAXPositionAttribute as CFString, value)
+        }
+
+        // 2. Apply the size now that growing cannot push the window off-screen.
         guard let value = AXValueCreate(.cgSize, &requestedSize),
               AXUIElementSetAttributeValue(axWindow, kAXSizeAttribute as CFString, value) == .success else { return false }
-        // Position using the accepted bounds: applications can impose their own minimum size.
-        let actual = axFrame(of: axWindow)?.size ?? requestedSize
-        var position = CGPoint(x: max(display.minX + 24, min(bounds.origin.x, display.maxX - actual.width - 24)),
-                               y: max(display.minY + 52, min(bounds.origin.y, display.maxY - actual.height - 24)))
-        if let value = AXValueCreate(.cgPoint, &position) {
+
+        // 3. Re-assert once. Some apps respond to the size change by re-centering or by
+        //    reporting the pre-move frame; a second identical request is idempotent and is what
+        //    turns a half-applied resize into the requested shape.
+        if let settled = axFrame(of: axWindow)?.size,
+           abs(settled.width - requestedSize.width) > 2 || abs(settled.height - requestedSize.height) > 2 {
+            _ = AXUIElementSetAttributeValue(axWindow, kAXSizeAttribute as CFString, value)
+        }
+        // Keep the window where the resize was anchored; growing can shift the origin.
+        if let value = AXValueCreate(.cgPoint, &anchor) {
             _ = AXUIElementSetAttributeValue(axWindow, kAXPositionAttribute as CFString, value)
         }
         return true
@@ -3014,7 +3434,7 @@ extension HostSessionCoordinator {
             scaleFactor: descriptor?.scaleFactor,
             startedAt: startTime,
             requestID: request.requestID,
-            appliedSizingMode: request.sizingMode
+            appliedSizingMode: runtimePolicy.supportsWindowResizing ? request.sizingMode : nil
         )
         if let envelope = try? DataChannelEnvelope.streamTargetSwitchResult(message) {
             try? webRTCSessionManager.sendDataMessage(envelope)

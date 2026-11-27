@@ -23,6 +23,16 @@ final class TrustedPeerStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempDir)
     }
 
+    func testTrustFileIsOwnerOnly() async throws {
+        try await store.trustPeer(TrustedPeer(displayName: "iPhone 15", fingerprint: fp(1)))
+        let file = try XCTUnwrap(
+            FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil)
+                .first { $0.pathExtension == "json" }
+        )
+        let mode = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)
+        XCTAssertEqual(mode.intValue & 0o077, 0, "the file that decides who is trusted must not be group/world accessible")
+    }
+
     // MARK: - Basic CRUD
 
     func testEmptyStoreReturnsNoPeers() async throws {

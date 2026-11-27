@@ -105,6 +105,22 @@ enum HostWatchdogInstaller {
         ]
     }
 
+    /// Removes the agent that an earlier Vamp Host installed. Sync shares that app's bundle ID, so
+    /// the agent relaunched Sync after every Quit, and Sync never wrote the heartbeat it watches.
+    static func removeLegacyAgent() {
+        Task.detached(priority: .utility) {
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            let plistURL = home.appendingPathComponent("Library/LaunchAgents/\(label).plist")
+            let helperURL = home.appendingPathComponent("Library/Application Support/Vamp Watchdog/vamp-host-watchdog")
+            guard FileManager.default.fileExists(atPath: plistURL.path)
+                    || FileManager.default.fileExists(atPath: helperURL.path) else { return }
+            _ = runLaunchctl(["bootout", "gui/\(getuid())/\(label)"])
+            try? FileManager.default.removeItem(at: plistURL)
+            try? FileManager.default.removeItem(at: helperURL)
+            logger.info("Removed the legacy Vamp Host watchdog LaunchAgent")
+        }
+    }
+
     static func installAndLoad() {
         Task.detached(priority: .utility) {
             do {

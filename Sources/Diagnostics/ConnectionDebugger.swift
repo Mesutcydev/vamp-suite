@@ -68,7 +68,7 @@ public final class ConnectionDebugger {
         let suffix = metadata.isEmpty
             ? ""
             : " [" + metadata.sorted(by: { $0.key < $1.key }).map { "\($0.key)=\($0.value)" }.joined(separator: " ") + "]"
-        logger.notice("\(signal, privacy: .public) → \(value, privacy: .public)\(suffix, privacy: .public)")
+        logger.notice("\(signal, privacy: .public) → \(value, privacy: .private)\(suffix, privacy: .private)")
 
         Task {
             await eventLogStore.append(EventLogItem(

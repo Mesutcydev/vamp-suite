@@ -31,7 +31,7 @@ jobs:
           - language: swift
             build-mode: manual
             component: host
-            scheme: MacHost
+            scheme: VampMiniHost
             destination: platform=macOS
             category: /language:swift/component:host
           - language: swift

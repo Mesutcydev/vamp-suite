@@ -1,0 +1,11 @@
+{
+  "assets/app-icon-dark-1024.png": "c0630db54fd0bd70ff412bf87d18b7cd830c259d3ca17da9246b87f5470fcbde",
+  "assets/app-icon-light-1024.png": "ed072f66fb3ed55098fb4539c7333e277098495d2d095c13cde99b5a9362724a",
+  "assets/app-icon-tinted-1024.png": "c0630db54fd0bd70ff412bf87d18b7cd830c259d3ca17da9246b87f5470fcbde",
+  "assets/control-icon.svg": "b252911b167a42342beaf5616c483ed02dde389e43c869fd32f284373aa74ef6",
+  "assets/control-lockup.svg": "6c247718759243b65231a11da56215462fc51d0cd1c7481988737324fca8f4e5",
+  "assets/control-symbol-chalk.svg": "81f6ca12bbab4aed1e4fa8cdfd5f42380c07d6943947430caa824c1b3ff01ed8",
+  "assets/control-symbol-ink.svg": "587bd31d359f0f7549acebcb61b19f08189a50c8ad61c61d6c118fa569d010c5",
+  "brand-guide.html": "dae2ede805a7ba5fbb43307ec4a5c6e6725d572301c1af1a5f5b8f34dff9c11e",
+  "design-tokens.json": "52a0e53350b785f714dc3d6edc170d459ce26a2b85217e59b56e596a138c9a86"
+}

@@ -21,8 +21,13 @@ enum ClientFileTransferPreference {
     }
 
     static func isEnabled(in defaults: UserDefaults = .standard) -> Bool {
+        // App Store edition is View Only: file transfer would change files on this Mac.
+        #if VAMP_APP_STORE
+        return false
+        #else
         migrateLegacySettings(in: defaults)
         return defaults.object(forKey: storageKey) as? Bool ?? true
+        #endif
     }
 
     static func setEnabled(_ enabled: Bool, in defaults: UserDefaults = .standard) {

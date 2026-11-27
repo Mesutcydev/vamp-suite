@@ -2,11 +2,14 @@ import Combine
 import CoreImage
 import CoreVideo
 import Foundation
+import SharedProtocol
+import SharedUtilities
 import TransportWebRTC
 
 #if canImport(Security)
 import Security
 #endif
+import Network
 
 // MARK: - Vamp Assistant compatibility
 
@@ -66,6 +69,17 @@ struct BeetCodeRemoteEndpoint: Equatable, Hashable, Sendable {
         return Self(url: url, pairingCode: normalizedCode)
     }
 
+    /// Whether the link to a typed address is encrypted: HTTPS or a Tailscale address. `nil` while
+    /// the text is not a usable address yet. Plain HTTP on a LAN is allowed, but anyone on that
+    /// network can read the pairing code, the token and everything sent after it.
+    static func usesEncryptedRoute(address: String) -> Bool? {
+        guard let endpoint = try? parse(address: address) else { return nil }
+        return BeetCodeRemoteClient.isEncryptedRoute(endpoint.url)
+    }
+
+    static let unencryptedRouteWarning =
+        "This address is not encrypted. Anyone on this network can read the pairing code and everything you do. Use your Mac's Tailscale address for a private link."
+
     static func savedURL(address: String) throws -> URL {
         try parse(address: address).url
     }
@@ -79,6 +93,7 @@ struct BeetCodeRemoteEndpoint: Equatable, Hashable, Sendable {
             || normalized.hasSuffix(".ts.net") {
             return true
         }
+        if StorePrivateNetworkConnectionPolicy.isTailscaleHost(normalized) { return true }
 
         let parts = normalized.split(separator: ".").compactMap { Int($0) }
         guard parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }) else { return false }
@@ -138,6 +153,7 @@ struct BeetCodeControlStatus: Decodable, Equatable, Sendable {
     let remoteUnlockAvailable: Bool?
     let remoteUnlockMessage: String?
     let supportsCursorlessCapture: Bool?
+    let supportsAdaptiveSizing: Bool?
     let message: String?
     let displayX: Double?
     let displayY: Double?
@@ -170,7 +186,23 @@ struct BeetCodeRemoteApplication: Decodable, Equatable, Hashable, Identifiable, 
     let height: Double
     let isRunning: Bool
     let isActive: Bool
-    let iconPNGBase64: String?
+    var iconPNGBase64: String?
+    let appliedSizingMode: AppWindowSizingMode?
+    let sizingNotice: String?
+
+    static func preservingIcons(
+        in incoming: [Self],
+        from previous: [Self]
+    ) -> [Self] {
+        let known = previous.reduce(into: [String: String]()) { icons, app in
+            if let encoded = app.iconPNGBase64, !encoded.isEmpty { icons[app.id] = encoded }
+        }
+        return incoming.map { app in
+            var result = app
+            if result.iconPNGBase64?.isEmpty ?? true { result.iconPNGBase64 = known[app.id] }
+            return result
+        }
+    }
 
     var id: String {
         if let bundleIdentifier, !bundleIdentifier.isEmpty { return bundleIdentifier }
@@ -188,9 +220,25 @@ struct BeetCodeRemoteApplication: Decodable, Equatable, Hashable, Identifiable, 
         return isRunning ? "Running" : "Installed"
     }
 
+    /// What an app *list* should say about this entry, as opposed to `detail`, which is a
+    /// diagnostics string that includes the window's raw pixel dimensions.
+    ///
+    /// The window title is the useful context for a running app — it distinguishes two windows of
+    /// the same app — so it stays. Pixel dimensions are noise in a list and belong in details. An
+    /// installed app needs no "Installed · tap to open" narration on every row: the row is already
+    /// a button inside an "All Apps" section, so the line is dropped entirely rather than repeated
+    /// hundreds of times.
+    var listDetail: String? {
+        if isActive { return "Active now" }
+        if let windowTitle, !windowTitle.isEmpty, windowTitle != name { return windowTitle }
+        if isRunning { return "Running" }
+        return nil
+    }
+
     private enum CodingKeys: String, CodingKey {
         case windowID, bundleIdentifier, name, windowTitle, width, height
         case isRunning, isActive, iconPNGBase64
+        case appliedSizingMode, sizingNotice
     }
 
     init(from decoder: Decoder) throws {
@@ -204,6 +252,8 @@ struct BeetCodeRemoteApplication: Decodable, Equatable, Hashable, Identifiable, 
         isRunning = try values.decodeIfPresent(Bool.self, forKey: .isRunning) ?? (windowID != nil)
         isActive = try values.decodeIfPresent(Bool.self, forKey: .isActive) ?? false
         iconPNGBase64 = try values.decodeIfPresent(String.self, forKey: .iconPNGBase64)
+        appliedSizingMode = try values.decodeIfPresent(AppWindowSizingMode.self, forKey: .appliedSizingMode)
+        sizingNotice = try values.decodeIfPresent(String.self, forKey: .sizingNotice)
     }
 }
 
@@ -321,6 +371,47 @@ struct BeetCodeAcceptedResponse: Decodable, Sendable {
     let queued: Bool?
 }
 
+/// Additive sizing fields let Companion use Sync's viewport and Original Size contract.
+/// Older Assistant hosts continue to receive their required aspect-only request.
+struct BeetCodeAppWindowSizingRequest {
+    let windowID: UInt32
+    let clientViewportAspect: Double
+    let viewport: CGSize?
+    let sizingMode: AppWindowSizingMode?
+
+    init(windowID: UInt32, clientViewportAspect: Double,
+         viewport: CGSize? = nil, sizingMode: AppWindowSizingMode? = nil) throws {
+        guard windowID > 0, clientViewportAspect.isFinite,
+              (0.25...4).contains(clientViewportAspect) else {
+            throw BeetCodeRemoteError.invalidResponse
+        }
+        if let viewport {
+            guard viewport.width.isFinite, viewport.height.isFinite,
+                  viewport.width > 0, viewport.height > 0,
+                  (0.25...4).contains(Double(viewport.width / viewport.height)) else {
+                throw BeetCodeRemoteError.invalidResponse
+            }
+        }
+        self.windowID = windowID
+        self.clientViewportAspect = clientViewportAspect
+        self.viewport = viewport
+        self.sizingMode = sizingMode
+    }
+
+    func wireBody() -> [String: Any] {
+        var body: [String: Any] = [
+            "windowID": windowID,
+            "clientViewportAspect": clientViewportAspect,
+        ]
+        if let viewport {
+            body["viewportWidth"] = Double(viewport.width)
+            body["viewportHeight"] = Double(viewport.height)
+        }
+        if let sizingMode { body["sizingMode"] = sizingMode.rawValue }
+        return body
+    }
+}
+
 struct BeetCodeRemoteClient: Sendable {
     let baseURL: URL
     let token: String?
@@ -381,15 +472,17 @@ struct BeetCodeRemoteClient: Sendable {
 
     func resizeApplication(
         windowID: UInt32,
-        clientViewportAspect: Double
+        clientViewportAspect: Double,
+        viewport: CGSize? = nil,
+        sizingMode: AppWindowSizingMode? = nil
     ) async throws -> BeetCodeRemoteApplication {
+        let sizing = try BeetCodeAppWindowSizingRequest(
+            windowID: windowID, clientViewportAspect: clientViewportAspect,
+            viewport: viewport, sizingMode: sizingMode)
         let response: BeetCodeRemoteApplicationResponse = try await request(
             "api/control/apps/resize",
             method: "POST",
-            body: [
-                "windowID": windowID,
-                "clientViewportAspect": clientViewportAspect,
-            ],
+            body: sizing.wireBody(),
             timeout: Self.windowResolvingTimeout)
         return response.application
     }
@@ -400,8 +493,28 @@ struct BeetCodeRemoteClient: Sendable {
         return try await request("api/control/input", method: "POST", body: body)
     }
 
-    func unlockMac(password: String) async throws -> BeetCodeAcceptedResponse {
-        try await request(
+    /// Remote Unlock sends the Mac's login password. Plain HTTP on a LAN or `.local` address is
+    /// readable by anyone on the network and is trusted only by its name, so the password goes out
+    /// without further ado only over HTTPS or a Tailscale address (encrypted, and the host is a
+    /// tailnet device). The Assistant host also accepts it over its LAN fallback, so a person who
+    /// chose that fallback can still send it, after being told it is not encrypted.
+    var canSendUnlockPassword: Bool { Self.isEncryptedRoute(baseURL) }
+
+    static func isEncryptedRoute(_ url: URL) -> Bool {
+        if url.scheme?.lowercased() == "https" { return true }
+        guard let host = url.host?.lowercased() else { return false }
+        return StorePrivateNetworkConnectionPolicy.isTailscaleHost(host) || host.hasSuffix(".ts.net")
+    }
+
+    /// - Parameter allowUnencryptedRoute: set only after the person confirmed that this connection is
+    ///   not encrypted.
+    func unlockMac(password: String, allowUnencryptedRoute: Bool = false) async throws -> BeetCodeAcceptedResponse {
+        guard canSendUnlockPassword || allowUnencryptedRoute else {
+            throw BeetCodeRemoteError.controlUnavailable(
+                "This connection is not encrypted, so the password was not sent. Connect through Tailscale, or confirm to send it anyway."
+            )
+        }
+        return try await request(
             "api/control/unlock",
             method: "POST",
             body: ["password": password],
@@ -413,6 +526,8 @@ struct BeetCodeRemoteClient: Sendable {
         resolution: String = "1080p",
         displayID: UInt32? = nil,
         windowID: UInt32? = nil,
+        // Keep the legacy default safe for callers that do not negotiate cursorless
+        // capture. Cursorless clients pass false explicitly after capability negotiation.
         showsCursor: Bool = true
     ) -> AsyncThrowingStream<BeetCodeScreenFrame, Error> {
         AsyncThrowingStream { continuation in
@@ -437,7 +552,7 @@ struct BeetCodeRemoteClient: Sendable {
                     request.timeoutInterval = 24 * 60 * 60
                     request.setValue("multipart/mixed, multipart/x-mixed-replace, video/avc", forHTTPHeaderField: "Accept")
 
-                    let events = Self.dataEvents(for: request)
+                    let events = Self.dataEvents(for: try await Self.privateStoreRequest(request))
                     var parser = BeetCodeScreenStreamParser()
                     for try await event in events {
                         try Task.checkCancellation()
@@ -493,8 +608,8 @@ struct BeetCodeRemoteClient: Sendable {
     }
 
     private func decode<Response: Decodable>(_ type: Response.Type, request: URLRequest) async throws -> Response {
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw BeetCodeRemoteError.invalidResponse }
+        let request = try await Self.privateStoreRequest(request)
+        let (data, http) = try await AssistantHTTP.send(request)
         guard (200..<300).contains(http.statusCode) else {
             let message = (try? JSONDecoder().decode(BeetCodeErrorBody.self, from: data).error)
                 ?? "Vamp Assistant request failed (\(http.statusCode))."
@@ -509,50 +624,42 @@ struct BeetCodeRemoteClient: Sendable {
         case data(Data)
     }
 
+    private static func privateStoreRequest(_ request: URLRequest) async throws -> URLRequest {
+        guard StorePrivateNetworkConnectionPolicy.requiresPrivateNetwork else { return request }
+        guard let url = request.url, let host = url.host,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw StorePrivateNetworkConnectionPolicy.NotOnPrivateNetwork()
+        }
+        components.host = try await StorePrivateNetworkConnectionPolicy.validatedHost(host)
+        guard let privateURL = components.url else { throw StorePrivateNetworkConnectionPolicy.NotOnPrivateNetwork() }
+        var privateRequest = request
+        privateRequest.url = privateURL
+        return privateRequest
+    }
+
+    /// The streaming response, as head and body events. The Assistant API has no redirects, so none is
+    /// followed: doing so would forward the bearer token, or a POST body, to a host the user never
+    /// paired with.
     private static func dataEvents(for request: URLRequest) -> AsyncThrowingStream<DataEvent, Error> {
         AsyncThrowingStream { continuation in
-            final class Receiver: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-                let continuation: AsyncThrowingStream<DataEvent, Error>.Continuation
-                init(_ continuation: AsyncThrowingStream<DataEvent, Error>.Continuation) {
-                    self.continuation = continuation
-                }
-
-                func urlSession(
-                    _ session: URLSession,
-                    dataTask: URLSessionDataTask,
-                    didReceive response: URLResponse,
-                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
-                ) {
-                    guard let response = response as? HTTPURLResponse else {
-                        continuation.finish(throwing: BeetCodeRemoteError.invalidResponse)
-                        completionHandler(.cancel)
-                        return
+            let task = Task {
+                do {
+                    for try await event in AssistantHTTP.stream(request) {
+                        switch event {
+                        case .head(let response): continuation.yield(.headers(response))
+                        case .body(let data): continuation.yield(.data(data))
+                        }
                     }
-                    continuation.yield(.headers(response))
-                    completionHandler(.allow)
-                }
-
-                func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-                    continuation.yield(.data(data))
-                }
-
-                func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-                    if let error, (error as? URLError)?.code != .cancelled {
-                        continuation.finish(throwing: error)
-                    } else {
-                        continuation.finish()
-                    }
+                    continuation.finish()
+                } catch let error as URLError where error.code == .cancelled {
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
                 }
             }
-
-            let receiver = Receiver(continuation)
-            let session = URLSession(configuration: .ephemeral, delegate: receiver, delegateQueue: nil)
-            let task = session.dataTask(with: request)
-            continuation.onTermination = { _ in
-                task.cancel()
-                session.invalidateAndCancel()
-            }
-            task.resume()
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 }
@@ -676,6 +783,11 @@ struct BeetCodeScreenStreamParser {
             return .skip
         }
         guard length <= maxFrameBytes else {
+            // Skipping an oversized frame means buffering all of it first. A length far past any
+            // real frame is a broken or hostile peer, and `+ length` would overflow near Int.max.
+            guard length <= maxFrameBytes * 2 else {
+                throw BeetCodeRemoteError.invalidResponseReason("frame too large")
+            }
             let end = headerEnd.upperBound + length
             guard buffer.count >= end else { return .needMoreData }
             buffer.removeSubrange(0..<min(end + 2, buffer.count))
@@ -694,10 +806,17 @@ struct BeetCodeScreenStreamParser {
         return .frame(frame)
     }
 
+    /// `Int(Double(_))` traps on `nan`, `inf` and anything past Int's range, and these headers come
+    /// from the peer.
+    private static func headerInt(_ value: String?) -> Int? {
+        guard let value, let number = Double(value), number.isFinite, abs(number) <= Double(Int32.max) else { return nil }
+        return Int(number)
+    }
+
     private static func frame(headers: [String: String], body: Data) throws -> BeetCodeScreenFrame? {
         let contentType = (headers["content-type"] ?? "video/avc").lowercased()
-        let width = Int(Double(headers["x-beet-image-width"] ?? "") ?? 0)
-        let height = Int(Double(headers["x-beet-image-height"] ?? "") ?? 0)
+        let width = Self.headerInt(headers["x-beet-image-width"]) ?? 0
+        let height = Self.headerInt(headers["x-beet-image-height"]) ?? 0
         guard (1...8192).contains(width), (1...8192).contains(height), !body.isEmpty else {
             throw BeetCodeRemoteError.invalidResponseReason("invalid frame dimensions")
         }
@@ -882,6 +1001,8 @@ final class BeetCodeVideoRendererViewModel: ObservableObject {
         resolution: String = "1080p",
         displayID: UInt32? = nil,
         windowID: UInt32? = nil,
+        // Local cursor overlay callers pass the negotiated value explicitly. Keep the
+        // default safe for older callers and hosts.
         showsCursor: Bool = true
     ) {
         stop()
@@ -989,5 +1110,577 @@ final class BeetCodeVideoRendererViewModel: ObservableObject {
             let pixelBuffer else { return nil }
         CIContext().render(image, to: pixelBuffer)
         return pixelBuffer
+    }
+}
+
+// MARK: - HTTP over Network.framework
+
+/// A small HTTP/1.1 client for the Vamp Assistant API.
+///
+/// URLSession cannot carry this traffic without switching App Transport Security off for the whole
+/// app. A run in the iOS simulator showed that plain HTTP to a Tailscale address (100.x) is refused
+/// under every narrower setting, and that `NSAllowsLocalNetworking` even cancels the arbitrary-loads
+/// allowance for it. Network.framework is not subject to ATS, so the app-wide exception can go.
+///
+/// The Assistant host speaks plain HTTP/1.1: JSON with `Content-Length`, and a chunked,
+/// `Connection: close` screen stream. This client handles exactly that, plus bodies that end when the
+/// connection closes and interim 1xx responses. It never follows a redirect, sends no cookies and
+/// ignores proxies. Keep-alive connections are reused for the small, frequent input requests, because
+/// opening a new TCP connection for every pointer event would add a round trip to each of them.
+enum AssistantHTTP {
+    enum Event: Sendable {
+        case head(HTTPURLResponse)
+        case body(Data)
+    }
+
+    static let maxHeadBytes = 64 * 1024
+    static let maxBufferedBodyBytes = 64 * 1024 * 1024
+    /// The host closes a keep-alive connection that has been idle for 30 s. Stay well inside that.
+    static let maxPooledIdleAge: TimeInterval = 10
+
+    /// The whole response, for requests that return JSON.
+    static func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        var head: HTTPURLResponse?
+        var body = Data()
+        for try await event in stream(request, reuse: true) {
+            switch event {
+            case .head(let response):
+                head = response
+            case .body(let data):
+                body.append(data)
+                if body.count > maxBufferedBodyBytes { throw URLError(.dataLengthExceedsMaximum) }
+            }
+        }
+        guard let head else { throw URLError(.badServerResponse) }
+        return (body, head)
+    }
+
+    /// The response as it arrives. `request.timeoutInterval` is the time allowed without any bytes.
+    static func stream(_ request: URLRequest, reuse: Bool = false) -> AsyncThrowingStream<Event, Error> {
+        AsyncThrowingStream { continuation in
+            let exchange: Exchange
+            do {
+                exchange = try Exchange(
+                    request: request,
+                    reuse: reuse,
+                    emit: { continuation.yield($0) },
+                    finish: { continuation.finish(throwing: $0) }
+                )
+            } catch {
+                continuation.finish(throwing: error)
+                return
+            }
+            continuation.onTermination = { _ in exchange.cancel() }
+            exchange.start()
+        }
+    }
+
+    // MARK: Request
+
+    struct Target: Sendable {
+        let url: URL
+        let host: String
+        let port: UInt16
+        let secure: Bool
+
+        var poolKey: String { "\(secure ? "https" : "http")://\(host.lowercased()):\(port)" }
+    }
+
+    static func target(for request: URLRequest) throws -> Target {
+        guard let url = request.url, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = url.host, !host.isEmpty else { throw URLError(.badURL) }
+        let secure = scheme == "https"
+        return Target(url: url, host: host, port: UInt16(clamping: url.port ?? (secure ? 443 : 80)), secure: secure)
+    }
+
+    /// The request as bytes. A header or value that could split the request is refused.
+    static func serialize(_ request: URLRequest, keepAlive: Bool) throws -> Data {
+        let destination = try target(for: request)
+        guard let components = URLComponents(url: destination.url, resolvingAgainstBaseURL: false) else {
+            throw URLError(.badURL)
+        }
+        var path = components.percentEncodedPath.isEmpty ? "/" : components.percentEncodedPath
+        if let query = components.percentEncodedQuery { path += "?" + query }
+        let method = (request.httpMethod ?? "GET").uppercased()
+        guard !method.isEmpty, method.allSatisfy({ $0.isASCII && $0.isLetter }) else { throw URLError(.badURL) }
+
+        var hostHeader = destination.host.contains(":") ? "[\(destination.host)]" : destination.host
+        if let explicitPort = destination.url.port, explicitPort != (destination.secure ? 443 : 80) {
+            hostHeader += ":\(explicitPort)"
+        }
+        var lines = ["\(method) \(path) HTTP/1.1", "Host: \(hostHeader)", "Connection: \(keepAlive ? "keep-alive" : "close")"]
+        let controlled: Set<String> = ["host", "connection", "content-length", "transfer-encoding", "accept-encoding", "expect"]
+        var hasAccept = false
+        for (name, value) in (request.allHTTPHeaderFields ?? [:]).sorted(by: { $0.key < $1.key }) {
+            let lowered = name.lowercased()
+            guard !controlled.contains(lowered) else { continue }
+            let unsafe = CharacterSet(charactersIn: "\r\n\0")
+            guard !name.isEmpty, name.rangeOfCharacter(from: unsafe.union(CharacterSet(charactersIn: ": \t"))) == nil,
+                  value.rangeOfCharacter(from: unsafe) == nil else { throw URLError(.badURL) }
+            if lowered == "accept" { hasAccept = true }
+            lines.append("\(name): \(value)")
+        }
+        if !hasAccept { lines.append("Accept: */*") }
+        lines.append("Accept-Encoding: identity")
+        let body = request.httpBody
+        if let body {
+            lines.append("Content-Length: \(body.count)")
+        } else if ["POST", "PUT", "PATCH"].contains(method) {
+            lines.append("Content-Length: 0")
+        }
+        var bytes = Data((lines.joined(separator: "\r\n") + "\r\n\r\n").utf8)
+        if let body { bytes.append(body) }
+        return bytes
+    }
+
+    // MARK: Response parser
+
+    /// Incremental HTTP/1.1 response parser. Pure, so the wire handling is testable without a socket.
+    struct Parser {
+        enum Step {
+            case head(HTTPURLResponse)
+            case body(Data)
+        }
+
+        private enum Phase: Equatable {
+            case head
+            case fixed(Int)
+            case chunkSize
+            case chunkData(Int)
+            case chunkEnd
+            case trailers
+            case untilClose
+            case done
+        }
+
+        private var phase = Phase.head
+        private var buffer = Data()
+        private let url: URL
+        private let isHeadRequest: Bool
+        private var keepAliveAllowed = false
+        private(set) var reusable = false
+
+        init(url: URL, isHeadRequest: Bool = false) {
+            self.url = url
+            self.isHeadRequest = isHeadRequest
+        }
+
+        var isFinished: Bool { phase == .done }
+
+        /// Drops the first `count` bytes. `Data.removeFirst` would leave a slice that no longer starts
+        /// at index 0, which every index used below assumes, so rebuild it instead.
+        private mutating func consume(_ count: Int) {
+            buffer = Data(buffer.dropFirst(count))
+        }
+
+        mutating func feed(_ data: Data) throws -> [Step] {
+            buffer.append(data)
+            var steps: [Step] = []
+            while true {
+                switch phase {
+                case .head:
+                    guard let end = buffer.range(of: Data("\r\n\r\n".utf8)) else {
+                        if buffer.count > AssistantHTTP.maxHeadBytes { throw URLError(.dataLengthExceedsMaximum) }
+                        return steps
+                    }
+                    let headBytes = buffer.subdata(in: 0..<end.lowerBound)
+                    consume(end.upperBound)
+                    let (status, version, headers) = try Self.parseHead(headBytes)
+                    // An interim response (100 Continue, 102, 103) is followed by the real one.
+                    if (100..<200).contains(status), status != 101 { continue }
+                    guard let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: version, headerFields: headers) else {
+                        throw URLError(.badServerResponse)
+                    }
+                    steps.append(.head(response))
+                    let connection = response.value(forHTTPHeaderField: "Connection")?.lowercased() ?? ""
+                    keepAliveAllowed = version == "HTTP/1.1" && !connection.contains("close")
+                    let transfer = response.value(forHTTPHeaderField: "Transfer-Encoding")?.lowercased() ?? ""
+                    if isHeadRequest || status == 204 || status == 304 || status == 101 {
+                        phase = .done
+                        reusable = keepAliveAllowed
+                    } else if transfer.contains("chunked") {
+                        phase = .chunkSize
+                    } else if let length = response.value(forHTTPHeaderField: "Content-Length").flatMap({ Int($0.trimmingCharacters(in: .whitespaces)) }) {
+                        guard length >= 0 else { throw URLError(.badServerResponse) }
+                        if length == 0 {
+                            phase = .done
+                            reusable = keepAliveAllowed
+                        } else {
+                            phase = .fixed(length)
+                        }
+                    } else {
+                        phase = .untilClose
+                    }
+
+                case .fixed(let remaining):
+                    guard !buffer.isEmpty else { return steps }
+                    let take = min(remaining, buffer.count)
+                    steps.append(.body(buffer.prefix(take)))
+                    consume(take)
+                    if take == remaining {
+                        phase = .done
+                        reusable = keepAliveAllowed
+                    } else {
+                        phase = .fixed(remaining - take)
+                    }
+
+                case .untilClose:
+                    if !buffer.isEmpty {
+                        steps.append(.body(buffer))
+                        buffer.removeAll(keepingCapacity: true)
+                    }
+                    return steps
+
+                case .chunkSize:
+                    guard let end = buffer.range(of: Data("\r\n".utf8)) else {
+                        if buffer.count > 1024 { throw URLError(.badServerResponse) }
+                        return steps
+                    }
+                    let line = String(decoding: buffer.subdata(in: 0..<end.lowerBound), as: UTF8.self)
+                    consume(end.upperBound)
+                    let sizeText = line.split(separator: ";", maxSplits: 1).first.map(String.init)?
+                        .trimmingCharacters(in: .whitespaces) ?? ""
+                    guard let size = Int(sizeText, radix: 16), size >= 0, size <= AssistantHTTP.maxBufferedBodyBytes else {
+                        throw URLError(.badServerResponse)
+                    }
+                    phase = size == 0 ? .trailers : .chunkData(size)
+
+                case .chunkData(let remaining):
+                    guard !buffer.isEmpty else { return steps }
+                    let take = min(remaining, buffer.count)
+                    steps.append(.body(buffer.prefix(take)))
+                    consume(take)
+                    phase = take == remaining ? .chunkEnd : .chunkData(remaining - take)
+
+                case .chunkEnd:
+                    guard buffer.count >= 2 else { return steps }
+                    guard buffer.prefix(2) == Data("\r\n".utf8) else { throw URLError(.badServerResponse) }
+                    consume(2)
+                    phase = .chunkSize
+
+                case .trailers:
+                    guard let end = buffer.range(of: Data("\r\n".utf8)) else {
+                        if buffer.count > AssistantHTTP.maxHeadBytes { throw URLError(.badServerResponse) }
+                        return steps
+                    }
+                    let isLast = end.lowerBound == 0
+                    consume(end.upperBound)
+                    if isLast {
+                        phase = .done
+                        reusable = keepAliveAllowed
+                    }
+
+                case .done:
+                    return steps
+                }
+            }
+        }
+
+        /// The peer closed the connection. That ends a body with no length; anywhere else it is an error.
+        mutating func endOfStream() throws -> [Step] {
+            switch phase {
+            case .untilClose:
+                phase = .done
+                return []
+            case .done:
+                return []
+            default:
+                throw URLError(.networkConnectionLost)
+            }
+        }
+
+        private static func parseHead(_ bytes: Data) throws -> (Int, String, [String: String]) {
+            let text = String(decoding: bytes, as: UTF8.self)
+            var lines = text.components(separatedBy: "\r\n")
+            guard !lines.isEmpty else { throw URLError(.badServerResponse) }
+            let statusLine = lines.removeFirst().split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+            guard statusLine.count >= 2, statusLine[0].hasPrefix("HTTP/1."), let status = Int(statusLine[1]),
+                  (100...599).contains(status) else { throw URLError(.badServerResponse) }
+            var headers: [String: String] = [:]
+            for line in lines where !line.isEmpty {
+                guard let colon = line.firstIndex(of: ":") else { throw URLError(.badServerResponse) }
+                let name = String(line[..<colon]).trimmingCharacters(in: .whitespaces)
+                let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { throw URLError(.badServerResponse) }
+                headers[name] = headers[name].map { $0 + ", " + value } ?? value
+            }
+            return (status, String(statusLine[0]), headers)
+        }
+    }
+
+    // MARK: Errors
+
+    /// Whether a `.waiting` error means the connection cannot succeed, rather than "not yet".
+    static func isDefinitive(_ error: NWError) -> Bool {
+        switch error {
+        case .posix(let posix): return [.ECONNREFUSED, .EHOSTUNREACH, .ENETUNREACH].contains(posix)
+        case .dns: return true
+        default: return false
+        }
+    }
+
+    /// Callers branch on `URLError` codes (cancelled, timed out, cannot connect), so keep those.
+    static func urlError(for error: NWError) -> URLError {
+        let code: URLError.Code
+        switch error {
+        case .posix(let posix):
+            switch posix {
+            case .ECONNREFUSED, .EHOSTUNREACH, .ENETUNREACH, .EHOSTDOWN, .EADDRNOTAVAIL: code = .cannotConnectToHost
+            case .ETIMEDOUT: code = .timedOut
+            case .ENETDOWN, .ENOTCONN: code = .notConnectedToInternet
+            case .ECONNRESET, .ECONNABORTED, .EPIPE: code = .networkConnectionLost
+            default: code = .cannotConnectToHost
+            }
+        case .dns(let dnsError):
+            // -65570 is "policy denied": the local-network permission was refused.
+            code = dnsError == -65570 ? .notConnectedToInternet : .cannotFindHost
+        case .tls:
+            code = .secureConnectionFailed
+        default:
+            code = .cannotConnectToHost
+        }
+        return URLError(code, userInfo: [NSUnderlyingErrorKey: error as NSError])
+    }
+
+    // MARK: Connection pool
+
+    /// Idle keep-alive connections, kept briefly for the next request to the same host.
+    final class Pool: @unchecked Sendable {
+        static let shared = Pool()
+        private let lock = NSLock()
+        private var idle: [String: [(connection: NWConnection, since: Date)]] = [:]
+
+        func take(key: String) -> NWConnection? {
+            lock.lock()
+            defer { lock.unlock() }
+            let now = Date()
+            while var entries = idle[key], let last = entries.popLast() {
+                idle[key] = entries.isEmpty ? nil : entries
+                if now.timeIntervalSince(last.since) <= AssistantHTTP.maxPooledIdleAge, last.connection.state == .ready {
+                    return last.connection
+                }
+                last.connection.cancel()
+            }
+            return nil
+        }
+
+        func put(_ connection: NWConnection, key: String) {
+            connection.stateUpdateHandler = nil
+            lock.lock()
+            defer { lock.unlock() }
+            let now = Date()
+            var entries = (idle[key] ?? []).filter { entry in
+                let fresh = now.timeIntervalSince(entry.since) <= AssistantHTTP.maxPooledIdleAge
+                if !fresh { entry.connection.cancel() }
+                return fresh
+            }
+            entries.append((connection, now))
+            while entries.count > 2 { entries.removeFirst().connection.cancel() }
+            idle[key] = entries
+        }
+    }
+
+    // MARK: Exchange
+
+    /// One request and its response over one connection (a pooled one when allowed).
+    private final class Exchange: @unchecked Sendable {
+        private let queue = DispatchQueue(label: "vamp.assistant.http")
+        private let destination: Target
+        private let requestBytes: Data
+        private let isHeadRequest: Bool
+        private let reuse: Bool
+        private let idleTimeout: TimeInterval
+        private let emit: @Sendable (Event) -> Void
+        private let finishStream: @Sendable (Error?) -> Void
+
+        private var connection: NWConnection?
+        private var parser: Parser
+        private var finished = false
+        private var sentRequest = false
+        private var receivedBytes = false
+        private var usedPooledConnection = false
+        private var idleTimer: DispatchSourceTimer?
+
+        init(request: URLRequest, reuse: Bool,
+             emit: @escaping @Sendable (Event) -> Void, finish: @escaping @Sendable (Error?) -> Void) throws {
+            destination = try AssistantHTTP.target(for: request)
+            requestBytes = try AssistantHTTP.serialize(request, keepAlive: reuse)
+            isHeadRequest = (request.httpMethod ?? "GET").uppercased() == "HEAD"
+            self.reuse = reuse
+            idleTimeout = request.timeoutInterval > 0 ? request.timeoutInterval : 60
+            self.emit = emit
+            self.finishStream = finish
+            parser = Parser(url: destination.url, isHeadRequest: isHeadRequest)
+        }
+
+        func start() {
+            queue.async { self.begin(allowPooled: self.reuse) }
+        }
+
+        func cancel() {
+            queue.async {
+                guard !self.finished else { return }
+                self.finished = true
+                self.idleTimer?.cancel()
+                self.connection?.stateUpdateHandler = nil
+                self.connection?.cancel()
+            }
+        }
+
+        // MARK: Lifecycle (all on `queue`)
+
+        private func begin(allowPooled: Bool) {
+            sentRequest = false
+            receivedBytes = false
+            parser = Parser(url: destination.url, isHeadRequest: isHeadRequest)
+            armIdleTimer()
+            if allowPooled, let pooled = Pool.shared.take(key: destination.poolKey) {
+                usedPooledConnection = true
+                attach(pooled)
+                sendRequest(on: pooled)
+            } else {
+                usedPooledConnection = false
+                let fresh = makeConnection()
+                attach(fresh)
+                fresh.start(queue: queue)
+            }
+        }
+
+        private func makeConnection() -> NWConnection {
+            let tcp = NWProtocolTCP.Options()
+            tcp.enableKeepalive = true
+            tcp.keepaliveIdle = 15
+            tcp.keepaliveInterval = 5
+            tcp.keepaliveCount = 3
+            tcp.noDelay = true
+            let parameters = NWParameters(tls: destination.secure ? NWProtocolTLS.Options() : nil, tcp: tcp)
+            return NWConnection(
+                host: NWEndpoint.Host(destination.host),
+                port: NWEndpoint.Port(rawValue: destination.port) ?? 80,
+                using: parameters
+            )
+        }
+
+        private func attach(_ candidate: NWConnection) {
+            connection = candidate
+            candidate.stateUpdateHandler = { [weak self, weak candidate] state in
+                guard let self, let candidate else { return }
+                self.queue.async { self.handle(state, for: candidate) }
+            }
+        }
+
+        private func handle(_ state: NWConnection.State, for candidate: NWConnection) {
+            guard !finished, candidate === connection else { return }
+            switch state {
+            case .ready:
+                sendRequest(on: candidate)
+            case .failed(let error):
+                connectionFailed(AssistantHTTP.urlError(for: error))
+            case .waiting(let error):
+                // `.waiting` can be a passing state (the local-network permission prompt, a path that
+                // is about to come up), and the rest of the app treats it that way. A refusal or an
+                // unreachable address is final, so fail at once, as URLSession does; anything else is
+                // left to the request's own timeout.
+                if AssistantHTTP.isDefinitive(error) { connectionFailed(AssistantHTTP.urlError(for: error)) }
+            default:
+                break
+            }
+        }
+
+        private func sendRequest(on candidate: NWConnection) {
+            guard !sentRequest, candidate === connection else { return }
+            sentRequest = true
+            candidate.send(content: requestBytes, completion: .contentProcessed { [weak self] error in
+                guard let self, let error else { return }
+                self.queue.async { if candidate === self.connection { self.connectionFailed(AssistantHTTP.urlError(for: error)) } }
+            })
+            receive(on: candidate)
+        }
+
+        private func receive(on candidate: NWConnection) {
+            candidate.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, isComplete, error in
+                guard let self else { return }
+                self.queue.async { self.didReceive(data, isComplete: isComplete, error: error, from: candidate) }
+            }
+        }
+
+        private func didReceive(_ data: Data?, isComplete: Bool, error: NWError?, from candidate: NWConnection) {
+            guard !finished, candidate === connection else { return }
+            if let data, !data.isEmpty {
+                receivedBytes = true
+                armIdleTimer()
+                do {
+                    for step in try parser.feed(data) {
+                        switch step {
+                        case .head(let response): emit(.head(response))
+                        case .body(let bytes): emit(.body(bytes))
+                        }
+                    }
+                } catch {
+                    fail(error)
+                    return
+                }
+                if parser.isFinished {
+                    complete()
+                    return
+                }
+            }
+            if let error {
+                connectionFailed(AssistantHTTP.urlError(for: error))
+            } else if isComplete {
+                do {
+                    _ = try parser.endOfStream()
+                    complete()
+                } catch {
+                    connectionFailed(error)
+                }
+            } else {
+                receive(on: candidate)
+            }
+        }
+
+        private func complete() {
+            guard !finished else { return }
+            finished = true
+            idleTimer?.cancel()
+            if reuse, parser.reusable, let connection {
+                Pool.shared.put(connection, key: destination.poolKey)
+            } else {
+                connection?.stateUpdateHandler = nil
+                connection?.cancel()
+            }
+            finishStream(nil)
+        }
+
+        /// A reused connection that the host had already closed fails before any byte comes back.
+        /// That is not an answer, so try once on a fresh connection.
+        private func connectionFailed(_ error: Error) {
+            guard !finished else { return }
+            if usedPooledConnection, !receivedBytes {
+                connection?.stateUpdateHandler = nil
+                connection?.cancel()
+                begin(allowPooled: false)
+                return
+            }
+            fail(error)
+        }
+
+        private func fail(_ error: Error) {
+            guard !finished else { return }
+            finished = true
+            idleTimer?.cancel()
+            connection?.stateUpdateHandler = nil
+            connection?.cancel()
+            finishStream(error)
+        }
+
+        private func armIdleTimer() {
+            idleTimer?.cancel()
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now() + idleTimeout)
+            timer.setEventHandler { [weak self] in self?.fail(URLError(.timedOut)) }
+            idleTimer = timer
+            timer.resume()
+        }
     }
 }

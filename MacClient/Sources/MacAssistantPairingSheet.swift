@@ -42,6 +42,12 @@ struct MacAssistantPairingSheet: View {
                 Text("Plain HTTP is accepted only for private LAN, local, or Tailscale addresses.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if BeetCodeRemoteEndpoint.usesEncryptedRoute(address: address) == false {
+                    Label(BeetCodeRemoteEndpoint.unencryptedRouteWarning, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             VStack(alignment: .leading, spacing: 7) {

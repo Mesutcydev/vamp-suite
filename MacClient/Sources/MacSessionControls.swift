@@ -73,13 +73,19 @@ struct MacSessionAccessButton: View {
     let readiness: MacInputReadiness
     let keyboardFocused: Bool
 
+    /// The App Store edition never sends input, whatever the preference says.
+    private var editionAllowsControl: Bool { MacDistributionPolicy.allowsRemoteChanges }
+    private var showsViewOnly: Bool { viewOnly || !editionAllowsControl }
+
     var body: some View {
         Button { viewOnly.toggle() } label: {
-            Label(viewOnly ? "View only" : "Control", systemImage: viewOnly ? "eye" : "cursorarrow.motionlines").labelStyle(.titleAndIcon)
+            Label(showsViewOnly ? "View only" : "Control", systemImage: showsViewOnly ? "eye" : "cursorarrow.motionlines").labelStyle(.titleAndIcon)
         }
         .buttonStyle(.plain)
         .font(.system(size: 12))
-        .help(viewOnly ? "Enable remote mouse and keyboard" : "Switch to view only")
+        .disabled(!editionAllowsControl)
+        .help(!editionAllowsControl ? "This edition of Vamp Control is view only"
+              : (viewOnly ? "Enable remote mouse and keyboard" : "Switch to view only"))
         .accessibilityLabel("Access mode")
         .accessibilityValue(readiness.canSendInput
             ? (keyboardFocused ? "Control, keyboard on remote Mac" : "Control, keyboard on this Mac")
@@ -158,6 +164,10 @@ struct MacSessionQualitySettings: View {
     @Binding var selection: SharedModels.StreamQualityPreset
     let supportsUltra: Bool
     let isConnected: Bool
+    /// What the host is actually streaming right now (dimensions from the active
+    /// stream configuration, live FPS from the stats), so the preset names don't
+    /// read as the only truth — the host floors and adapts quality at runtime.
+    var streamDescription: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -168,6 +178,11 @@ struct MacSessionQualitySettings: View {
                 Text("Quality — sharper detail").tag(SharedModels.StreamQualityPreset.quality)
                 if supportsUltra { Text("Ultra — native resolution").tag(SharedModels.StreamQualityPreset.ultra) }
             }.disabled(!isConnected)
+            if let streamDescription, !streamDescription.isEmpty {
+                Text(streamDescription)
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
             Text(isConnected ? "Applies to this stream now. The host may adapt quality to network conditions."
                  : "Reconnect to change stream quality.")
                 .font(.callout).foregroundStyle(.secondary)

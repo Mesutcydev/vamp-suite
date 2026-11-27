@@ -115,6 +115,10 @@ final class MacRemoteInputController: ObservableObject {
         guard isEnabled, let mapper, let display else { return }
         let point = DesktopPoint(x: viewPoint.x, y: viewPoint.y)
         let local = mapper.viewToDisplayLocal(point)
+        // A press on the black bars around the picture is not a click on the Mac. Sent
+        // with no location, the host clicked wherever its cursor last was. A release still
+        // goes through, so a drag that ends outside the picture lets go of the button.
+        if local == nil, action != .up { return }
         // Move-then-click ordering: make sure the host cursor is at the click
         // location before the button event lands.
         flushPendingMove()
@@ -163,7 +167,8 @@ final class MacRemoteInputController: ObservableObject {
     }
 
     private func startSenderIfNeeded() {
-        guard sendTask == nil else { return }
+        // App Store edition is View Only: never start the sender.
+        guard MacDistributionPolicy.allowsRemoteChanges, sendTask == nil else { return }
         sendTask = Task { [weak self] in
             await self?.drainSendQueue()
         }

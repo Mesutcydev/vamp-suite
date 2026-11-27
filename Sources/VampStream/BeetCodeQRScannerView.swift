@@ -1,3 +1,4 @@
+import SharedModels
 import SwiftUI
 import AVFoundation
 #if canImport(UIKit) && canImport(VisionKit)
@@ -6,11 +7,12 @@ import VisionKit
 
 struct BeetCodeQRScannerView: UIViewControllerRepresentable {
     enum Source {
-        case assistant, sync
+        case assistant, sync, mac
         var instructions: String {
             switch self {
-            case .assistant: return "Enter the address and six-digit pairing code shown by Vamp Assistant or Vamp Companion manually."
-            case .sync: return "Close the scanner and enter the private address shown by Vamp Sync."
+            case .assistant: return "Enter the address and six-digit pairing code shown by Assistant or Companion manually."
+            case .sync: return "Close the scanner and enter the private address shown by \(VampProductIdentity.syncName)."
+            case .mac: return "Close the scanner to enter the private address or pairing code shown by Sync, Assistant, or Companion on your Mac."
             }
         }
     }
@@ -61,7 +63,7 @@ final class QRScannerController: UIViewController, DataScannerViewControllerDele
             return
         }
         guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else {
-            showFailure("Camera access is unavailable. Enable Camera in Settings to scan a QR code.")
+            showFailure("Enable Camera in Settings to scan your Mac’s pairing code.", offersSettings: true)
             return
         }
         guard DataScannerViewController.isSupported, DataScannerViewController.isAvailable else {
@@ -95,18 +97,13 @@ final class QRScannerController: UIViewController, DataScannerViewControllerDele
             return
         }
     }
-    private func showFailure(_ reason: String) {
+    private func showFailure(_ reason: String, offersSettings: Bool = false) {
         scanner?.stopScanning(); remove(scanner); scanner = nil
         remove(fallback)
-        let content = UIHostingController(rootView:
-            VStack(spacing: 20) {
-                ContentUnavailableView("QR scanning unavailable", systemImage: "qrcode.viewfinder",
-                    description: Text("\(reason)\n\n\(instructions)"))
-                Button("Open Settings") {
-                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                }.buttonStyle(.borderedProminent)
-                Button("Try Again") { [weak self] in self?.start() }.buttonStyle(.bordered)
-            }.padding())
+        let content = UIHostingController(rootView: StreamScannerUnavailableView(
+            reason: reason, instructions: instructions, offersSettings: offersSettings,
+            onRetry: { [weak self] in self?.start() }
+        ))
         fallback = content
         embed(content)
     }
@@ -121,9 +118,54 @@ final class QRScannerController: UIViewController, DataScannerViewControllerDele
         child?.willMove(toParent: nil); child?.view.removeFromSuperview(); child?.removeFromParent()
     }
 }
+
+/// A hosted UIKit scanner does not inherit the app's SwiftUI environment.
+/// Read the saved appearance here so camera errors follow the same settings.
+private struct StreamScannerUnavailableView: View {
+    let reason: String
+    let instructions: String
+    let offersSettings: Bool
+    let onRetry: () -> Void
+    @AppStorage(VampStreamAppearance.key) private var appearance = VampStreamAppearance.dark
+    @AppStorage(VampStreamAppearance.backgroundArtKey) private var showsArt = true
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
+                Image(systemName: "qrcode.viewfinder")
+                    .font(.system(size: 44, weight: .light))
+                    .foregroundStyle(StreamDesign.accent).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Keep your Mac close.")
+                        .font(.largeTitle.weight(.medium)).tracking(-1.5)
+                        .foregroundStyle(StreamDesign.text)
+                    Text(reason).font(.body).foregroundStyle(StreamDesign.secondary)
+                }
+                Label(instructions, systemImage: "macwindow")
+                    .font(.subheadline).foregroundStyle(StreamDesign.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(22).frame(maxWidth: .infinity, alignment: .leading).streamGlass()
+                if offersSettings {
+                    StreamPrimaryButton(title: "Open Settings", symbol: "camera") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    }
+                }
+                Button("Try again", action: onRetry)
+                    .font(.body.weight(.medium)).foregroundStyle(StreamDesign.text)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .streamGlass(radius: 24).buttonStyle(StreamPressStyle())
+            }
+            .frame(maxWidth: 520, alignment: .leading)
+            .padding(24).padding(.top, 32).frame(maxWidth: .infinity)
+        }
+        .background { VampStreamEnvironmentBackdrop() }
+        .environment(\.prSolidSurfaces, !showsArt)
+        .preferredColorScheme(appearance.colorScheme)
+    }
+}
 #else
 struct BeetCodeQRScannerView: View {
-    enum Source { case assistant, sync }
+    enum Source { case assistant, sync, mac }
     var source: Source = .assistant
     let onPayload: (String) -> Void
     var body: some View {

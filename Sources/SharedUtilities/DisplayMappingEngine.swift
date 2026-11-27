@@ -169,6 +169,79 @@ public struct DisplayMappingEngine: Sendable, Hashable {
         }
     }
 
+    /// How a streamed picture should be sized inside the surface it is drawn in.
+    ///
+    /// A Mac app can decline the exact shape it was asked for by a small margin — an app minimum,
+    /// or a screen whose visible frame is shorter than its bounds — and even a fixed host can land
+    /// a few percent short. Aspect-fitting that residue leaves a black band, usually between the
+    /// picture and the control deck.
+    ///
+    /// When the *height* falls short by a little, this covers instead: the picture is scaled until
+    /// its height matches the surface exactly, which overflows and crops the **left and right**
+    /// edges slightly. Nothing is lost vertically — the streamed app's own bottom controls (a
+    /// composer, a send button) stay exactly where they were, clear of the deck — and the black
+    /// band disappears. A shortfall past `maxCropFraction` keeps an honest aspect-fit rather than
+    /// zooming into the middle of a window that kept a completely different shape.
+    ///
+    /// A surface that is *narrower* than the picture is left alone: covering there would crop the
+    /// top and bottom, which is where window chrome and composers live.
+    public struct StreamPicturePlacement: Equatable, Sendable {
+        public let size: DesktopSize
+        /// Fraction of the picture hidden by a cover-crop; zero when it fits inside the surface.
+        public let croppedFraction: Double
+
+        public init(size: DesktopSize, croppedFraction: Double) {
+            self.size = size
+            self.croppedFraction = croppedFraction
+        }
+    }
+
+    /// - Parameter maxCropFraction: the largest shortfall, as a fraction of the surface's height,
+    ///   absorbed by covering rather than letterboxing.
+    public static func placePicture(
+        streamSize: DesktopSize,
+        container: DesktopSize,
+        maxCropFraction: Double = 0.12
+    ) -> StreamPicturePlacement {
+        guard streamSize.width > 0, streamSize.height > 0,
+              container.width > 0, container.height > 0,
+              streamSize.width.isFinite, streamSize.height.isFinite,
+              container.width.isFinite, container.height.isFinite else {
+            return StreamPicturePlacement(size: container, croppedFraction: 0)
+        }
+        let streamAspect = streamSize.width / streamSize.height
+        let containerAspect = container.width / container.height
+        let fit = streamAspect > containerAspect
+            ? DesktopSize(width: container.width, height: container.width / streamAspect)
+            : DesktopSize(width: container.height * streamAspect, height: container.height)
+        let shortfall = max(0, container.height - fit.height) / container.height
+        guard shortfall > 0.001, shortfall <= maxCropFraction else {
+            return StreamPicturePlacement(size: fit, croppedFraction: 0)
+        }
+        // Cover the height; the width overflows and is cropped evenly on both sides.
+        let covered = DesktopSize(
+            width: container.height * streamAspect, height: container.height)
+        let cropped = max(0, covered.width - container.width) / covered.width
+        return StreamPicturePlacement(size: covered, croppedFraction: cropped)
+    }
+
+    /// Aspect-fit `streamSize` inside `container`, returned as a size.
+    ///
+    /// A caller that draws the picture itself uses this to give the render layer exactly the
+    /// fitted rect. The layer's own video gravity centers its content, so a layer larger than the
+    /// picture splits the letterbox evenly and shows a black band *above* the picture. Sizing the
+    /// layer to this value hands the slack back to the caller, which places it below the picture
+    /// where the control deck already floats.
+    public static func aspectFitSize(streamSize: DesktopSize, container: DesktopSize) -> DesktopSize {
+        guard streamSize.width > 0, streamSize.height > 0,
+              container.width > 0, container.height > 0 else { return container }
+        let streamAspect = streamSize.width / streamSize.height
+        if streamAspect > container.width / container.height {
+            return DesktopSize(width: container.width, height: container.width / streamAspect)
+        }
+        return DesktopSize(width: container.height * streamAspect, height: container.height)
+    }
+
     /// Aspect-fit rect of the stream inside `rect` (fitDisplay / actualSize fallback).
     private func aspectFitRect(in rect: DesktopRect) -> DesktopRect {
         let stream = streamSize

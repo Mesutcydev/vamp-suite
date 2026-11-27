@@ -108,11 +108,32 @@ final class DisplayLayoutViewModel: ObservableObject {
             streamConfiguration = nil
         }
         isSwitchingDisplay = true
-        switchStartTime = Date()
+        let started = Date()
+        switchStartTime = started
         switchFailureReason = nil
         firstFrameReceivedAfterSwitch = false
         mappingWarningMessage = nil
+        // The host sends no result when it refuses a switch (locked Mac, or a second pick
+        // inside its 2 s rate limit), so this flag stayed set — and on the Mac client that
+        // keeps remote input off — until the session view was rebuilt.
+        switchTimeoutTask?.cancel()
+        switchTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            guard let self, !Task.isCancelled,
+                  self.isSwitchingDisplay, self.switchStartTime == started else { return }
+            if self.hostSelectedDisplayID == id {
+                // The host did move to this display (its stream configuration arrived) but
+                // nothing else marked the switch done: iOS never reads the host's result
+                // message, and two displays of the same size produce no frame-size change.
+                self.completeDisplaySwitch(selectedID: id)
+            } else {
+                self.failDisplaySwitch(reason: "The Mac didn’t switch displays.",
+                                       fallbackID: self.hostSelectedDisplayID)
+            }
+        }
     }
+
+    private var switchTimeoutTask: Task<Void, Never>?
 
     func noteFirstFrameAfterSwitch() {
         guard isSwitchingDisplay else { return }

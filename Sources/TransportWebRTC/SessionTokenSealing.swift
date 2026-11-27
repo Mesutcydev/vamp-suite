@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import Security
+import SharedProtocol
 
 /// ECIES-style sealing for the session token carried inside the signaling offer.
 ///
@@ -92,6 +93,73 @@ public enum SessionTokenSealing {
             return nil
         }
         return try? AES.GCM.open(box, using: symmetricKey)
+    }
+
+    // MARK: - Signed host key bundle
+
+    /// Domain separator: a bundle signature can never be mistaken for a
+    /// signaling-envelope signature (those sign JSON) or any other use of the
+    /// identity key.
+    private static let bundleDomain = Data("vamp-host-key-bundle-v1".utf8)
+    /// Bounds on the client-chosen nonce the host is willing to sign.
+    public static let keyBundleNonceLengths = 16...64
+
+    /// SHA-256 hex of an x963 signing public key — the same value
+    /// `CryptoIdentityService.fingerprint` reports and clients pin.
+    public static func fingerprint(ofSigningPublicKey key: Data) -> String {
+        SHA256.hash(data: key).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Every field is length-prefixed, so no two different field splits can
+    /// produce the same signed bytes.
+    private static func bundleTranscript(signingPublicKey: Data, keyAgreementPublicKey: Data, nonce: Data) -> Data {
+        var transcript = bundleDomain
+        for field in [nonce, signingPublicKey, keyAgreementPublicKey] {
+            var length = UInt32(field.count).bigEndian
+            withUnsafeBytes(of: &length) { transcript.append(contentsOf: $0) }
+            transcript.append(field)
+        }
+        return transcript
+    }
+
+    /// Host side: bind this identity's key-agreement key to its signing key.
+    /// Returns nil for a nonce outside `keyBundleNonceLengths`.
+    public static func makeKeyBundle(signingKey: P256.Signing.PrivateKey, nonce: Data) -> SignedHostKeyBundle? {
+        guard keyBundleNonceLengths.contains(nonce.count) else { return nil }
+        let signingPublicKey = Data(signingKey.publicKey.x963Representation)
+        let keyAgreementPublicKey = Data(deriveKeyAgreementKey(from: signingKey).publicKey.x963Representation)
+        guard let signature = try? signingKey.signature(for: bundleTranscript(
+            signingPublicKey: signingPublicKey,
+            keyAgreementPublicKey: keyAgreementPublicKey,
+            nonce: nonce
+        )) else { return nil }
+        return SignedHostKeyBundle(
+            signingPublicKey: signingPublicKey,
+            keyAgreementPublicKey: keyAgreementPublicKey,
+            nonce: nonce,
+            signature: signature.derRepresentation
+        )
+    }
+
+    /// Client side: accept a bundle only if it answers `nonce` and its
+    /// signature verifies under the signing key it carries. The caller must
+    /// still compare the returned fingerprint with the one it trusts — a valid
+    /// bundle proves key ownership, not that the owner is the right Mac.
+    public static func verifyKeyBundle(
+        _ bundle: SignedHostKeyBundle,
+        nonce: Data
+    ) -> (keyAgreementKey: P256.KeyAgreement.PublicKey, fingerprint: String)? {
+        guard keyBundleNonceLengths.contains(nonce.count), bundle.nonce == nonce,
+              let signingKey = try? P256.Signing.PublicKey(x963Representation: bundle.signingPublicKey),
+              let signature = try? P256.Signing.ECDSASignature(derRepresentation: bundle.signature),
+              signingKey.isValidSignature(signature, for: bundleTranscript(
+                  signingPublicKey: bundle.signingPublicKey,
+                  keyAgreementPublicKey: bundle.keyAgreementPublicKey,
+                  nonce: nonce
+              )),
+              let keyAgreementKey = try? P256.KeyAgreement.PublicKey(x963Representation: bundle.keyAgreementPublicKey)
+        else { return nil }
+        return (keyAgreementKey, fingerprint(ofSigningPublicKey: bundle.signingPublicKey))
     }
 
     private static func deriveAESKey(from shared: SharedSecret) -> SymmetricKey {

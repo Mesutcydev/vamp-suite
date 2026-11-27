@@ -15,6 +15,10 @@ import os
 /// and must be presented on the data channel to bind it to the authenticated session.
 public enum ConnectionSecurity {
     private static let tlsPSKIdentity = Data("remotedesktop".utf8)
+    // 0x00AD is TLS_RSA_PSK_WITH_AES_256_GCM_SHA384. Appending it only adds a candidate: a
+    // loopback test negotiated TLS_PSK_WITH_AES_128_GCM_SHA256 (0x00A8) with these parameters, which
+    // has no forward secrecy. The key is the per-session token, so anyone who learns the key can read a
+    // recorded session. This port's key is public (the host fingerprint), so it authenticates nobody.
     private static let tlsPSKCiphersuite = tls_ciphersuite_t(rawValue: UInt16(0x00AD))
 
     // MARK: - TLS Parameters
@@ -79,6 +83,12 @@ public enum ConnectionSecurity {
 
     /// Derive a symmetric key from a 12-digit PIN.
     /// Uses HKDF with a fixed salt so both sides derive the same key from the same PIN.
+    ///
+    /// The TLS signaling port passes the host's public-key fingerprint here.
+    /// That fingerprint is advertised in Bonjour, so this PSK authenticates
+    /// nobody: it only hides signaling from an observer who has not seen the
+    /// advertisement. Host identity comes from the signed key bundle and the
+    /// signed answer; token secrecy comes from `SessionTokenSealing`.
     public static func deriveKey(from pin: String) -> SymmetricKey {
         let pinData = Data(pin.utf8)
         let salt = Data("com.remotedesktop.psk.salt.v1".utf8)
@@ -98,8 +108,7 @@ public enum ConnectionSecurity {
     /// 12 decimal digits provide ~39.8 bits of entropy, significantly better than
     /// legacy 6-digit codes (~19.8 bits), while remaining easy to type.
     public static func generateConnectionPIN() -> String {
-        var bytes = [UInt8](repeating: 0, count: 8)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        let bytes = secureRandomBytes(count: 8)
         let value = bytes.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
         let pin = value % 1_000_000_000_000
         return String(format: "%012llu", pin)
@@ -109,9 +118,19 @@ public enum ConnectionSecurity {
 
     /// Generate a random 32-byte session token for binding signaling to data channel.
     public static func generateSessionToken() -> Data {
-        var bytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return Data(bytes)
+        Data(secureRandomBytes(count: 32))
+    }
+
+    /// Random bytes from the system CSPRNG. A failure used to be ignored, which would have
+    /// produced an all-zero token or PIN. Fall back to CryptoKit's generator, which also draws
+    /// from the system CSPRNG and cannot fail.
+    static func secureRandomBytes(count: Int) -> [UInt8] {
+        var bytes = [UInt8](repeating: 0, count: count)
+        if SecRandomCopyBytes(kSecRandomDefault, count, &bytes) != errSecSuccess {
+            var generator = SystemRandomNumberGenerator()
+            for index in bytes.indices { bytes[index] = UInt8.random(in: .min ... .max, using: &generator) }
+        }
+        return bytes
     }
 
     /// Encode a session token as a hex string (for embedding in SDP).
@@ -121,6 +140,9 @@ public enum ConnectionSecurity {
 
     /// Decode a hex-encoded session token.
     public static func tokenFromHex(_ hex: String) -> Data? {
+        // Whole bytes of plain hex digits only: `UInt8(_, radix:)` would also take a leading
+        // "+", and an odd length would silently drop the last nibble.
+        guard hex.count % 2 == 0, hex.allSatisfy(\.isASCII), hex.allSatisfy(\.isHexDigit) else { return nil }
         var data = Data(capacity: hex.count / 2)
         var index = hex.startIndex
         while index < hex.endIndex {
@@ -162,6 +184,14 @@ public enum ConnectionSecurity {
 
             let now = Date()
             let cutoff = now.addingTimeInterval(-windowSeconds)
+
+            // Entries for addresses that never came back used to accumulate forever (and a
+            // source that rotates IPv6 addresses made that unbounded). Sweep before growing.
+            if attempts.count >= 1024 {
+                for (address, dates) in attempts where dates.allSatisfy({ $0 <= cutoff }) {
+                    attempts.removeValue(forKey: address)
+                }
+            }
 
             // Clean old entries
             attempts[ip] = (attempts[ip] ?? []).filter { $0 > cutoff }

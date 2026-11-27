@@ -1,8 +1,74 @@
 import Foundation
 import XCTest
+import SharedProtocol
 @testable import ClientiOS
 
 final class BeetCodeRemoteClientTests: XCTestCase {
+    func testCompanionSizingRequestPreservesMeasuredPortraitViewport() throws {
+        let request = try BeetCodeAppWindowSizingRequest(
+            windowID: 42, clientViewportAspect: 390.0 / 794.0,
+            viewport: CGSize(width: 390, height: 794), sizingMode: .adaptive)
+        let body = request.wireBody()
+        let data = try JSONSerialization.data(withJSONObject: body)
+        let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(decoded["windowID"] as? Int, 42)
+        XCTAssertEqual(decoded["viewportWidth"] as? Double, 390)
+        XCTAssertEqual(decoded["viewportHeight"] as? Double, 794)
+        XCTAssertEqual(decoded["clientViewportAspect"] as? Double, 390.0 / 794.0)
+        XCTAssertEqual(decoded["sizingMode"] as? String, "adaptive")
+    }
+
+    func testOlderAssistantStillReceivesOnlyItsAspectSizingContract() throws {
+        let body = try BeetCodeAppWindowSizingRequest(
+            windowID: 42, clientViewportAspect: 0.5).wireBody()
+        XCTAssertEqual(Set(body.keys), ["windowID", "clientViewportAspect"])
+        XCTAssertNil(body["sizingMode"])
+        XCTAssertNil(body["viewportWidth"])
+        XCTAssertNil(body["viewportHeight"])
+    }
+
+    func testOriginalSizingKeepsModeIndependentOfThePortraitViewport() throws {
+        let body = try BeetCodeAppWindowSizingRequest(
+            windowID: 42, clientViewportAspect: 1.6,
+            viewport: CGSize(width: 390, height: 794), sizingMode: .original).wireBody()
+        XCTAssertEqual(body["sizingMode"] as? String, "original")
+        XCTAssertEqual(body["clientViewportAspect"] as? Double, 1.6)
+        XCTAssertEqual(body["viewportWidth"] as? Double, 390)
+        XCTAssertEqual(body["viewportHeight"] as? Double, 794)
+    }
+
+    func testCompanionSizingRejectsInvalidGeometryBeforeSending() {
+        for aspect in [Double.nan, .infinity, 0, -1, 0.1, 5] {
+            XCTAssertThrowsError(try BeetCodeAppWindowSizingRequest(windowID: 42, clientViewportAspect: aspect))
+        }
+        for viewport in [CGSize.zero, CGSize(width: 390, height: 0),
+                         CGSize(width: CGFloat.nan, height: 794), CGSize(width: 390, height: CGFloat.infinity)] {
+            XCTAssertThrowsError(try BeetCodeAppWindowSizingRequest(
+                windowID: 42, clientViewportAspect: 0.5, viewport: viewport, sizingMode: .adaptive))
+        }
+        XCTAssertThrowsError(try BeetCodeAppWindowSizingRequest(windowID: 0, clientViewportAspect: 0.5))
+    }
+
+    func testCompanionAdvertisesSizingAndAcknowledgesAcceptedMode() throws {
+        let status = try JSONDecoder().decode(BeetCodeControlStatus.self, from: Data(
+            #"{"enabled":true,"screenRecording":true,"accessibility":true,"ready":true,"supportsAdaptiveSizing":true}"#.utf8))
+        XCTAssertEqual(status.supportsAdaptiveSizing, true)
+        let application = try JSONDecoder().decode(BeetCodeRemoteApplication.self, from: Data(
+            #"{"windowID":42,"bundleIdentifier":"com.apple.Safari","name":"Safari","width":1100,"height":700,"appliedSizingMode":"original","sizingNotice":"The Mac constrained the original window size to its available space."}"#.utf8))
+        XCTAssertEqual(application.appliedSizingMode, .original)
+        XCTAssertEqual(application.sizingNotice, "The Mac constrained the original window size to its available space.")
+    }
+
+    func testOlderAssistantOmitsSizingAcknowledgment() throws {
+        let status = try JSONDecoder().decode(BeetCodeControlStatus.self, from: Data(
+            #"{"enabled":true,"screenRecording":true,"accessibility":true,"ready":true}"#.utf8))
+        let application = try JSONDecoder().decode(BeetCodeRemoteApplication.self, from: Data(
+            #"{"windowID":42,"name":"Safari","width":1100,"height":700}"#.utf8))
+        XCTAssertNil(status.supportsAdaptiveSizing)
+        XCTAssertNil(application.appliedSizingMode)
+        XCTAssertNil(application.sizingNotice)
+    }
+
     func testAssistantUnlockStatusDecodesAndOffersSecureEntry() throws {
         let data = Data(#"{"enabled":true,"screenRecording":true,"accessibility":true,"ready":false,"locked":true,"remoteUnlockEnabled":true,"remoteUnlockAvailable":true,"remoteUnlockMessage":"Enter the Mac login password.","displays":[]}"#.utf8)
 
@@ -44,6 +110,15 @@ final class BeetCodeRemoteClientTests: XCTestCase {
         let endpoint = try BeetCodeRemoteEndpoint.parsePairingLink("http://100.90.80.70:9675/?pair=123456")
         XCTAssertEqual(endpoint.url.port, 9675)
         XCTAssertEqual(try BeetCodeRemoteEndpoint.parse(address: "192.168.1.20").url.port, 9575)
+    }
+
+    func testCompanionPairingSupportsTailscaleIPv6AndMagicDNS() throws {
+        for host in ["[fd7a:115c:a1e0::1234]", "studio.tailnet-example.ts.net"] {
+            let endpoint = try BeetCodeRemoteEndpoint.parsePairingLink("http://\(host):9675/?pair=123456")
+            XCTAssertEqual(endpoint.url.port, 9675)
+            XCTAssertEqual(endpoint.pairingCode, "123456")
+        }
+        XCTAssertThrowsError(try BeetCodeRemoteEndpoint.parsePairingLink("http://[2001:4860:4860::8888]:9675/?pair=123456"))
     }
 
     func testQRPairingRejectsSyncPortsAndMissingCodes() {
@@ -137,6 +212,59 @@ final class BeetCodeRemoteClientTests: XCTestCase {
         XCTAssertFalse(application.isRunning)
     }
 
+    func testAssistantRefreshPreservesKnownIconsForMatchingApps() throws {
+        let old = try decode(#"{"bundleIdentifier":"com.example.a","name":"A","iconPNGBase64":"old-a"}"#)
+        let missing = try decode(#"{"bundleIdentifier":"com.example.a","name":"A"}"#)
+        let updated = try decode(#"{"bundleIdentifier":"com.example.b","name":"B","iconPNGBase64":"new-b"}"#)
+        let unrelated = try decode(#"{"bundleIdentifier":"com.example.c","name":"C"}"#)
+        let refreshed = BeetCodeRemoteApplication.preservingIcons(
+            in: [missing, updated, unrelated], from: [old])
+        XCTAssertEqual(refreshed.map(\.iconPNGBase64), ["old-a", "new-b", nil])
+    }
+
+    // MARK: - App list context line
+
+    private func decode(_ json: String) throws -> BeetCodeRemoteApplication {
+        try JSONDecoder().decode(BeetCodeRemoteApplication.self, from: Data(json.utf8))
+    }
+
+    /// A running app's useful context is its window title, which distinguishes two windows of the
+    /// same app. Raw pixel dimensions are diagnostics, not list content.
+    func testListDetailShowsWindowTitleWithoutPixelDimensions() throws {
+        let app = try decode(#"{"windowID":42,"bundleIdentifier":"com.apple.Safari","name":"Safari","windowTitle":"Start Page","width":1280,"height":800}"#)
+        XCTAssertEqual(app.listDetail, "Start Page")
+        XCTAssertFalse(try XCTUnwrap(app.listDetail).contains("1280"))
+        XCTAssertFalse(try XCTUnwrap(app.listDetail).contains("800"))
+        // The diagnostics string keeps the dimensions for details surfaces.
+        XCTAssertTrue(app.detail.contains("1280×800"))
+    }
+
+    /// A window title identical to the app name carries no information, so it is not repeated.
+    func testListDetailDropsRedundantWindowTitle() throws {
+        let app = try decode(#"{"windowID":7,"bundleIdentifier":"com.apple.Notes","name":"Notes","windowTitle":"Notes","width":900,"height":600}"#)
+        XCTAssertEqual(app.listDetail, "Running")
+    }
+
+    func testListDetailMarksTheActiveApp() throws {
+        let app = try decode(#"{"windowID":9,"bundleIdentifier":"com.apple.Safari","name":"Safari","windowTitle":"Vamp","width":900,"height":600,"isRunning":true,"isActive":true}"#)
+        XCTAssertEqual(app.listDetail, "Active now")
+    }
+
+    /// An installed app with no window needs no second line at all. Repeating
+    /// "Installed · tap to open" on every such row is noise: the row is already a button inside an
+    /// "All Apps" section.
+    func testInstalledAppHasNoRedundantListDetail() throws {
+        let app = try decode(#"{"windowID":null,"bundleIdentifier":"com.apple.TextEdit","name":"TextEdit","width":0,"height":0,"isRunning":false,"isActive":false}"#)
+        XCTAssertNil(app.listDetail)
+    }
+
+    /// A running app that reports no window still says so, rather than falling back to a bare
+    /// pixel size or to nothing.
+    func testRunningAppWithoutTitleFallsBackToRunning() throws {
+        let app = try decode(#"{"windowID":3,"bundleIdentifier":"com.apple.Terminal","name":"Terminal","windowTitle":"","width":528,"height":374,"isRunning":true,"isActive":false}"#)
+        XCTAssertEqual(app.listDetail, "Running")
+    }
+
     func testMultipartParserHandlesSplitH264PartAndGeometry() throws {
         let boundary = "beet-test"
         let parameterSets = Data([0, 0, 0, 1, 0x67, 0x64])
@@ -178,5 +306,71 @@ final class BeetCodeRemoteClientTests: XCTestCase {
         XCTAssertEqual(data, avcc)
         XCTAssertTrue(keyframe)
         XCTAssertEqual(params, parameterSets)
+    }
+
+    private func parserForBoundary(_ boundary: String) throws -> BeetCodeScreenStreamParser {
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: URL(string: "http://192.168.1.20:9575/api/control/screen/stream")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "multipart/mixed; boundary=\(boundary)"]))
+        var parser = BeetCodeScreenStreamParser()
+        try parser.configure(response: response)
+        return parser
+    }
+
+    func testHostileGeometryHeadersAreRejectedInsteadOfCrashing() throws {
+        // `Int(Double("1e30"))`, nan and inf all trap, and the peer controls these headers.
+        for width in ["1e30", "nan", "inf", "-inf", "9999999999999999999"] {
+            var parser = try parserForBoundary("b")
+            let message = Data(
+                "--b\r\nContent-Type: video/avc\r\nContent-Length: 4\r\nX-Beet-Image-Width: \(width)\r\nX-Beet-Image-Height: 100\r\n\r\nabcd\r\n".utf8
+            )
+            XCTAssertThrowsError(try parser.append(message), width)
+        }
+    }
+
+    func testAbsurdContentLengthEndsTheStreamInsteadOfOverflowing() throws {
+        var parser = try parserForBoundary("b")
+        let message = Data(
+            "--b\r\nContent-Type: video/avc\r\nContent-Length: 9223372036854775807\r\nX-Beet-Image-Width: 100\r\nX-Beet-Image-Height: 100\r\n\r\n".utf8
+        )
+        XCTAssertThrowsError(try parser.append(message))
+    }
+
+    func testUnlockOverAnUnencryptedRouteNeedsExplicitConsent() async throws {
+        let client = BeetCodeRemoteClient(
+            baseURL: try BeetCodeRemoteEndpoint.parse(address: "http://192.168.1.20:9575").url, token: "t"
+        )
+        XCTAssertFalse(client.canSendUnlockPassword)
+        do {
+            // Refused before any network traffic: the Assistant host also accepts the password on its
+            // LAN fallback, so the screen asks first and only then passes the consent.
+            _ = try await client.unlockMac(password: "secret")
+            XCTFail("an unencrypted route must not send the password without consent")
+        } catch let error as BeetCodeRemoteError {
+            guard case .controlUnavailable(let message) = error else { return XCTFail("\(error)") }
+            XCTAssertTrue(message.contains("not encrypted"))
+        }
+    }
+
+    func testTypedAddressesAreFlaggedWhenTheirLinkIsNotEncrypted() {
+        XCTAssertEqual(BeetCodeRemoteEndpoint.usesEncryptedRoute(address: "192.168.1.20:9575"), false)
+        XCTAssertEqual(BeetCodeRemoteEndpoint.usesEncryptedRoute(address: "studio.local"), false)
+        XCTAssertEqual(BeetCodeRemoteEndpoint.usesEncryptedRoute(address: "100.90.80.70"), true)
+        XCTAssertEqual(BeetCodeRemoteEndpoint.usesEncryptedRoute(address: "studio.tail1234.ts.net:9575"), true)
+        XCTAssertNil(BeetCodeRemoteEndpoint.usesEncryptedRoute(address: ""), "nothing to warn about yet")
+    }
+
+    func testUnlockPasswordTravelsOnlyOverAnEncryptedRoute() throws {
+        func route(_ address: String) throws -> Bool {
+            BeetCodeRemoteClient(baseURL: try BeetCodeRemoteEndpoint.parse(address: address).url, token: "t").canSendUnlockPassword
+        }
+        XCTAssertTrue(try route("http://100.90.80.70:9575"))
+        XCTAssertTrue(try route("http://studio.tail1234.ts.net:9575"))
+        XCTAssertTrue(try route("https://studio.example.com"))
+        XCTAssertFalse(try route("http://192.168.1.20:9575"), "LAN HTTP is readable by anyone on the network")
+        XCTAssertFalse(try route("http://studio.local:9575"), "a .local name is trusted only by its suffix")
+        XCTAssertFalse(try route("http://10.0.0.5:9575"))
     }
 }

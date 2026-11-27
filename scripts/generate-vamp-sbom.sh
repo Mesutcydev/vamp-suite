@@ -39,7 +39,7 @@ bundle_ids = {
     "vamp-terminal": "com.mesutcy.remotedesktop.terminal",
     "vamp-host": "com.mesutcy.remotedesktop.host",
     "vamp-terminal-host": "com.mesutcy.remotedesktop.terminalhost",
-    "vamp-mini-host": "com.mesutcy.remotedesktop.minhost",
+    "vamp-mini-host": "com.mesutcy.remotedesktop.host",
     "vamp-stream-ios": "com.mesutcy.remotedesktop.stream",
     "vamp-control-ios": "com.mesutcy.remotedesktop.ios",
     "vamp-control-macos": "com.mesutcy.remotedesktop.macclient",

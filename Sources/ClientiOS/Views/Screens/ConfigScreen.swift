@@ -18,7 +18,7 @@ struct ConfigScreen: View {
     @AppStorage("client.ui.inlineStreamPreview") private var inlineStreamPreview = false
     @AppStorage("client.ui.streamingUITheme") private var streamingUITheme = "classic"
     @AppStorage("client.liveActivity.enabled") private var liveActivityEnabled = true
-    @AppStorage("com.mesutcy.remotedesktop.client.filetransfer.enabled") private var fileTransferEnabled = true
+    @AppStorage(ClientFileTransferPreference.storageKey) private var fileTransferEnabled = true
     @AppStorage("client.audio.placeholder.enabled") private var audioWhenReadyEnabled = false
     @AppStorage("client.clipboard.enabled") private var clipboardEnabled = true
     @State private var showDiagnostics = false
@@ -575,7 +575,7 @@ struct VampHostPromoCard: View {
             .buttonStyle(.plain)
         }
         .padding(14)
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
     }
 
     private var iconTile: some View {
@@ -614,7 +614,7 @@ struct HowItWorksCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.r12, style: .continuous))
+        .prGlassSurface(in: RoundedRectangle(cornerRadius: PR.rCard, style: .continuous))
     }
 
     private func step(_ n: Int, title: String, detail: String) -> some View {

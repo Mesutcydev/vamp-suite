@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Vamp Sync
+Comment=Host private desktop and app streams for Vamp
+Exec=vamp-sync
+Icon=vamp-sync
+Terminal=false
+Categories=Network;RemoteAccess;
+StartupNotify=true

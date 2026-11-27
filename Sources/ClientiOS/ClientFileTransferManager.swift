@@ -534,10 +534,14 @@ final class ClientFileTransferManager: ObservableObject {
             return
         }
 
+        // The name comes from the host. Run it through the same sanitizer again: it ends up in a
+        // path (temp file and the save panel), and an honest host's output passes unchanged.
+        var offer = offer
+        offer.sanitizedFileName = FileTransferSanitizer.sanitizeFileName(offer.sanitizedFileName)
         pendingIncomingOffers[offer.transferID] = offer
         incomingPrompt = IncomingTransferPrompt(
             id: offer.transferID,
-            fileName: offer.sanitizedFileName.isEmpty ? offer.fileName : offer.sanitizedFileName,
+            fileName: offer.sanitizedFileName,
             fileSize: offer.fileSize
         )
     }

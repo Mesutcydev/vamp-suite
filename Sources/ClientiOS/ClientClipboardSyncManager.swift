@@ -15,6 +15,13 @@ final class ClientClipboardSyncManager: ObservableObject {
     @Published private(set) var isSyncing = false
     @Published private(set) var lastSyncedText: String?
 
+    /// The host answers a clipboard request; it never has a reason to push on its own. A reply is
+    /// accepted only inside this window after the user asked, so a peer cannot overwrite the
+    /// clipboard (and Universal Clipboard with it) at will.
+    private static let replyWindow: TimeInterval = 10
+    private static let maxHostClipboardBytes = 256 * 1024
+    private var awaitingReplyUntil: Date?
+
     // Set by the view when a session is active.
     var sessionID: UUID?
     var sendEnvelope: ((DataChannelEnvelope) throws -> Void)?
@@ -30,7 +37,10 @@ final class ClientClipboardSyncManager: ObservableObject {
         guard isEnabled,
               message.sessionID == sessionID,
               message.source == "host",
-              !message.text.isEmpty else { return }
+              !message.text.isEmpty,
+              message.text.utf8.count <= Self.maxHostClipboardBytes,
+              let deadline = awaitingReplyUntil, Date() < deadline else { return }
+        awaitingReplyUntil = nil
         ClipboardBridge.setString(message.text)
         lastSyncedText = message.text
         isSyncing = false
@@ -78,6 +88,7 @@ final class ClientClipboardSyncManager: ObservableObject {
     func requestFromHost() -> Bool {
         guard isEnabled, let sessionID, let sendEnvelope else { return false }
         isSyncing = true
+        awaitingReplyUntil = Date().addingTimeInterval(Self.replyWindow)
         let message = ClipboardRequestMessage(sessionID: sessionID)
         guard let envelope = try? DataChannelEnvelope.clipboardRequest(message) else {
             isSyncing = false
@@ -100,12 +111,17 @@ final class ClientClipboardSyncManager: ObservableObject {
     // MARK: - Session lifecycle
 
     func activate(sessionID: UUID, send: @escaping (DataChannelEnvelope) throws -> Void) {
+        // App Store edition is View Only: never sync the local clipboard to the host.
+        #if VAMP_APP_STORE
+        return
+        #endif
         self.sessionID = sessionID
         self.sendEnvelope = send
         lastSyncedText = nil
     }
 
     func deactivate() {
+        awaitingReplyUntil = nil
         sessionID = nil
         sendEnvelope = nil
         isSyncing = false

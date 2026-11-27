@@ -77,6 +77,16 @@ final class ConnectionSecurityTests: XCTestCase {
     func testTokenFromHexRejectsInvalidInput() {
         XCTAssertNil(ConnectionSecurity.tokenFromHex("zz"))
         XCTAssertNil(ConnectionSecurity.tokenFromHex("0"))  // odd length
+        XCTAssertNil(ConnectionSecurity.tokenFromHex("+1"), "UInt8(radix:) accepts a sign; a token must not")
+        XCTAssertNil(ConnectionSecurity.tokenFromHex("-1"))
+    }
+
+    func testSecureRandomBytesAreFreshAndTheRequestedLength() {
+        let first = ConnectionSecurity.secureRandomBytes(count: 32)
+        let second = ConnectionSecurity.secureRandomBytes(count: 32)
+        XCTAssertEqual(first.count, 32)
+        XCTAssertNotEqual(first, second)
+        XCTAssertNotEqual(first, [UInt8](repeating: 0, count: 32))
     }
 
     func testTokenFromHexAcceptsEmptyString() {
@@ -111,6 +121,61 @@ final class RateLimiterTests: XCTestCase {
         }
         XCTAssertFalse(limiter.shouldAllow(ip: "192.168.1.1"))
     }
+
+    func testResetAllowsAHealthyPeerToReconnect() {
+        let limiter = ConnectionSecurity.ConnectionRateLimiter(maxAttempts: 2, windowSeconds: 60)
+        XCTAssertTrue(limiter.shouldAllow(ip: "192.168.1.20"))
+        XCTAssertTrue(limiter.shouldAllow(ip: "192.168.1.20"))
+        XCTAssertFalse(limiter.shouldAllow(ip: "192.168.1.20"))
+
+        // A valid signaling message authenticates the peer; the next reconnect
+        // should start a fresh attempt window instead of inheriting stale sockets.
+        limiter.reset(ip: "192.168.1.20")
+        XCTAssertTrue(limiter.shouldAllow(ip: "192.168.1.20"))
+    }
+
+    /// A legitimate client reconnect sweep is: up to 3 `reconnectLast` attempts × several
+    /// candidate endpoints (LAN + Tailscale) × possibly a TLS socket and a plaintext one.
+    /// The signaling budget must survive that without refusing the peer at TCP accept — a
+    /// refusal there is unrecoverable, because nothing the client sends afterwards can be
+    /// read on a socket that was never accepted.
+    func testSignalingBudgetSurvivesAClientReconnectSweep() {
+        let service = BonjourSignalingService()
+        let ip = "192.168.1.50"
+        // Worst realistic case: 3 attempts × 3 candidates × 2 sockets.
+        for _ in 0..<(3 * 3 * 2) {
+            XCTAssertTrue(service.rateLimiter.shouldAllow(ip: ip),
+                "reconnect sweep must not exhaust the connection budget")
+        }
+        // The limiter must still engage — it is a budget, not a removal.
+        for _ in 0..<64 {
+            if !service.rateLimiter.shouldAllow(ip: ip) { return }
+        }
+        XCTFail("Rate limiter never engaged for a flooding peer")
+    }
+
+    /// Clearing a peer's connection budget on signature verification alone would let anyone
+    /// with a self-generated keypair erase its own flood budget forever. The budget may only
+    /// be cleared for a fingerprint the host's trust gate has actually approved.
+    func testOnlyApprovedPeersAreRecognizedAsTrusted() {
+        let service = BonjourSignalingService()
+        let approved = "9da6f17697544096c21c4b52047b69c2d64606e80ab910234f4be02f4a026372"
+
+        XCTAssertFalse(service.isTrustedPeer(approved), "unknown peer is not trusted yet")
+        XCTAssertFalse(service.isTrustedPeer(nil))
+        XCTAssertFalse(service.isTrustedPeer(""), "empty fingerprint is never trusted")
+        XCTAssertFalse(service.isTrustedPeer("not-a-fingerprint"))
+
+        service.noteTrustedPeer(fingerprint: approved)
+        XCTAssertTrue(service.isTrustedPeer(approved))
+        // Normalization must be forgiving: the wire value's case/whitespace varies.
+        XCTAssertTrue(service.isTrustedPeer(approved.uppercased()))
+        XCTAssertTrue(service.isTrustedPeer("  \(approved)  "))
+
+        service.noteTrustedPeer(fingerprint: "")
+        service.noteTrustedPeer(fingerprint: "   ")
+        XCTAssertTrue(service.isTrustedPeer(approved), "blank fingerprints must not evict trust")
+    }
 }
 
 // MARK: - Input Validation Security Tests
@@ -141,6 +206,16 @@ final class InputValidationSecurityTests: XCTestCase {
         let cmd = KeyCommand(keyCode: 53, action: .down, modifiers: [.command, .option])
         let rejection = InputCommandValidation.validateContent(.key(cmd))
         XCTAssertNotNil(rejection, "Cmd+Option+Esc should be blocked")
+    }
+
+    func testBlocksImmediateLogoutAndForceQuitChords() {
+        for keyCode: UInt16 in [12, 53] {
+            let cmd = KeyCommand(keyCode: keyCode, action: .down, modifiers: [.command, .option, .shift])
+            XCTAssertNotNil(InputCommandValidation.validateContent(.key(cmd)), "Cmd+Option+Shift+\(keyCode) should be blocked")
+        }
+        // An ordinary shortcut with the same modifiers still works.
+        let allowed = KeyCommand(keyCode: 0, action: .down, modifiers: [.command, .option, .shift])
+        XCTAssertNil(InputCommandValidation.validateContent(.key(allowed)))
     }
 
     func testBlocksCtrlCmdQ() {

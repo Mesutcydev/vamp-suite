@@ -175,11 +175,15 @@ public final class ScreenCaptureEngine: NSObject, CaptureEngineProtocol, @unchec
                 throw CaptureEngineError.displayNotFound(displayID)
             }
 
+            // `SCDisplay.width/height` are in points. Size the surface in backing pixels, from
+            // the same scale the display layout hands the encoder, or a Retina display is
+            // captured at half resolution.
+            let scale = CoreGraphicsDisplayLayoutProvider.backingScale(of: scDisplay.displayID)
             var config = CaptureConfiguration.forPreset(
                 qualityPreset,
-                displayWidth: scDisplay.width,
-                displayHeight: scDisplay.height,
-                scaleFactor: Double(scDisplay.width) / max(1, Double(scDisplay.frame.width)),
+                displayWidth: CoreGraphicsDisplayLayoutProvider.backingPixels(points: Double(scDisplay.width), scale: scale),
+                displayHeight: CoreGraphicsDisplayLayoutProvider.backingPixels(points: Double(scDisplay.height), scale: scale),
+                scaleFactor: scale,
                 allowsHighResolution: allowsHighResolution
             )
             config.showsCursor = withLock { _showsCursor }
@@ -258,7 +262,8 @@ public final class ScreenCaptureEngine: NSObject, CaptureEngineProtocol, @unchec
                 displayWidth: pixelWidth,
                 displayHeight: pixelHeight,
                 scaleFactor: Double(pixelScale),
-                allowsHighResolution: allowsHighResolution
+                allowsHighResolution: allowsHighResolution,
+                minLongEdge: StreamScaling.windowPerformanceMinLongEdge
             )
             config.showsCursor = withLock { _showsCursor }
             logger.info("Starting window capture: \(config.summaryDescription, privacy: .public)")

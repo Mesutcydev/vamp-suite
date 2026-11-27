@@ -337,6 +337,12 @@ actor HostFileTransferManager {
             await sendResponse(rejectEnvelope(reason: "Choose a save folder in Vamp Host settings first.", offer: offer))
             return
         }
+        // Refuse a file that would fill the disk (a full startup volume breaks more than the transfer).
+        if let free = Self.availableCapacity(at: scopedDirectory.url),
+           offer.fileSize > free - Self.freeSpaceReserveBytes {
+            await sendResponse(rejectEnvelope(reason: "Not enough free space on this Mac.", offer: offer))
+            return
+        }
 
         let sanitizedName = sanitizeFileName(offer.sanitizedFileName.isEmpty ? offer.fileName : offer.sanitizedFileName)
         let prompt = HostIncomingTransferPrompt(
@@ -674,6 +680,7 @@ actor HostFileTransferManager {
         do {
             try state.fileHandle.close()
             try FileManager.default.moveItem(at: state.tempURL, to: state.finalURL)
+            Self.markQuarantined(state.finalURL)
             state.timeoutTask?.cancel()
             activeTransfers[complete.transferID] = nil
             if state.destinationDirectory.stopAccessing {
@@ -891,6 +898,29 @@ actor HostFileTransferManager {
 
     private func sanitizeFileName(_ fileName: String) -> String {
         FileTransferSanitizer.sanitizeFileName(fileName)
+    }
+
+    static let freeSpaceReserveBytes: Int64 = 512 * 1024 * 1024
+
+    static func availableCapacity(at url: URL) -> Int64? {
+        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        return values?.volumeAvailableCapacityForImportantUsage
+    }
+
+    /// A file a remote device sends is a download. Quarantine makes Gatekeeper assess anything
+    /// executable the first time the user opens it, exactly as for a browser download, and it
+    /// changes nothing else about the file.
+    static func markQuarantined(_ url: URL) {
+        #if os(macOS)
+        var target = url
+        var values = URLResourceValues()
+        values.quarantineProperties = [
+            "LSQuarantineType": "LSQuarantineTypeOtherDownload",
+            "LSQuarantineAgentBundleIdentifier": Bundle.main.bundleIdentifier ?? "com.mesutcy.remotedesktop.host",
+            "LSQuarantineTimeStamp": Date()
+        ]
+        try? target.setResourceValues(values)
+        #endif
     }
 
     private static func destinationDisplayName(for state: IncomingTransferState) -> String {

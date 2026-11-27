@@ -37,7 +37,27 @@ public final class BonjourSignalingService: @unchecked Sendable {
     // Host-side
     private var listener: NWListener?
     private var tlsListener: NWListener?
-    private var serverConnection: NWConnection?
+    private var serverConnection: NWConnection? {
+        didSet { if serverConnection !== oldValue { liveConnectionSenderFingerprint = nil } }
+    }
+    /// Key fingerprint of the last verified sender on the live connection. The live connection
+    /// is protected from newcomers only when this is a peer the trust gate has approved
+    /// (`isLiveConnectionProtected`); a signature alone proves nothing, anyone can make a key.
+    private var liveConnectionSenderFingerprint: String?
+    /// A newcomer that arrived while a live connection exists. It replaces that connection only
+    /// after a verified message from it (see promoteParkedConnection).
+    private var pendingServerConnection: NWConnection?
+    private var verifiedMessageCounts: [ObjectIdentifier: Int] = [:]
+    private static let maxVerifiedMessagesPerConnection = 48
+    /// The parked connection has asked for the host key bundle. Its device may now be showing
+    /// its user the fingerprint prompt, which takes longer than `parkedConnectionTimeout`, so it
+    /// is no longer dropped as unproven. It still cannot take over until it sends something
+    /// else, and a newer connection still replaces it.
+    // ponytail: no upper bound once it has asked (one socket, displaced by any newcomer). Add a
+    // ceiling if parked sockets ever need accounting.
+    private var parkedConnectionAskedForKey = false
+    /// How long a parked connection may stay silent. Internal so tests need not wait it out.
+    var parkedConnectionTimeout: TimeInterval = 10
 
     // Client-side
     private var clientConnection: NWConnection?
@@ -62,11 +82,51 @@ public final class BonjourSignalingService: @unchecked Sendable {
     /// The connection PIN used to derive the TLS pre-shared key.
     public var connectionPIN: String?
     /// Rate limiter for incoming connections.
-    public let rateLimiter = ConnectionSecurity.ConnectionRateLimiter(maxAttempts: 5, windowSeconds: 60)
+    ///
+    /// The budget must accommodate a legitimate client reconnect sweep: `reconnectLast` retries up
+    /// to three times, each sweep can try several candidate endpoints (LAN + Tailscale), and a
+    /// TLS-capable host may see a TLS socket and a plaintext one per attempt. A tighter limit let a
+    /// client's own failed attempts exhaust the window, after which every reconnect is refused at
+    /// TCP accept — before the client can send anything that would identify it as trusted. That is
+    /// an unrecoverable lockout, not rate limiting.
+    public let rateLimiter = ConnectionSecurity.ConnectionRateLimiter(maxAttempts: 30, windowSeconds: 60)
     /// Local identity key used to sign outgoing signaling messages.
     public var identityService: CryptoIdentityService?
     /// Reject unsigned signaling messages by default.
     public var enforceSignedMessages: Bool = true
+
+    /// Fingerprints of peers this host has *approved* through the trust gate.
+    ///
+    /// A verified signature only proves the sender owns the key it signed with — anyone can
+    /// generate a keypair. Clearing a peer's connection budget on signature verification alone
+    /// would let an unauthenticated peer erase its own flood budget indefinitely and defeat the
+    /// rate limiter. The budget is therefore only cleared for a fingerprint the user has actually
+    /// trusted, which is what a reconnecting client is.
+    private var trustedPeerFingerprints: Set<String> = []
+    private let maxTrustedFingerprints = 256
+
+    /// Record a peer the trust gate has approved, so its later reconnects are not blocked by the
+    /// sockets its own failed attempts consumed.
+    public func noteTrustedPeer(fingerprint: String) {
+        let normalized = fingerprint.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        guard !trustedPeerFingerprints.contains(normalized) else { return }
+        if trustedPeerFingerprints.count >= maxTrustedFingerprints {
+            trustedPeerFingerprints.removeAll()
+        }
+        trustedPeerFingerprints.insert(normalized)
+    }
+
+    /// Internal (not private) so the trust-gated budget clearing is unit-testable, matching
+    /// `shouldAcceptMessage` above.
+    func isTrustedPeer(_ fingerprint: String?) -> Bool {
+        guard let fingerprint else { return false }
+        let normalized = fingerprint.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return lock.withLock { trustedPeerFingerprints.contains(normalized) }
+    }
 
     /// The TLS listener is deliberately exposed as state rather than inferred from
     /// the host fingerprint. A fingerprint can exist while the TLS socket failed to
@@ -76,6 +136,7 @@ public final class BonjourSignalingService: @unchecked Sendable {
     }
     /// Recently seen signaling envelope IDs for replay protection.
     private var seenEnvelopeIDs: [UUID: Date] = [:]
+    private static let maxReplayCacheEntries = 20_000
     private let maxSignalingMessageBytes = 16 * 1024
     private let replayWindowSeconds: TimeInterval = 30
     private let clockSkewAllowanceSeconds: TimeInterval = 30
@@ -235,22 +296,43 @@ public final class BonjourSignalingService: @unchecked Sendable {
         }
 
         lock.lock()
-        if let existing = serverConnection {
-            // Replace the previous connection so fast reconnect attempts are accepted,
-            // even if the old socket still appears ready for a short period.
-            existing.cancel()
-            serverConnection = nil
+        if isLiveConnectionProtected {
+            // An approved device's live connection is kept until this one proves itself with a
+            // verified message. Any TCP connect used to cancel it, so a port probe or a stray
+            // socket could break a session's signaling. A parked connection that never speaks is
+            // dropped after 10 s.
+            //
+            // Only an approved device gets this. If any ready socket did, two idle sockets from
+            // a peer nobody approved (one live, one parked) would turn every other device away.
+            if pendingServerConnection != nil {
+                // One parked newcomer at a time. Cancelling the parked one let any TCP prober cut
+                // off a device in the middle of pairing; the newcomer waits its turn instead.
+                lock.unlock()
+                conn.cancel()
+                return
+            }
+            pendingServerConnection = conn
+            parkedConnectionAskedForKey = false
+            let timeout = parkedConnectionTimeout
+            lock.unlock()
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
+                self?.dropParkedConnectionIfStillUnproven(conn)
+            }
+        } else {
+            // Replace a stale or unready connection so fast reconnect attempts are accepted, and
+            // equally a ready one whose device has not been approved: the latest connection wins.
+            serverConnection?.cancel()
+            serverConnection = conn
+            _isConnected = true
+            lock.unlock()
         }
-        serverConnection = conn
-        _isConnected = true
-        lock.unlock()
 
         conn.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             switch state {
             case .ready:
                 self.logger.info("Signaling client connected")
-                self.startReceiving(on: conn)
+                self.startReceiving(on: conn, remoteIP: remoteIP)
             case .failed(let error):
                 self.logger.error("Signaling connection failed: \(error.localizedDescription)")
                 // Don't finish the message continuation here — the listener
@@ -261,6 +343,8 @@ public final class BonjourSignalingService: @unchecked Sendable {
                     self.serverConnection = nil
                     self._isConnected = false
                 }
+                if self.pendingServerConnection === conn { self.pendingServerConnection = nil }
+                self.verifiedMessageCounts[ObjectIdentifier(conn)] = nil
                 self.lock.unlock()
             case .cancelled:
                 self.lock.lock()
@@ -268,6 +352,8 @@ public final class BonjourSignalingService: @unchecked Sendable {
                     self.serverConnection = nil
                     self._isConnected = false
                 }
+                if self.pendingServerConnection === conn { self.pendingServerConnection = nil }
+                self.verifiedMessageCounts[ObjectIdentifier(conn)] = nil
                 self.lock.unlock()
             default:
                 break
@@ -343,8 +429,8 @@ public final class BonjourSignalingService: @unchecked Sendable {
 
     // MARK: - Receive
 
-    private func startReceiving(on conn: NWConnection) {
-        readLengthPrefixedMessage(on: conn)
+    private func startReceiving(on conn: NWConnection, remoteIP: String? = nil) {
+        readLengthPrefixedMessage(on: conn, remoteIP: remoteIP)
     }
 
     private func storeClientConnection(_ connection: NWConnection) {
@@ -359,7 +445,7 @@ public final class BonjourSignalingService: @unchecked Sendable {
         lock.unlock()
     }
 
-    private func readLengthPrefixedMessage(on conn: NWConnection) {
+    private func readLengthPrefixedMessage(on conn: NWConnection, remoteIP: String? = nil) {
         // Read 4-byte length header
         conn.receive(minimumIncompleteLength: 4, maximumLength: 4) { [weak self] data, _, _, error in
             guard let self else { return }
@@ -387,7 +473,7 @@ public final class BonjourSignalingService: @unchecked Sendable {
 
             guard payloadLen > 0, payloadLen <= self.maxSignalingMessageBytes else {
                 self.logger.error("Invalid signaling message length: \(payloadLen)")
-                self.readLengthPrefixedMessage(on: conn)
+                self.readLengthPrefixedMessage(on: conn, remoteIP: remoteIP)
                 return
             }
 
@@ -414,17 +500,39 @@ public final class BonjourSignalingService: @unchecked Sendable {
                             self.logger.warning("Rejected signaling message due to signature verification failure")
                         } else if !self.shouldAcceptMessage(normalizedMessage) {
                             self.logger.warning("Rejected signaling message due to replay/timestamp validation")
+                        } else if !self.admitVerifiedMessage(on: conn) {
+                            self.logger.warning("Signaling connection exceeded its message allowance; closing it")
+                            conn.cancel()
                         } else {
-                            self.lock.lock()
-                            if let continuation = self.messageContinuation {
-                                self.lock.unlock()
-                                continuation.yield(normalizedMessage)
+                            // Clear this peer's connection budget only once the host has
+                            // actually trusted it. A healthy client's reconnect attempts must
+                            // not be permanently blocked by the sockets its own earlier
+                            // failed attempts consumed — but a merely *self-signed* peer must
+                            // not be able to erase its flood budget (see noteTrustedPeer).
+                            if let remoteIP, self.isTrustedPeer(normalizedMessage.envelope.sender.publicKeyFingerprint) {
+                                self.rateLimiter.reset(ip: remoteIP)
+                            }
+                            // A key request only asks for public keys, so it must not take over the live
+                            // connection. Anything else, once verified, does.
+                            if case .hostKeyRequest(let request) = normalizedMessage.envelope.event {
+                                // Answered here, never queued for the coordinator.
+                                self.answerHostKeyRequest(request, envelope: normalizedMessage.envelope, on: conn)
                             } else {
-                                // No consumer yet — buffer (don't drop) so an offer/answer that beats
-                                // the subscriber isn't lost. Capped so a flood can't grow unbounded.
-                                self.pendingMessages.append(normalizedMessage)
-                                if self.pendingMessages.count > 32 { self.pendingMessages.removeFirst() }
-                                self.lock.unlock()
+                                self.promoteParkedConnection(conn)
+                                self.lock.lock()
+                                if self.serverConnection === conn {
+                                    self.liveConnectionSenderFingerprint = normalizedMessage.envelope.sender.publicKeyFingerprint
+                                }
+                                if let continuation = self.messageContinuation {
+                                    self.lock.unlock()
+                                    continuation.yield(normalizedMessage)
+                                } else {
+                                    // No consumer yet — buffer (don't drop) so an offer/answer that beats
+                                    // the subscriber isn't lost. Capped so a flood can't grow unbounded.
+                                    self.pendingMessages.append(normalizedMessage)
+                                    if self.pendingMessages.count > 32 { self.pendingMessages.removeFirst() }
+                                    self.lock.unlock()
+                                }
                             }
                         }
                     } catch {
@@ -438,11 +546,11 @@ public final class BonjourSignalingService: @unchecked Sendable {
                     // the connection is viable; if it's actually down, stop and let the state handler
                     // drive reconnection (avoids a tight error loop on a cancelled/failed connection).
                     if conn.state == .ready {
-                        self.readLengthPrefixedMessage(on: conn)
+                        self.readLengthPrefixedMessage(on: conn, remoteIP: remoteIP)
                     }
                     return
                 }
-                self.readLengthPrefixedMessage(on: conn)
+                self.readLengthPrefixedMessage(on: conn, remoteIP: remoteIP)
             }
         }
     }
@@ -457,13 +565,7 @@ public final class BonjourSignalingService: @unchecked Sendable {
         guard let conn = activeConnection, conn.state == .ready else {
             throw SignalingError.notConnected
         }
-        // Length-prefix the data
-        var header = Data(capacity: 4)
-        var lenBE = UInt32(data.count).bigEndian
-        withUnsafeBytes(of: &lenBE) { header.append(contentsOf: $0) }
-        var frame = header
-        frame.append(data)
-
+        let frame = Self.lengthPrefixed(data)
         return try await withCheckedThrowingContinuation { continuation in
             conn.send(content: frame, completion: .contentProcessed { error in
                 if let error {
@@ -475,6 +577,92 @@ public final class BonjourSignalingService: @unchecked Sendable {
         }
     }
 
+    private static func lengthPrefixed(_ data: Data) -> Data {
+        var frame = Data(capacity: 4 + data.count)
+        var lenBE = UInt32(data.count).bigEndian
+        withUnsafeBytes(of: &lenBE) { frame.append(contentsOf: $0) }
+        frame.append(data)
+        return frame
+    }
+
+    /// A connection gets a fixed number of verified messages (a key request, an offer, its ICE
+    /// candidates). A legitimate client needs far fewer. Without the limit one socket could fill
+    /// the replay cache and refuse everyone else until entries aged out.
+    private func admitVerifiedMessage(on conn: NWConnection) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let key = ObjectIdentifier(conn)
+        let count = (verifiedMessageCounts[key] ?? 0) + 1
+        verifiedMessageCounts[key] = count
+        return count <= Self.maxVerifiedMessagesPerConnection
+    }
+
+    /// Call with `lock` held. True while the live connection is ready and its last verified
+    /// sender is a peer the trust gate approved in this process (see `noteTrustedPeer`).
+    private var isLiveConnectionProtected: Bool {
+        guard let live = serverConnection, live.state == .ready,
+              let fingerprint = liveConnectionSenderFingerprint else { return false }
+        return trustedPeerFingerprints.contains(fingerprint)
+    }
+
+    /// Makes a parked connection the live one once it has sent a verified message. Replies go
+    /// over the live connection, so promotion must happen before the message is handled.
+    private func promoteParkedConnection(_ conn: NWConnection) {
+        lock.lock()
+        guard pendingServerConnection === conn else {
+            lock.unlock()
+            return
+        }
+        pendingServerConnection = nil
+        let previous = serverConnection
+        serverConnection = conn
+        _isConnected = true
+        lock.unlock()
+        previous?.cancel()
+    }
+
+    private func dropParkedConnectionIfStillUnproven(_ conn: NWConnection) {
+        lock.lock()
+        guard pendingServerConnection === conn, !parkedConnectionAskedForKey else {
+            lock.unlock()
+            return
+        }
+        pendingServerConnection = nil
+        lock.unlock()
+        conn.cancel()
+    }
+
+    /// Host role only: prove which key-agreement key belongs to this identity,
+    /// on the connection that asked. Answered here rather than in the session
+    /// coordinator because its message loop waits on the trust prompt for up
+    /// to a minute; a second device asking meanwhile would time out and take
+    /// this host for one that predates the exchange. The bundle holds public
+    /// keys only, so answering before the trust gate reveals nothing secret.
+    private func answerHostKeyRequest(_ request: HostKeyRequestMessage, envelope: SignalingEnvelope, on conn: NWConnection) {
+        let isAcceptedConnection = lock.withLock { conn !== clientConnection }
+        guard isAcceptedConnection, envelope.sender.role == .client else { return }
+        guard let bundle = makeHostKeyBundle(nonce: request.nonce),
+              let signed = try? signMessageIfNeeded(VersionedSignalingMessage(envelope: SignalingEnvelope(
+                  protocolVersion: 1,
+                  sessionID: envelope.sessionID,
+                  sender: localPeer ?? SignalingPeer(id: UUID(), role: .host),
+                  recipient: envelope.sender,
+                  event: .hostKeyBundle(bundle)
+              ))),
+              let data = try? coder.encode(signed) else {
+            logger.warning("Could not answer a host key request")
+            return
+        }
+        lock.withLock { if pendingServerConnection === conn { parkedConnectionAskedForKey = true } }
+        conn.send(content: Self.lengthPrefixed(data), completion: .contentProcessed { _ in })
+    }
+
+    /// Internal (not private) so the bundle this host hands out is unit-testable.
+    func makeHostKeyBundle(nonce: Data) -> SignedHostKeyBundle? {
+        guard let identityService else { return nil }
+        return SessionTokenSealing.makeKeyBundle(signingKey: identityService.privateKey, nonce: nonce)
+    }
+
     // MARK: - Stop
 
     public func stopListening() {
@@ -482,6 +670,8 @@ public final class BonjourSignalingService: @unchecked Sendable {
         let l = listener
         let tls = tlsListener
         let sc = serverConnection
+        let parked = pendingServerConnection
+        pendingServerConnection = nil
         listener = nil
         tlsListener = nil
         _tlsListeningPort = nil
@@ -490,6 +680,7 @@ public final class BonjourSignalingService: @unchecked Sendable {
         _isConnected = false
         lock.unlock()
         sc?.cancel()
+        parked?.cancel()
         l?.cancel()
         tls?.cancel()
         messageContinuation?.finish()
@@ -518,12 +709,15 @@ public final class BonjourSignalingService: @unchecked Sendable {
         lock.lock()
         let sc = serverConnection
         let cc = clientConnection
+        let parked = pendingServerConnection
+        pendingServerConnection = nil
         serverConnection = nil
         clientConnection = nil
         _isConnected = false
         lock.unlock()
         sc?.cancel()
         cc?.cancel()
+        parked?.cancel()
     }
 
     public var isConnected: Bool {
@@ -542,11 +736,10 @@ public final class BonjourSignalingService: @unchecked Sendable {
         // `replayWindowSeconds` alone left a replay gap for future-dated IDs.
         let oldestAllowed = now.addingTimeInterval(-(replayWindowSeconds + clockSkewAllowanceSeconds))
         seenEnvelopeIDs = seenEnvelopeIDs.filter { $0.value >= oldestAllowed }
-        if seenEnvelopeIDs.count > 500 {
-            let overflow = seenEnvelopeIDs.count - 500
-            let oldest = seenEnvelopeIDs.sorted { $0.value < $1.value }.prefix(overflow)
-            for entry in oldest { seenEnvelopeIDs.removeValue(forKey: entry.key) }
-        }
+        // Entries still inside the window are never evicted: dropping one let its envelope be
+        // replayed. A cap bounds memory instead, and past it new envelopes are refused until old
+        // ones age out (fail closed).
+        guard seenEnvelopeIDs.count < Self.maxReplayCacheEntries else { return false }
 
         let envelope = message.envelope
         if seenEnvelopeIDs[envelope.id] != nil {

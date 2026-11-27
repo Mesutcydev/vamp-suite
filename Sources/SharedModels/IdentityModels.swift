@@ -6,6 +6,18 @@ public enum PublicKeyFingerprint {
         let validCharacters = CharacterSet(charactersIn: "0123456789abcdef")
         return value.unicodeScalars.allSatisfy { validCharacters.contains($0) }
     }
+
+    /// Display form shared with Vamp Sync's panel: blocks of 8, four per line, so two
+    /// fingerprints read identically side by side.
+    public static func grouped(_ value: String) -> String {
+        let characters = Array(value)
+        let blocks = stride(from: 0, to: characters.count, by: 8).map {
+            String(characters[$0..<min($0 + 8, characters.count)])
+        }
+        return stride(from: 0, to: blocks.count, by: 4).map {
+            blocks[$0..<min($0 + 4, blocks.count)].joined(separator: " ")
+        }.joined(separator: "\n")
+    }
 }
 
 public struct HostIdentity: Identifiable, Codable, Hashable, Sendable {
