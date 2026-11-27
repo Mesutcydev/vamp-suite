@@ -29,7 +29,11 @@ hosted relay.
 | **Vamp Control** | Mac, iPhone, or iPad | Mac-to-Mac access or the Control interface on mobile |
 | **Vamp Stream** | iPhone or iPad | A focused app-window experience on your phone or tablet |
 
-Both clients connect to Sync and control a selected Mac app window. Use a trusted
+Both clients connect to Sync and control a selected Mac app window. App Stream
+1.0 build 9 also accepts Vamp Companion pairing QR codes on port 9675 and its
+fallback ports; Assistant pairing on 9575 and its fallback ports remains supported.
+This build is available to the existing Internal Testers group through TestFlight;
+there is no public TestFlight invitation or public iOS download yet. Use a trusted
 LAN or private Tailscale network, scan Sync’s QR, compare the complete device
 fingerprint, and approve the verified device on the Mac.
 
@@ -50,10 +54,19 @@ local or BYOK chat, Code workspaces, and specialist tools. Its features include:
 on your Mac, then add its mobile companion if needed. It does not require Sync. Assistant lives in the separate
 [vamp-assistant repository](https://github.com/Mesutcydev/vamp-assistant).
 
+### Optional: Vamp Companion
+
+[Vamp Companion](https://thevamp.app/companion/) is a compact Mac host for an
+iPhone-first assistant. Use the existing Vamp Assistant iOS app for sessions,
+tools, bots, and approvals; manage local models, API providers, pairing, and
+settings on Mac. Requires Apple Silicon and macOS 15+. Its data and signed
+update channel are separate from Assistant. Source and notarized downloads live
+in [vamp-companion](https://github.com/Mesutcydev/vamp-companion).
+
 <details>
 <summary>Other tools and compatibility</summary>
 
-**Vamp Sync and Vamp Assistant are the current host products.** Vamp Host, Vamp
+**Vamp Sync, Vamp Assistant, and Vamp Companion are the current host products.** Vamp Host, Vamp
 Terminal Host, and Vamp Linux Host are discontinued. Their historical source
 and build targets remain for compatibility and shared-source verification;
 new packages are no longer produced. Vamp Terminal documentation describes

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Vamp Control macOS</title>
+        <item>
+            <title>2.0.0</title>
+            <pubDate>Fri, 27 Nov 2026 18:04:08 +0300</pubDate>
+            <link>https://thevamp.app/control/</link>
+            <sparkle:version>74</sparkle:version>
+            <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-74/VampControl-macOS-2.0.0-build-74-notarized.dmg" length="12968001" type="application/octet-stream" sparkle:edSignature="CwRxOwz24x5CYh9TDNzNYv9jhnxgWK4EnVCsUZWW7Y4GnK8bIInGh5g/2rNQsx7JYaOT7vVtbUQME4KmpRTDDA=="></enclosure>
+        </item>
+        <item>
+            <title>2.0.0</title>
+            <pubDate>Fri, 27 Nov 2026 16:58:01 +0300</pubDate>
+            <link>https://thevamp.app/control/</link>
+            <sparkle:version>73</sparkle:version>
+            <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-73/VampControl-macOS-2.0.0-build-73-notarized.dmg" length="12868224" type="application/octet-stream" sparkle:edSignature="8kve7IiHstgs0r5/pV5gY5qSxghEh80aM5N3UbEqycYEAzFCoaruUauKAXTayOFGgzUZwBJ86QsRkbBEx4GICA=="></enclosure>
+        </item>
+            <item>
+            <title>2.0.0</title>
+            <pubDate>Sat, 21 Nov 2026 08:31:23 +0300</pubDate>
+            <link>https://thevamp.app/control/</link>
+            <sparkle:version>70</sparkle:version>
+            <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-70/VampControl-macOS-2.0.0-build-70-notarized.dmg" length="12651038" type="application/octet-stream" sparkle:edSignature="Hd0JpJBKFxBGhKkPexoRTXOOO982Rwr+og8q9cw50Ez+uRkNH5mkQs6cV+Unves45OORwLJTFsysf7khXNUMBg=="/>
+        </item>
+<item>
+            <title>2.0.0</title>
+            <pubDate>Fri, 20 Nov 2026 18:38:19 +0300</pubDate>
+            <link>https://thevamp.app/control/</link>
+            <sparkle:version>68</sparkle:version>
+            <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-68/VampControl-macOS-2.0.0-build-68-notarized.dmg" length="12550258" type="application/octet-stream" sparkle:edSignature="vjGLoid+KVz/IsglBx7DcyVveyVJUm7gpH/6ploR+rAfF6UQ3CW5npE4e6ubWuila/Buxn77nthkx/rJm+p1Ag=="></enclosure>
+        </item>
+        <item>
+            <title>2.0.0</title>
+            <pubDate>Wed, 18 Nov 2026 00:35:53 +0300</pubDate>
+            <link>https://thevamp.app/control/</link>
+            <sparkle:version>67</sparkle:version>
+            <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-67/VampControl-macOS-2.0.0-build-67-notarized.dmg" length="12549914" type="application/octet-stream" sparkle:edSignature="gQKI6H3wHY/SQPexertpMKBdDamqLQUeSJDV/O3MOMHkavkQkvWFS4ExCTg8akYzqUZnIavHLlyUHGsVEn5ICw=="></enclosure>
+        </item>
+        <item>
+            <title>2.0.0</title>
+            <pubDate>Tue, 17 Nov 2026 22:19:55 +0300</pubDate>
+            <link>https://thevamp.app/control/</link>
+            <sparkle:version>66</sparkle:version>
+            <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-66/VampControl-macOS-2.0.0-build-66-notarized.dmg" length="12548777" type="application/octet-stream" sparkle:edSignature="9xa/U9VuJPi4Kr4KFx2GjpkXtrdj4GP3FQff5fqCwTSQ+6QmVkfK1MsqIPCs7r1jEBdSKk/i86UUJBKt8wrSBw=="></enclosure>
+        </item>
+        <item>
+            <title>2.0.0</title>
+            <pubDate>Tue, 17 Nov 2026 22:01:34 +0300</pubDate>
+            <link>https://thevamp.app/control/</link>
+            <sparkle:version>65</sparkle:version>
+            <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-65/VampControl-macOS-2.0.0-build-65-notarized.dmg" length="12540116" type="application/octet-stream" sparkle:edSignature="ALaaIbmAUFZ4hUnJHdOljSOsnWWZSIBBqebmlrY2LB3uTPgSkE7/1KI5CuhDQ6G4ZYXMfe/zznMq8NABbhcbAA=="></enclosure>
+        </item>
+        <item>
+            <title>2.0.0</title>
+            <pubDate>Sun, 15 Nov 2026 14:53:15 +0300</pubDate>
+            <link>https://thevamp.app/control/</link>
+            <sparkle:version>64</sparkle:version>
+            <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-64/VampControl-macOS-2.0.0-build-64-notarized.dmg" length="12535685" type="application/octet-stream" sparkle:edSignature="Sp9BYqZRdACC9cTXNlREUsn8yfjTor8lIY9XzFMiGGgDbJYl0Je/bTz0KeZ1jtC2xFNJa4fzFbVlEZqVNrP7Bg=="></enclosure>
+        </item>
+        <item>
+            <title>4.0.0</title>
+            <pubDate>Sun, 15 Nov 2026 13:38:54 +0300</pubDate>
+            <link>https://thevamp.app/control/</link>
+            <sparkle:version>63</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-4.0.0-build-63/VampControl-macOS-4.0.0-build-63-notarized.dmg" length="12535671" type="application/octet-stream" sparkle:edSignature="CqW1aQmXJFI+hJUjpapRF1htfYOJqxSM3pN3rBRkQCu+jPmK1HxOhS1iesIVluXR7JyPm4vXaPjtQA8DNgVjBg=="></enclosure>
+        </item>
+    </channel>
+</rss><!-- sparkle-signatures:
+edSignature: ADdLH5eTS1780dCKFpI4u7ZZw1ejY6bAh6L92mUQNrrhpu0k5Z26nfqByM3GTFarGN3t3pA4vajtBAFMRmzSAw==
+length: 6984
+-->

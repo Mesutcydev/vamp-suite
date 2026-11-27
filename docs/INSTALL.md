@@ -1,82 +1,34 @@
-# Install Vamp
+# Install Vamp Sync and Vamp Control
 
-Start with [the current downloads](https://thevamp.app/#download). Install
-**Vamp Sync** on the Mac you want to reach, then **one client** on your other
-device. [Compare Control and Stream](https://thevamp.app/#families).
+Install **Vamp Sync** on the Mac you want to reach. Install **Vamp Control** on
+the Mac, iPhone, or iPad you’ll use to connect.
 
-## 1. Install Sync on your Mac
+## 1. Install Vamp Sync
 
-1. Download the Sync DMG and its `.sha256` file. The current direct build is for
-   Apple Silicon and macOS 13 or later.
-2. In the download directory, verify the file:
+1. Get the DMG and its SHA-256 checksum from the [download page](https://thevamp.app/#download).
+   The direct Sync build supports Intel and Apple Silicon Macs on macOS 13 or later.
+2. Run `shasum -a 256` on the DMG and compare the complete hash with the published checksum.
+3. Open the DMG, move **Vamp Sync** to Applications, and open it. If macOS
+   blocks a verified direct build, choose **Open Anyway** under
+   **System Settings → Privacy & Security**.
+4. Open Sync in the menu bar. Grant **Screen Recording** for video. The website
+   edition also needs **Accessibility** for keyboard and pointer control.
 
-   ```sh
-   shasum -a 256 -c VampSync-macOS-<version>-build-<number>-adhoc.dmg.sha256
-   ```
+## 2. Install Vamp Control
 
-3. Drag **Vamp Sync** to `/Applications` and open it. If macOS blocks the direct
-   build, use **System Settings → Privacy & Security → Open Anyway** after
-   verifying its source. Do not disable Gatekeeper globally.
-4. Open Sync in the menu bar. Grant **Screen Recording** for video and
-   **Accessibility** for keyboard and pointer control, using the app identity
-   shown by macOS. Refresh Sync’s permission status afterward.
+Choose your device under [Vamp Control](https://thevamp.app/#control).
 
-Run only one macOS host at a time. If you previously used a different Vamp host,
-quit it before starting Sync. Different hosts have separate device identities
-and trust stores; approve a new pairing only after verification.
+- **Mac** · Verify the download checksum, then move Vamp Control to
+  Applications. The direct build requires Apple Silicon and macOS 13 or later.
+- **iPhone or iPad** · When an IPA is available, follow the
+  [sideloading guide](IOS_SIDELOAD.md).
 
-## 2. Install one client
+## 3. Pair your devices
 
-| Your other device | Choose |
-| --- | --- |
-| Mac | **Vamp Control for macOS**, Apple Silicon, macOS 13+ |
-| iPhone or iPad | **Vamp Control** for the Control interface, or **Vamp Stream** for a focused app-window experience |
+1. Choose Local Wi-Fi or Tailscale in Vamp Sync. Use a trusted local network or
+   your private Tailscale network on both devices.
+2. Use the pairing QR code or link in Vamp Control.
+3. Compare the **complete device fingerprint** on both devices before approving
+   the request on the Mac. Then choose an app window in Vamp Control.
 
-For Control on Mac, download the ZIP and checksum, verify it, extract it, and
-move Vamp Control to `/Applications`. Follow the same first-launch process as
-Sync. For iOS, use the [sideloading guide](IOS_SIDELOAD.md); the IPAs must be
-re-signed before installation.
-
-## 3. Pair and open an app
-
-Use the same trusted LAN or a private Tailscale network. Open the client and
-scan Sync’s QR or use its pairing link. Compare the **complete device
-fingerprint** on both devices before approving on the Mac. Then choose a Mac
-app window. Both clients support Sync’s app-window connection.
-
-Keep host ports private; do not forward them to the public internet.
-
-## Optional: Vamp Assistant
-
-Assistant is an independent AI workspace with its own remote companions. It
-does not require Sync.
-
-1. Download the [Assistant Mac app](https://thevamp.app/assistant/#download)
-   and its checksum. It requires Apple Silicon and macOS 15+.
-2. Run `shasum -a 256 <download>.dmg` and compare the complete hash with the
-   downloaded `.sha256` file. Some Assistant releases provide only the hash,
-   without a filename, so `shasum -c` is not supported for those checksum files.
-3. Move Assistant to `/Applications`, open it, and choose a local model or add
-   your own provider key.
-4. If you want remote access, enable **Remote Sessions** and pair its iOS or
-   browser companion after verifying the displayed code or device identity.
-
-Stream can optionally connect directly to Assistant’s Remote Sessions for an
-app window or full display. That pairing is separate from Sync.
-
-## Build from source
-
-Use macOS, Xcode 26 or later, and XcodeGen:
-
-```sh
-scripts/package-vamp-stream-ios.sh --clean
-scripts/package-vamp-mini-host.sh --clean
-```
-
-Release packaging requires a clean Git tree. Add `--allow-dirty` only for a
-local development artifact. Outputs are written to `dist/VampStream/` and
-`dist/VampStreamHost/`.
-
-The Sync scheme and bundle ID retain `VampMiniHost` and
-`com.mesutcy.remotedesktop.host` for compatibility. The app name is Vamp Sync.
-Specialist Terminal and Linux instructions remain in their own guides.
+Run only one host on your Mac at a time. Keep host ports private.

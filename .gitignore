@@ -184,6 +184,7 @@ Configuration/*
 !Configuration/ClientiOS-AppStore.entitlements
 !Configuration/ClientiOSLiveActivity-Info.plist
 !Configuration/VampStream.entitlements
+!Configuration/VampStream-AppStore.entitlements
 !Configuration/VampMiniHost.entitlements
 !Configuration/VampMiniHost-Info.plist
 

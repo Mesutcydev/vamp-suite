@@ -7,7 +7,7 @@ This file is the operational contract for AI agents working with the Vamp suite.
 Vamp is an open-source remote desktop and app-streaming suite. Its active apps are
 Vamp Sync, Vamp Stream, and Vamp Control on macOS and iOS/iPadOS. They reuse the
 signed pairing, trust, Tailscale, and authenticated WebRTC stack in this
-repository. Vamp Assistant remains a separate compatibility endpoint. Vamp Host,
+repository. Vamp Assistant and Vamp Companion remain separate compatibility endpoints. Vamp Host,
 Vamp Terminal Host, Vamp Terminal, and Vamp Linux Host are discontinued;
 historical sources and identifiers remain for compatibility and shared-source
 verification. Do not package, reinstall, or advertise discontinued products.
@@ -22,6 +22,7 @@ verification. Do not package, reinstall, or advertise discontinued products.
 | Terminal client | `Vamp Terminal` — discontinued; Terminal Mode remains in Vamp Control |
 | App-stream client | `Vamp Stream` — focused iOS/iPadOS app-window streaming client |
 | Assistant compatibility | `Vamp Assistant` — separate compatibility endpoint on private port `9575` |
+| Companion compatibility | `Vamp Companion` — compact independent AI host for the existing Assistant iOS app on private port `9675` |
 | Browser client | Safari control on host loopback `9475`; also the Tailscale interface while Tailscale is up, never the LAN |
 | Full host bundle ID | `com.mesutcy.remotedesktop.host` |
 | Light host bundle ID | `com.mesutcy.remotedesktop.terminalhost` |
@@ -45,7 +46,8 @@ verification. Do not package, reinstall, or advertise discontinued products.
 | Mini URL scheme | `vampminihost://` |
 | License | Apache-2.0 |
 
-Run only one macOS host at a time. The historical Vamp Linux Host browser endpoint
+Run only one Sync or legacy WebRTC host at a time. Vamp Companion has its own
+port, data, and update channel and may run alongside Vamp Assistant. The historical Vamp Linux Host browser endpoint
 and Vamp Sync for Linux are separate implementations.
 
 The website iOS builds are unsigned device IPAs for AltStore-style re-signing. No

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import unittest
 import tempfile
 from unittest.mock import patch
@@ -12,38 +13,14 @@ SPEC.loader.exec_module(pages_release)
 
 
 class PagesReleaseSelectionTests(unittest.TestCase):
-    def test_assistant_platforms_are_selected_from_independent_releases(self):
-        releases = [
-            {
-                "tag_name": "v0.10.21", "published_at": "2026-08-20T10:00:00Z",
-                "html_url": "https://example.test/mac", "draft": False, "prerelease": False,
-                "assets": [{"name": "Vamp-Assistant-0.10.21.dmg", "updated_at": "2026-08-20T10:01:00Z"}],
-            },
-            {
-                "tag_name": "ios-v0.1.31", "published_at": "2026-08-24T10:00:00Z",
-                "html_url": "https://example.test/ios", "draft": False, "prerelease": False,
-                "assets": [{"name": "Vamp-Assistant-iOS-0.1.31-build-45-unsigned.ipa", "updated_at": "2026-08-24T10:01:00Z"}],
-            },
-        ]
-        mac_release, mac_asset = pages_release.choose_release_asset(
-            releases, pages_release.ASSISTANT_ASSET_PATTERNS["vamp-assistant-macos"]
-        )
-        ios_release, ios_asset = pages_release.choose_release_asset(
-            releases, pages_release.ASSISTANT_ASSET_PATTERNS["vamp-assistant-ios"]
-        )
-        self.assertEqual(mac_release["tag_name"], "v0.10.21")
-        self.assertEqual(mac_asset["name"], "Vamp-Assistant-0.10.21.dmg")
-        self.assertEqual(ios_release["tag_name"], "ios-v0.1.31")
-        self.assertIn("unsigned.ipa", ios_asset["name"])
-
     def test_drafts_and_prereleases_are_ignored(self):
         releases = [{
             "tag_name": "draft", "published_at": "2099-01-01T00:00:00Z",
             "html_url": "https://example.test/draft", "draft": True, "prerelease": False,
-            "assets": [{"name": "Vamp-Assistant-99.0.0.dmg", "updated_at": "2099-01-01T00:00:00Z"}],
+            "assets": [{"name": "VampSync-macOS-99.0.0-build-99-notarized.dmg", "updated_at": "2099-01-01T00:00:00Z"}],
         }]
         self.assertIsNone(pages_release.choose_release_asset(
-            releases, pages_release.ASSISTANT_ASSET_PATTERNS["vamp-assistant-macos"]
+            releases, pages_release.ASSET_PATTERNS["vamp-mini-host-dmg"]
         ))
 
 
@@ -72,11 +49,6 @@ class PagesReleaseSelectionTests(unittest.TestCase):
         dmg = "VampControl-macOS-2.3.0-build-55-adhoc.dmg"
         self.assertEqual(self.select([dmg.replace(".dmg", ".zip"), dmg], "vamp-control-macos"), dmg)
 
-    def test_control_mac_selects_notarized_release_and_prefers_it_for_same_build(self):
-        notarized = "VampControl-macOS-4.0.0-build-63-notarized.dmg"
-        adhoc = notarized.replace("-notarized", "-adhoc")
-        self.assertEqual(self.select([notarized, adhoc], "vamp-control-macos"), notarized)
-
     def test_sync_selects_notarized_release_and_prefers_it_for_same_build(self):
         signed = "VampSync-macOS-2.3.1-build-72-notarized.dmg"
         old = "VampSync-macOS-2.3.0-build-71-adhoc.dmg"
@@ -85,10 +57,67 @@ class PagesReleaseSelectionTests(unittest.TestCase):
         self.assertEqual(self.select([signed, adhoc], "vamp-mini-host-dmg"), signed)
 
     def test_product_need_not_be_in_latest_release(self):
-        desired = {"name": "VampStream-iOS-0.1.6-build-20-altstore-unsigned.ipa"}
+        desired = {"name": "VampControl-iOS-2.3.0-build-47-altstore-unsigned.ipa"}
         releases = [{"published_at": "2026-09-03", "assets": []},
                     {"published_at": "2026-09-02", "assets": [desired]}]
-        self.assertEqual(pages_release.choose_release_asset(releases, pages_release.ASSET_PATTERNS["vamp-stream-ios"])[1], desired)
+        self.assertEqual(pages_release.choose_release_asset(releases, pages_release.ASSET_PATTERNS["vamp-control-ios"])[1], desired)
+
+    def test_sync_only_refresh_preserves_other_products_when_ios_assets_are_missing(self):
+        key = "vamp-mini-host-dmg"
+        releases = [{"tag_name": "vamp-sync-2.3.1-build-72", "html_url": "https://example.test/release",
+                     "assets": [{"name": "VampSync-macOS-2.3.1-build-72-notarized.dmg",
+                                 "browser_download_url": "https://example.test/sync.dmg"}]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = Path(tmp)
+            other = {"url": "https://example.test/control.ipa", "label": "existing", "tag": "existing"}
+            payload = {"assets": {key: {}, "vamp-control-ios": other}}
+            (docs / "release.json").write_text(json.dumps(payload))
+            (docs / "index.html").write_text(f'<a data-release-link="{key}" href="old">Sync</a>')
+            with patch.object(pages_release, "fetch_releases", return_value=releases) as fetch:
+                self.assertEqual(pages_release.main(["--site-dir", str(docs), "--product", key]), 0)
+            fetch.assert_called_once_with(pages_release.REPOSITORY)
+            result = json.loads((docs / "release.json").read_text())
+            self.assertEqual(result["assets"]["vamp-control-ios"], other)
+            self.assertEqual(result["assets"][key]["label"], "2.3.1 · build 72")
+            self.assertIn('href="https://example.test/sync.dmg"', (docs / "index.html").read_text())
+
+    def test_product_refresh_still_requires_its_requested_asset(self):
+        with self.assertRaisesRegex(ValueError, "vamp-mini-host-dmg"):
+            pages_release.resolve_assets([], {"vamp-mini-host-dmg"})
+
+    def test_full_refresh_succeeds_without_ios_ipas_but_requires_mac_downloads(self):
+        def release(*names):
+            return [{"tag_name": "t", "html_url": "https://example.test/r",
+                     "assets": [{"name": n, "browser_download_url": f"https://example.test/{n}"} for n in names]}]
+        sync = "VampSync-macOS-4.0.0-build-80-notarized.dmg"
+        control = "VampControl-macOS-2.3.0-build-57-adhoc.dmg"
+        suite = release(sync, control, "VampStream-iOS-0.1.8-build-21-altstore-unsigned.ipa")
+        self.assertEqual(set(pages_release.resolve_assets(suite)), {"vamp-mini-host-dmg", "vamp-control-macos"})
+        with self.assertRaisesRegex(ValueError, "vamp-control-macos"):
+            pages_release.resolve_assets(release(sync))
+
+    def test_missing_optional_control_download_hides_stale_link_and_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "index.html"
+            path.write_text('<a data-release-link="vamp-control-ios" href="old">Download</a>'
+                            '<span data-release-version="vamp-control-ios">old version</span>')
+            pages_release.rewrite_static_links(path, {})
+            result = path.read_text()
+            self.assertIn('data-release-link="vamp-control-ios" hidden', result)
+            self.assertNotIn('href="old"', result)
+            self.assertNotIn('old version', result)
+            pages_release.rewrite_static_links(path, {"vamp-control-ios": {"url": "new", "label": "build 2"}})
+            result = path.read_text()
+            self.assertIn('data-release-link="vamp-control-ios" href="new"', result)
+            self.assertIn('>build 2</span>', result)
+
+    def test_retired_download_keys_are_left_unchanged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "index.html"
+            markup = '<a data-release-link="vamp-assistant-macos" href="old">Download</a>'
+            path.write_text(markup)
+            pages_release.rewrite_static_links(path, {"vamp-control-macos": {"url": "new"}})
+            self.assertEqual(path.read_text(), markup)
 
     def test_pagination_reads_beyond_first_hundred_releases(self):
         with patch.object(pages_release, "fetch_json", side_effect=[[{}] * 100, [{"tag_name": "older"}]]):

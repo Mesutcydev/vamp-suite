@@ -1,50 +1,23 @@
 # Vamp
 
-> Vamp Sync is the main Mac host for Vamp Control and Vamp Stream. Pair on a
-> trusted LAN or private Tailscale network. Every new device needs approval.
+> Install Vamp Sync on the Mac you want to reach. Connect with Vamp Control
+> from another Mac, iPhone, or iPad over a trusted LAN or private Tailscale network.
 
-Website: https://thevamp.app/
-Sync: https://thevamp.app/sync/
-Compare clients: https://thevamp.app/#families
-Downloads: https://thevamp.app/#download
-Control: https://thevamp.app/#control
-Stream: https://thevamp.app/stream/
-Assistant: https://thevamp.app/assistant/
-Suite source: https://github.com/Mesutcydev/vamp-suite
-Assistant source: https://github.com/Mesutcydev/vamp-assistant
-License: Apache-2.0
+- Website: https://thevamp.app/
+- Downloads: https://thevamp.app/#download
+- Vamp Sync: https://thevamp.app/sync/
+- Vamp Control: https://thevamp.app/#control
+- Source (Apache-2.0): https://github.com/Mesutcydev/vamp-suite
 
-## Products
+Vamp Sync is the macOS menu-bar host. Share a selected app window with a
+verified Vamp Control device over authenticated WebRTC. Screen Recording
+enables video. Keyboard and pointer control require the website edition of
+Sync and the user’s Accessibility approval. The Mac App Store edition of Sync
+shares existing app windows in view-only mode.
 
-- Vamp Sync: the macOS menu-bar host. Share a selected app window with a verified
-  Control or Stream client over authenticated WebRTC. Screen Recording enables
-  video; Accessibility enables keyboard and pointer control. The website edition
-  adds keyboard and pointer control, window resizing, app launch and close, and
-  optional Remote Unlock. The Mac App Store edition is View Only: it shares open
-  app windows and requests Screen Recording only, with no input, resizing, app
-  launch or close, Remote Unlock, or terminal commands.
-- Vamp Control: Mac, iPhone and iPad client. Connect to Sync to select and control
-  a Mac app window (website edition). The Mac App Store edition is View Only: no
-  input, remote unlock, terminal, file transfer, or clipboard sync to the host;
-  app-window streaming is allowed only over Wi-Fi or Ethernet, while viewing the
-  desktop over Tailscale is still allowed. Assistant has a separate authenticated
-  connection path.
-- Vamp Stream: focused iPhone/iPad client. Stream an app window through Sync,
-  or connect to Assistant through its private Remote Sessions endpoint.
-- Vamp Assistant: native macOS AI chat, local/BYOK models, Code workspaces,
-  specialist bots, and approval-gated automation. Includes its own iOS and
-  browser remote access. Runs independently; Sync is not required.
+Verify every new device’s complete fingerprint independently before approving
+it on the Mac. Keep host ports private. Vamp requires no hosted relay.
 
-Vamp Sync and Vamp Assistant are the only current hosts. Vamp Host, Vamp
-Terminal Host, and Vamp Linux Host are discontinued. Shared transport source
-and historical technical documentation remain available in the repository.
-
-Never expose host ports directly to the public internet. Verify a new peer’s
-complete fingerprint independently before approving it. macOS permissions
-must be granted by the user. No hosted relay is required.
-
-## Documentation
-
-- Install: https://thevamp.app/sync/#download
+- Install: https://github.com/Mesutcydev/vamp-suite/blob/main/docs/INSTALL.md
 - iOS sideloading: https://github.com/Mesutcydev/vamp-suite/blob/main/docs/IOS_SIDELOAD.md
 - Security: https://github.com/Mesutcydev/vamp-suite/blob/main/SECURITY.md

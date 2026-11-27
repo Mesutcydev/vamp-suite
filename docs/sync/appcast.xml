@@ -1,15 +1,330 @@
-<?xml version="1.0" standalone="yes"?>
-<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>Vamp Sync</title>
         <item>
-            <title>2.3.1</title>
-            <pubDate>Thu, 01 Oct 2026 19:43:45 +0300</pubDate>
+            <title>4.0.0</title>
+            <pubDate>Fri, 27 Nov 2026 18:20:05 +0300</pubDate>
             <link>https://thevamp.app/sync/</link>
-            <sparkle:version>72</sparkle:version>
-            <sparkle:shortVersionString>2.3.1</sparkle:shortVersionString>
+            <sparkle:version>92</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-2.3.1-build-72/VampSync-macOS-2.3.1-build-72-notarized.zip" length="14205949" type="application/octet-stream" sparkle:edSignature="2NeggpOt/KHzfVItydKABhVArHFrtwdSrg0Wa4A2hI0eOwXgOz28ZwRXMTol7xRtr1v6P2vPADcZU5P5b7FoDg=="/>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-92/VampSync-macOS-4.0.0-build-92-notarized.dmg" length="11627665" type="application/octet-stream" sparkle:edSignature="ji8FnlNADiJRn1wVxwZ8txqefdAOkrssgnpce8Qbazp73268uqA2Equa4H6Xw30kNzSDZmjptiQSM5Oek8U/BA=="/>
+        </item>
+        <item>
+            <title>4.0.0</title>
+            <pubDate>Fri, 27 Nov 2026 17:01:23 +0300</pubDate>
+            <link>https://thevamp.app/sync/</link>
+            <sparkle:version>90</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-90/VampSync-macOS-4.0.0-build-90-notarized.dmg" length="11627629" type="application/octet-stream" sparkle:edSignature="4heCROKTQ+BxE1hf4A1G88kSEWnf83HyZ8JNQAxp+pc+gA95tDwqOx5m4YHoj/liQzHXfLoPsty3DjtqN3moBg=="/>
+        </item>
+        <item>
+            <title>4.0.0</title>
+            <pubDate>Mon, 23 Nov 2026 13:46:43 +0300</pubDate>
+            <link>https://thevamp.app/sync/</link>
+            <sparkle:version>87</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-87/VampSync-macOS-4.0.0-build-87-notarized.dmg" length="11514018" type="application/octet-stream" sparkle:edSignature="GP6A0WaJNmrEhnDHv2LFmDOBpsCqK6Xnpzn9CgkTkYxsz4asdiqhDSPHgNIvL8rdPLhuaPxYsUPcycHzS0aEDw=="></enclosure>
+        </item>
+        <item>
+            <title>4.0.0</title>
+            <pubDate>Sat, 21 Nov 2026 08:34:11 +0300</pubDate>
+            <link>https://thevamp.app/sync/</link>
+            <sparkle:version>86</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-86/VampSync-macOS-4.0.0-build-86-notarized.dmg" length="12795463" type="application/octet-stream" sparkle:edSignature="k1nxT60fxC87rqbEPv2kwjF2CRAJ4VLthFDU9J0WEFps5EV9ru+rdsP14p3ucz5EBfDT15A0omZtcFBnSEZvBA=="></enclosure>
+        </item>
+        <item>
+            <title>4.0.0</title>
+            <pubDate>Fri, 20 Nov 2026 18:35:50 +0300</pubDate>
+            <link>https://thevamp.app/sync/</link>
+            <sparkle:version>84</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-84/VampSync-macOS-4.0.0-build-84-notarized.dmg" length="12728783" type="application/octet-stream" sparkle:edSignature="m9iIOCMxM8DYNvT4JUitOGnxW0urz0j+90li1vTEhleOniEfRyoZnmZ7L1LqorqWigQoInBJ22kPMlwKh6FPAw=="></enclosure>
+        </item>
+        <item>
+            <title>4.0.0</title>
+            <pubDate>Tue, 17 Nov 2026 22:17:42 +0300</pubDate>
+            <link>https://thevamp.app/sync/</link>
+            <sparkle:version>83</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-83/VampSync-macOS-4.0.0-build-83-notarized.dmg" length="12728180" type="application/octet-stream" sparkle:edSignature="UkF1kuV5qfsmDLh/rbK8UKBVJxrteFrAyM8w3HwWS0pjSYhPzu/NePHcBuX9r1inhny5Znll7pnOia5A8nYvCQ=="></enclosure>
+        </item>
+        <item>
+            <title>4.0.0</title>
+            <pubDate>Tue, 17 Nov 2026 21:47:12 +0300</pubDate>
+            <link>https://thevamp.app/sync/</link>
+            <sparkle:version>82</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-82/VampSync-macOS-4.0.0-build-82-notarized.dmg" length="12727928" type="application/octet-stream" sparkle:edSignature="j+V5ncxCvVhKjg1FGHeNSdlUKHbsxxCXiX/FFZgUeord1GPRb2RLsPX0yOxK19oaidPJbvAcHtcJEwYnpvknBQ=="></enclosure>
+        </item>
+        <item>
+            <title>4.0.0</title>
+            <pubDate>Sun, 15 Nov 2026 14:07:23 +0300</pubDate>
+            <link>https://thevamp.app/sync/</link>
+            <sparkle:version>81</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-81/VampSync-macOS-4.0.0-build-81-notarized.dmg" length="12727064" type="application/octet-stream" sparkle:edSignature="AGRH8Eln44QEvfipKTP2EQkfpZ3ND8N/ac57Gas/UxBJmDeMud8Glk/gPwbYikYfMcgr6arn0BISwYrqp4qqDg=="></enclosure>
+        </item>
+        <item>
+            <title>3.8.19</title>
+            <pubDate>Sat, 18 Jul 2026 13:36:17 +0300</pubDate>
+            <sparkle:version>53</sparkle:version>
+            <sparkle:shortVersionString>3.8.19</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.19-build-53.pkg" sparkle:installationType="package" sparkle:edSignature="+9J64MDfNXMv3ZRD3gIh1Tygh/xaEpjEl1xxgswFb7yeJGavsA228nfSVnlwD88SyNzR2+lx8+uRGjAT57BADw==" length="6735382" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.19</title>
+            <pubDate>Wed, 15 Jul 2026 10:58:40 +0300</pubDate>
+            <sparkle:version>52</sparkle:version>
+            <sparkle:shortVersionString>3.8.19</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.19-build-52.pkg" sparkle:installationType="package" sparkle:edSignature="jeG3+nUmpMm303IvtpUdjgbJbAIBAFONAAC5Obdcha5jl5C2rWbdBzKb7A2uRCQYYpagw+fxRazvYJHypo/KAA==" length="6723842" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.19</title>
+            <pubDate>Tue, 14 Jul 2026 16:43:00 +0300</pubDate>
+            <sparkle:version>51</sparkle:version>
+            <sparkle:shortVersionString>3.8.19</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.19-build-51.pkg" sparkle:installationType="package" sparkle:edSignature="KH5WDO1jv0LKqECjjty7YRA2LseEMaZb7HoMbOe14jTK588JlNrDuGLJ7QR6E/fYLAwXbJeKEBB07WX5iy1yAQ==" length="6722928" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.19</title>
+            <pubDate>Mon, 13 Jul 2026 23:17:29 +0300</pubDate>
+            <sparkle:version>50</sparkle:version>
+            <sparkle:shortVersionString>3.8.19</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.19-build-50.pkg" sparkle:installationType="package" sparkle:edSignature="vHQrb7lQCPtYrZHdnltkXBW0pmbkugjhkRq+gHcT630HS7/uHH5NEc++it4wwlWfwJY2ySD63PEn5UXr+dvlAg==" length="6722881" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.19</title>
+            <pubDate>Mon, 13 Jul 2026 18:52:18 +0300</pubDate>
+            <sparkle:version>47</sparkle:version>
+            <sparkle:shortVersionString>3.8.19</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.19-build-47.pkg" sparkle:installationType="package" sparkle:edSignature="8E8uWOYcL5My6j8HAibcEBNH72qz+yyNLanLWAyc8SuzeWNE5SXK0ymDF3Sv3vFhpplMTCzPMAKdQUQuX5nLBA==" length="6700471" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.19</title>
+            <pubDate>Mon, 13 Jul 2026 10:48:12 +0300</pubDate>
+            <sparkle:version>46</sparkle:version>
+            <sparkle:shortVersionString>3.8.19</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.19-build-46.pkg" sparkle:installationType="package" sparkle:edSignature="7lYYgAFuHPs8XSIc8qirH+gGZTcKAUsZBG4pOByD2+4pxsFkLoiNJGh9bxpD+gLJ26PvhU009MUWUalYmwXcCw==" length="6717869" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.19</title>
+            <pubDate>Mon, 13 Jul 2026 01:46:17 +0300</pubDate>
+            <sparkle:version>45</sparkle:version>
+            <sparkle:shortVersionString>3.8.19</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.19-build-45.pkg" sparkle:installationType="package" sparkle:edSignature="gvpwNQywj/qfF9XnczbK2xkTRkE4s2z95cqNZkWdR31pqQWAzrsrHRMRUmRsMzrI+NQfYCj+vvaGUC5sd9aOCQ==" length="6706777" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.18</title>
+            <pubDate>Sun, 12 Jul 2026 22:24:49 +0300</pubDate>
+            <sparkle:version>44</sparkle:version>
+            <sparkle:shortVersionString>3.8.18</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.18-build-44.pkg" sparkle:installationType="package" sparkle:edSignature="duSNGjkTj8GaT27FZn+t4Yaor/Olu0HXEgjJKkv8ejxjN6z7Ja3MKVChInNzN6Cdqaapg9cYzf+NEMt50YRkDQ==" length="6702571" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.17</title>
+            <pubDate>Sun, 12 Jul 2026 20:57:09 +0300</pubDate>
+            <sparkle:version>43</sparkle:version>
+            <sparkle:shortVersionString>3.8.17</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.17-build-43.pkg" sparkle:installationType="package" sparkle:edSignature="bCmR9XCqks6gH98Sq0jzHB8Zj2S0qCMfO+FiAbgGTJFl0febKjvFU5ukfXDfPmBvBR30+uVVHEcAxt+8h+BcAg==" length="6677979" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.16</title>
+            <pubDate>Sat, 11 Jul 2026 22:18:09 +0300</pubDate>
+            <sparkle:version>42</sparkle:version>
+            <sparkle:shortVersionString>3.8.16</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.16-build-42.pkg" sparkle:installationType="package" sparkle:edSignature="9BGFx/V3Sv+LD/agtxTHjSg9WuqOWdwKqY5OXo4t/Ee+A/Gh0gxzjSJ8e1bN3sORu1j/zNPy0Do4byzMCC1ZAA==" length="6677955" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.15</title>
+            <pubDate>Thu, 09 Jul 2026 16:15:13 +0300</pubDate>
+            <sparkle:version>41</sparkle:version>
+            <sparkle:shortVersionString>3.8.15</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.15-build-41.pkg" sparkle:installationType="package" sparkle:edSignature="SAxZz1QQKxoIbDtf8GIFleJN2RRXWtDhx7TDDx3h5Bv6ces7Bj5jKVfu6Kn+j99UZxd43wRMV0EyriF4M+zOBQ==" length="6669115" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.15</title>
+            <pubDate>Wed, 08 Jul 2026 16:59:57 +0300</pubDate>
+            <sparkle:version>40</sparkle:version>
+            <sparkle:shortVersionString>3.8.15</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.15-build-40.pkg" sparkle:installationType="package" sparkle:edSignature="r5spTz7TsG57EA7tfQdlwNH5AqPBlG9DfaUN09FAvTFQGbVqNo3IA/xCWgNhNQ/4Xmg3PmIQEJbyUJzs+dggCg==" length="6667866" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.14</title>
+            <pubDate>Wed, 08 Jul 2026 09:56:10 +0300</pubDate>
+            <sparkle:version>39</sparkle:version>
+            <sparkle:shortVersionString>3.8.14</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.14-build-39.pkg" sparkle:installationType="package" sparkle:edSignature="Gj3wk1K98tq94MCEGP32iGVc0djkVIQJ8A29kTVuaF+jq28DqTb7f64dBGtLTVQLvmYscCFEQD72mcP6P/elCA==" length="6647363" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.13</title>
+            <pubDate>Sun, 05 Jul 2026 17:18:21 +0300</pubDate>
+            <sparkle:version>38</sparkle:version>
+            <sparkle:shortVersionString>3.8.13</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.13-build-38.pkg" sparkle:installationType="package" sparkle:edSignature="jAcbWW9NetLOcfBN79Gv2ZsRZb+m16f6p9YQCXbdzydq/2P1jzJNgmzZrVGEQKTTZoylPhwwMm23eLLgcjyjBg==" length="6624045" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.12</title>
+            <pubDate>Sun, 05 Jul 2026 17:05:38 +0300</pubDate>
+            <sparkle:version>37</sparkle:version>
+            <sparkle:shortVersionString>3.8.12</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.12-build-37.pkg" sparkle:installationType="package" sparkle:edSignature="aUqqNXfdECl7K+YBzC8rSVNddWvq8jxhxg9Gtd2q+vss66HSzb2GpYYgpDq+Ew1K0Tu8t9/zzyPTiN4CJJqzBQ==" length="6623721" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.11</title>
+            <pubDate>Sat, 04 Jul 2026 22:52:55 +0300</pubDate>
+            <sparkle:version>36</sparkle:version>
+            <sparkle:shortVersionString>3.8.11</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.11-build-36.pkg" sparkle:installationType="package" sparkle:edSignature="wW2dkudzgLlFG0da3OuEJVmVLljznrHBFtaeBY62JSwIV4p4d/Y12OUW32PEjWvOxmkwV5r+lTLtU4Z+l1IaCg==" length="5875566" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.11</title>
+            <pubDate>Sat, 27 Jun 2026 12:32:07 +0300</pubDate>
+            <sparkle:version>35</sparkle:version>
+            <sparkle:shortVersionString>3.8.11</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.11-build-35.pkg" sparkle:installationType="package" sparkle:edSignature="lZcOD1fl5nhj59SPMyaN76gPIP/DyI78XD6UFy9OWS8TBQKUxnO/s5WBr9sdqhqEBZg3x3xZBa028uBgcSf9BQ==" length="5875444" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.10</title>
+            <pubDate>Sat, 27 Jun 2026 12:18:34 +0300</pubDate>
+            <sparkle:version>34</sparkle:version>
+            <sparkle:shortVersionString>3.8.10</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.10-build-34.pkg" sparkle:installationType="package" sparkle:edSignature="iIISVe97nMv4ZHvSMOhMvPSg2P6MmTMidDd9QpqUbvyqtQgg6uPTsg66GzVSm8nBQb8TyBJkoNtxee8evFtIBw==" length="5870825" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.9</title>
+            <pubDate>Fri, 26 Jun 2026 23:32:56 +0300</pubDate>
+            <sparkle:version>33</sparkle:version>
+            <sparkle:shortVersionString>3.8.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.9-build-33.pkg" sparkle:installationType="package" sparkle:edSignature="qZcmfO0qfD9c/9Z2TviXDEhUT6JaeQE5qESsdvsXfUiy4QsqSGlKhQw8+ndCRN2t5uAlpilcR/GbdLhmgSzvDw==" length="5821168" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.8</title>
+            <pubDate>Fri, 26 Jun 2026 22:17:37 +0300</pubDate>
+            <sparkle:version>32</sparkle:version>
+            <sparkle:shortVersionString>3.8.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.8-build-32.pkg" sparkle:installationType="package" sparkle:edSignature="WokfWZN8iMllfOIN3vNuugvMTSrb74b3px9muOZrH/2TvPfIe+OJHuw7QhYg8xgD8t12s42rcJyoauIo453jCA==" length="5818770" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.7</title>
+            <pubDate>Fri, 26 Jun 2026 12:15:29 +0300</pubDate>
+            <sparkle:version>31</sparkle:version>
+            <sparkle:shortVersionString>3.8.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.7-build-31.pkg" sparkle:installationType="package" sparkle:edSignature="9BPJ4Byfdu4H+a3mSxncf+KcJaKLA49wFN/jJgHFofv8KCTIlLZllSE9crE6VXEVxjF0wwC/T770cWcw2fcbAw==" length="5788143" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.6</title>
+            <pubDate>Thu, 25 Jun 2026 16:48:21 +0300</pubDate>
+            <sparkle:version>30</sparkle:version>
+            <sparkle:shortVersionString>3.8.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.6-build-30.pkg" sparkle:installationType="package" sparkle:edSignature="h6clFeO6OyfissVT+ZPqBcAodck1fPms29yqN5Xnqe0kHEIu5dXV4TrSuCx4ptHFEBxx1YI7rTllFDpPb7E1Cg==" length="5787957" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.6</title>
+            <pubDate>Wed, 24 Jun 2026 07:44:31 +0300</pubDate>
+            <sparkle:version>29</sparkle:version>
+            <sparkle:shortVersionString>3.8.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.6-build-29.pkg" sparkle:installationType="package" sparkle:edSignature="zVFB/moJ6yxXye0WVI1lYARfCoffFEciEDEZyWEaJG4AEZx20u/+l2j7ncm3tylFdzVcrMaKHLAlWzxCmRatCw==" length="5811794" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.5</title>
+            <pubDate>Wed, 24 Jun 2026 00:21:50 +0300</pubDate>
+            <sparkle:version>28</sparkle:version>
+            <sparkle:shortVersionString>3.8.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.5-build-28.pkg" sparkle:installationType="package" sparkle:edSignature="PR4/b0cBD1Q4dd/G+l44hyCOI4OxgL0ZEEAU8tJyy/fnOTEFQyypd21mDhmCwBqww0bHbi6MdNjVZyjEuzd9CA==" length="5812823" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.4</title>
+            <pubDate>Tue, 23 Jun 2026 23:34:10 +0300</pubDate>
+            <sparkle:version>27</sparkle:version>
+            <sparkle:shortVersionString>3.8.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.4-build-27.pkg" sparkle:installationType="package" sparkle:edSignature="n+j5A0hHoGAk0nq1BflbyflCZeiFGr19SAyJhX1sxRJN8XHrutW8FV6t6Tm2s+9RCwFTzwJSpwcIZxLDXXJTCw==" length="5811653" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.3</title>
+            <pubDate>Tue, 23 Jun 2026 23:24:20 +0300</pubDate>
+            <sparkle:version>26</sparkle:version>
+            <sparkle:shortVersionString>3.8.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.3-build-26.pkg" sparkle:installationType="package" sparkle:edSignature="wvb8Plo8o41wg0gn34bcnWTVJzQ6341DddBe+qEGqRZElBR5NzMeMYNuNfNOTriODFG8oSuX5reuwm4zrEyHBQ==" length="5811596" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.2</title>
+            <pubDate>Tue, 23 Jun 2026 17:15:58 +0300</pubDate>
+            <sparkle:version>25</sparkle:version>
+            <sparkle:shortVersionString>3.8.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.2-build-25.pkg" sparkle:installationType="package" sparkle:edSignature="1jk5t/JBptirHW4VIsBjwFxm7FMD67XbvOer7/1nzOLbts1bU+1AQxoZcsGG+eIqBZa7qybAfUxXQrUTU2dIBw==" length="5811478" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.1</title>
+            <pubDate>Tue, 23 Jun 2026 15:00:44 +0300</pubDate>
+            <sparkle:version>24</sparkle:version>
+            <sparkle:shortVersionString>3.8.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.1-build-24.pkg" sparkle:installationType="package" sparkle:edSignature="oL/ZooqgyuSAeKd3LDE7Cg/zwUA3WPCICXSd/eRUXIhTamdlC+NJu/+Kofubn/MKiRavCFAIDkcvz9BVfH8kCg==" length="5798839" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.8.0</title>
+            <pubDate>Mon, 22 Jun 2026 21:04:58 +0300</pubDate>
+            <sparkle:version>22</sparkle:version>
+            <sparkle:shortVersionString>3.8.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.8.0-build-22.pkg" sparkle:installationType="package" sparkle:edSignature="JrCblDIOkD5jJg2KRqdHzYsZF3yVEHJ5gcPwV9K3wn9mR03+y8Xqyyw3/dCaFuTScdHURYPr2kh8yFb+2ua1Dg==" length="5798719" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.7.8</title>
+            <pubDate></pubDate>
+            <sparkle:version>21</sparkle:version>
+            <sparkle:shortVersionString>3.7.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.7.8-build-21.pkg" sparkle:installationType="package" sparkle:edSignature="xv5gC8vrxdpKutOtifQtBBmZohLTlGpsoIHBMDTcAuU/3qNWDBaerqa2k2aSqOiyEALAR64mfREvpUJZ68cCCw==" length="5435703" type="application/octet-stream"></enclosure>
+        </item>
+        <item>
+            <title>3.7.3</title>
+            <pubDate>Tue, 16 Jun 2026 14:53:19 +0300</pubDate>
+            <sparkle:version>16</sparkle:version>
+            <sparkle:shortVersionString>3.7.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://mesut.uk/Vamp-MacHost-3.7.3-build-16.zip" length="6991302" type="application/octet-stream" sparkle:edSignature="4+QftudA/8gj0VYKweVXVrBJkN6fP08ZtryJNeV1m2OeJcA7Km0lkox9q5x/9RTilubosU+nxgQK8zq8BAXnCw=="></enclosure>
         </item>
     </channel>
-</rss>
+</rss><!-- sparkle-signatures:
+edSignature: GBRE2p7co5hYXhtpuWirMHBcLAUnLluReLx/Q2U0JdKuppLkgZEO4JmrcM6G6g8efUx+kQF6zWTijoNwCn3mBA==
+length: 25205
+-->

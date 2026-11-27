@@ -1,0 +1,13 @@
+{
+  "name": "vamp-sync-legacy-feed",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-20",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "https://mesut.uk/appcast.xml*",
+      "zone_name": "mesut.uk"
+    }
+  ]
+}

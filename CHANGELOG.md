@@ -642,6 +642,15 @@ Vamp Control (iOS and macOS):
 - Stream keeps one control deck: the bottom bar owns close, annotate, keyboard, fit/sizing, and hide controls, dead placeholder buttons are gone, and the app-stream top bar no longer repeats them.
 - Stream sizing notices float over the video instead of reserving a permanent strip, so the picture keeps its full viewport.
 
+### Vamp Control macOS
+
+- Remove the black canvas from the Control icon and make the artwork fill its
+  transparent icon frame. Simplify the launch splash around the corrected mark.
+- Replace the Mac app icon with the new glass conversation mark and match the
+  launch splash to its charcoal and cool-blue palette.
+- Make the file-transfer switch use one shared preference, migrate existing
+  opt-outs, and clarify the manual clipboard actions in Settings.
+
 ### Stream stability follow-up
 
 - Restore installed-app icons by paging inventories before removing icon data.

@@ -1,13 +1,14 @@
 {
   "name": "Vamp",
   "subtitle": "Independent apps for iPhone and iPad",
-  "description": "Official AltStore source for Boo Player, Vamp Assistant, and Vamp Stream.",
+  "description": "Official AltStore source for Boo Player, Vamp Assistant, Vamp Control, and Vamp Stream.",
   "iconURL": "https://raw.githubusercontent.com/Mesutcydev/vamp-suite/main/docs/assets/og-image.png",
   "website": "https://thevamp.app/",
   "tintColor": "#6E6E73",
   "featuredApps": [
     "mesut.buu.player",
     "com.beetcode.remote.ios",
+    "com.mesutcy.remotedesktop.ios",
     "com.mesutcy.remotedesktop.stream"
   ],
   "apps": [
@@ -51,13 +52,93 @@
       "category": "utilities",
       "versions": [
         {
-          "version": "0.10.35",
+          "version": "0.10.52",
+          "buildVersion": "131",
+          "marketingVersion": "0.10.52 (131)",
+          "date": "2026-09-30",
+          "localizedDescription": "Keeps Unlock Mac reachable above the keyboard and confirms that the Mac actually unlocked. Pair with Mac build 131, which wakes the sleeping display before password entry and keeps it awake during the attempt.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.52/Vamp-Assistant-iOS-0.10.52-build-131-unsigned.ipa",
+          "size": 7511477,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.10.45",
+          "buildVersion": "124",
+          "marketingVersion": "0.10.45 (124)",
+          "date": "2026-09-27",
+          "localizedDescription": "Start a new chat with a message and an available model. Advanced options are collapsed. Unload the active Mac model from the model picker without deleting its download. Pair with Mac build 124 for the Huihui GGUF loading fix.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.45/Vamp-Assistant-iOS-0.10.45-build-124-unsigned.ipa",
+          "size": 7438940,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.10.39",
+          "buildVersion": "118",
+          "marketingVersion": "0.10.39 (118)",
+          "date": "2026-09-24",
+          "localizedDescription": "Add API keys from iPhone or iPad, browse compatible providers, configure a custom endpoint, and add model IDs when a provider does not list them.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.39/Vamp-Assistant-iOS-0.10.39-build-118-unsigned.ipa",
+          "size": 7432375,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.10.38",
+          "buildVersion": "117",
+          "marketingVersion": "0.10.38 (117)",
+          "date": "2026-09-23",
+          "localizedDescription": "Improves conversation Retry and recovery, composer accessibility and activity feedback, and the narrow-screen Sessions shortcut.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.38/Vamp-Assistant-iOS-0.10.38-build-117-unsigned.ipa",
+          "size": 7344371,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.10.37",
+          "buildVersion": "116",
+          "marketingVersion": "0.10.37 (116)",
+          "date": "2026-09-20",
+          "localizedDescription": "New dot-matrix app icon. Accessibility and pairing fixes: 44pt back control on the disconnected screen, pairing code dismisses the keypad so Connect is reachable, readable placeholders at large text sizes, and the session access keys now state the approval policy they actually apply.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.37/Vamp-Assistant-iOS-0.10.37-build-116-unsigned.ipa",
+          "size": 7340536,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.10.36",
+          "buildVersion": "113",
+          "marketingVersion": "0.10.36 (113)",
+          "date": "2026-09-12",
+          "localizedDescription": "Adds the pearl interface, compact Mac Control cursor, and adaptive Advanced Setup controls.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/v0.10.36/Vamp-Assistant-iOS-0.10.36-build-113-unsigned.ipa",
+          "size": 8993479,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.1.41",
           "buildVersion": "95",
-          "marketingVersion": "0.10.35 (95)",
+          "marketingVersion": "0.1.41 (95)",
           "date": "2026-09-08",
-          "localizedDescription": "Updates the feed to the published Vamp Assistant 0.10.35 iOS release.",
-          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/ios-v0.10.35/Vamp-Assistant-iOS-0.10.35-build-95-unsigned.ipa",
-          "size": 8918966,
+          "localizedDescription": "Fixes the inset app-icon border with dedicated full-bleed iOS artwork. Includes the latest interface polish.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/ios-v0.1.41/Vamp-Assistant-iOS-0.1.41-build-95-unsigned.ipa",
+          "size": 8854640,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.1.40",
+          "buildVersion": "94",
+          "marketingVersion": "0.1.40 (94)",
+          "date": "2026-09-08",
+          "localizedDescription": "Refined Sessions header, compact composer, guided pairing, adaptive iPad layouts, restrained activity feedback, and improved approval previews.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/ios-v0.1.40/Vamp-Assistant-iOS-0.1.40-build-94-unsigned.ipa",
+          "size": 7411782,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.1.38",
+          "buildVersion": "92",
+          "marketingVersion": "0.1.38 (92)",
+          "date": "2026-09-08",
+          "localizedDescription": "Refreshed mobile interface, shared-file download fixes, and safer delayed actions when switching Macs.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-assistant/releases/download/ios-v0.1.38/Vamp-Assistant-iOS-0.1.38-build-92-unsigned.ipa",
+          "size": 7309728,
           "minOSVersion": "18.0"
         },
         {
@@ -105,6 +186,41 @@
       }
     },
     {
+      "name": "Vamp Control",
+      "bundleIdentifier": "com.mesutcy.remotedesktop.ios",
+      "developerName": "Mesutcydev",
+      "subtitle": "Your Mac, within reach.",
+      "localizedDescription": "Remote desktop for your own Mac running Vamp Sync, over a trusted LAN or a private Tailscale network. See the whole desktop and control it with touch, trackpad gestures and the keyboard, or keep a session View Only. On iPhone Duo, unfold it for two pages or fold it halfway into a small laptop.",
+      "iconURL": "https://raw.githubusercontent.com/Mesutcydev/vamp-suite/main/Sources/ClientiOS/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+      "tintColor": "#6E6E73",
+      "category": "utilities",
+      "versions": [
+        {
+          "version": "4.0.0",
+          "buildVersion": "61",
+          "marketingVersion": "4.0.0 (61)",
+          "date": "2026-11-27",
+          "localizedDescription": "iPhone Duo layouts: two pages when unfolded, and a laptop-style deck with a trackpad when half-folded during a session. A native tab bar, a picture of each Mac's last session on its card, and session controls that stay readable over any screen.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-ios-4.0.0-build-61/VampControl-iOS-4.0.0-build-61-altstore-unsigned.ipa",
+          "size": 10127644,
+          "minOSVersion": "18.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [
+          "com.apple.developer.networking.multicast",
+          "com.apple.security.network.client"
+        ],
+        "privacy": {
+          "NSCameraUsageDescription": "Vamp Control uses the camera to scan the pairing code shown by Sync or Companion on your Mac.",
+          "NSFaceIDUsageDescription": "Use Face ID to unlock Vamp Control and protect access to your paired Macs.",
+          "NSLocalNetworkUsageDescription": "Vamp Control discovers and connects privately to your Macs running Vamp Sync or Vamp Companion.",
+          "NSMicrophoneUsageDescription": "Captures your voice for on-device dictation into the remote Mac.",
+          "NSSpeechRecognitionUsageDescription": "Transcribes your voice on-device so you can dictate text into the remote Mac."
+        }
+      }
+    },
+    {
       "name": "Vamp Stream",
       "bundleIdentifier": "com.mesutcy.remotedesktop.stream",
       "developerName": "Mesutcydev",
@@ -115,6 +231,26 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "0.1.23",
+          "buildVersion": "53",
+          "marketingVersion": "0.1.23 (53)",
+          "date": "2026-09-23",
+          "localizedDescription": "Settings with System, Light, and Dark appearance and a plain-background option; forget a Vamp Sync Mac; this device's fingerprint while pairing; video that recovers on its own after a window resize; and a control bar that fits.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-stream-0.1.23-build-53/VampStream-iOS-0.1.23-build-53-altstore-unsigned.ipa",
+          "size": 11387646,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.1.22",
+          "buildVersion": "52",
+          "marketingVersion": "0.1.22 (52)",
+          "date": "2026-09-20",
+          "localizedDescription": "Matches the Vamp Assistant streaming chrome: one machined control bar with keycap controls and the stream options in the bar, no top bar, and the streamed window fitted below the status bar.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-stream-0.1.22-build-52/VampStream-iOS-0.1.22-build-52-altstore-unsigned.ipa",
+          "size": 11338091,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "0.1.22",
           "buildVersion": "50",
           "marketingVersion": "0.1.22 (50)",
@@ -122,6 +258,66 @@
           "localizedDescription": "Restores full splash artwork while preserving animation; improves readability, large-text layouts, onboarding, pairing recovery, cancellation, and reconnect controls.",
           "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-stream-0.1.22-build-50/VampStream-iOS-0.1.22-build-50-altstore-unsigned.ipa",
           "size": 12243935,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.1.18",
+          "buildVersion": "32",
+          "marketingVersion": "0.1.18 (32)",
+          "date": "2026-09-05",
+          "localizedDescription": "Removes the startup Waiting for video flash. Immediate frame feedback, compact recovery for sustained video delays, and accessible Retry controls. Portrait-only.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-suite-2.3.0-build-74/VampStream-iOS-0.1.18-build-32-altstore-unsigned.ipa",
+          "size": 13733451,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.1.17",
+          "buildVersion": "31",
+          "marketingVersion": "0.1.17 (31)",
+          "date": "2026-09-05",
+          "localizedDescription": "Clearer controls help with a reachable Done button, one-finger picture adjustment, and recovery from a stuck connection spinner. Portrait-only with direct app launching and opt-in Mac resizing.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-suite-2.3.0-build-73/VampStream-iOS-0.1.17-build-31-altstore-unsigned.ipa",
+          "size": 13730464,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.1.16",
+          "buildVersion": "30",
+          "marketingVersion": "0.1.16 (30)",
+          "date": "2026-09-05",
+          "localizedDescription": "Makes the whole app card tappable in Sync and Assistant, fixing taps on blank card space. Keeps portrait-only layout and direct app launching without a window popup.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-suite-2.3.0-build-72/VampStream-iOS-0.1.16-build-30-altstore-unsigned.ipa",
+          "size": 13714845,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.1.15",
+          "buildVersion": "29",
+          "marketingVersion": "0.1.15 (29)",
+          "date": "2026-09-05",
+          "localizedDescription": "Matching Fit window and Larger text controls for Sync and Assistant, zoom preserved across keyboard/layout changes, and safer sizing requests that keep the latest choice. Portrait-only with opt-in Mac resizing.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-suite-2.3.0-build-71/VampStream-iOS-0.1.15-build-29-altstore-unsigned.ipa",
+          "size": 13714247,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.1.14",
+          "buildVersion": "28",
+          "marketingVersion": "0.1.14 (28)",
+          "date": "2026-09-05",
+          "localizedDescription": "Fixes landscape switching and the automatic window-selection popup. Opens apps directly, preserves Mac window sizing by default, and makes adaptive resizing opt-in. Portrait-only; full-screen on iPad.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-suite-2.3.0-build-70/VampStream-iOS-0.1.14-build-28-altstore-unsigned.ipa",
+          "size": 13698376,
+          "minOSVersion": "18.0"
+        },
+        {
+          "version": "0.1.13",
+          "buildVersion": "27",
+          "marketingVersion": "0.1.13 (27)",
+          "date": "2026-09-05",
+          "localizedDescription": "Improves app-window rotation, resize coordination, stale-event filtering, input safety, and exact-window reconnect. Adaptive Sync resizing requires updated host support. Live device acceptance testing remains incomplete.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-suite-2.3.0-build-69/VampStream-iOS-0.1.13-build-27-altstore-unsigned.ipa",
+          "size": 13706917,
           "minOSVersion": "18.0"
         },
         {

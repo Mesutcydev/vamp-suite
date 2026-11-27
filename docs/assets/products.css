@@ -617,88 +617,30 @@ body.assistant-page .assistant-jobs .feature-card:nth-child(n+4) { grid-column: 
   body.assistant-page .assistant-jobs .feature-card:hover { transform: none; }
 }
 
-/* Glass product pages: Vamp Sync (body.glass-product) and the Vamp Control card on the suite home.
-   Translucent fills, hairline rims, soft depth, capsule actions, monospace metadata. Scoped so other pages keep their styling. */
-:root {
-  --glass-fill: color-mix(in srgb, #fdfdf8 56%, transparent);
-  --glass-fill-strong: color-mix(in srgb, #fdfdf8 80%, transparent);
-  --glass-rim: rgba(255, 255, 255, .72);
-  --glass-hairline: rgba(26, 26, 24, .12);
-  --glass-blur: blur(24px) saturate(165%);
-  --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, .65), 0 24px 48px -24px rgba(20, 20, 18, .36);
+/* Current Assistant captures retain the site's glass cards and native window edges. */
+body.assistant-page .assistant-settings-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+body.assistant-page .assistant-screenshot-link { display: block; background: transparent; }
+body.assistant-page .assistant-screenshot-link:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+body.assistant-page .gallery-card--current img { aspect-ratio: 1240 / 840; height: auto; background: transparent; }
+body.assistant-page .assistant-bento .gallery-card--lead img { height: auto; min-height: 0; aspect-ratio: 1240 / 840; background: transparent; }
+
+
+@media (max-width: 720px) { body.assistant-page .assistant-settings-gallery { grid-template-columns: 1fr; } }
+
+@media (min-width: 981px) {
+  body.assistant-page .assistant-bento .gallery-card--lead { grid-row: 1; }
+  body.assistant-page .assistant-bento .gallery-card--general { grid-column: 1; grid-row: 2; }
 }
-html[data-theme="dark"] {
-  --glass-fill: color-mix(in srgb, #262624 58%, transparent);
-  --glass-fill-strong: color-mix(in srgb, #2c2c29 82%, transparent);
-  --glass-rim: rgba(255, 255, 255, .16);
-  --glass-hairline: rgba(245, 245, 239, .14);
-  --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 24px 48px -24px rgba(0, 0, 0, .7);
-}
-body .glass-meta { font: 600 10.5px/1.45 "IBM Plex Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-body.glass-product .feature-card,
-body.glass-product .download-card,
-body.glass-product .edition-panel,
-body.glass-product .glass-shot,
-body.glass-product .sync-destination,
-.suite-home .control-card {
-  border: 1px solid var(--glass-rim);
-  border-radius: 26px;
-  background: var(--glass-fill);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  box-shadow: var(--glass-shadow);
-}
-body.glass-product .product-visual--sync { border: 1px solid var(--glass-rim); border-radius: 32px; box-shadow: var(--glass-shadow); }
-body.glass-product .sync-mark-tile { border: 1px solid var(--glass-rim); border-radius: 28px; box-shadow: 0 18px 36px -18px rgba(0, 0, 0, .5); }
-body.glass-product .download-board { gap: 16px; border: 0; background: transparent; box-shadow: none; }
-body.glass-product .feature-grid { gap: 16px; }
-body.glass-product .product-hero-note { font: 600 10.5px/1.5 "IBM Plex Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-body.glass-product .primary-button,
-body.glass-product .secondary-button { min-height: 42px; padding: 0 18px; border-radius: 999px; }
-body.glass-product .primary-button { box-shadow: 0 12px 26px -12px rgba(20, 20, 18, .6); }
-body.glass-product .primary-button:hover { transform: translateY(-1px); box-shadow: 0 16px 30px -12px rgba(20, 20, 18, .6); }
-body.glass-product .secondary-button { background: var(--glass-fill); border-color: var(--glass-hairline); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
-body.glass-product .secondary-button:hover { transform: translateY(-1px); background: var(--glass-fill-strong); }
-body.glass-product .glass-shot-section { padding-top: 56px; }
-body.glass-product .glass-shot { margin: 0; padding: 14px; }
-body.glass-product .glass-shot img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 16px; border: 1px solid var(--glass-hairline); background: #121216; }
-body.glass-product .glass-shot-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
-body.glass-product .edition-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.edition-panel { display: flex; flex-direction: column; padding: clamp(24px, 3.4vw, 36px); color: var(--text); }
-.edition-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.edition-badge { padding: 7px 11px; border: 1px solid var(--glass-hairline); border-radius: 999px; background: var(--glass-fill-strong); color: var(--ink); font: 600 10px/1 "IBM Plex Mono", monospace; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
-.edition-panel h3 { margin-top: 22px; color: var(--ink); font: 700 clamp(28px, 3vw, 38px)/1.04 "Space Grotesk", sans-serif; letter-spacing: -.05em; }
-.edition-list { margin-top: 22px; border-top: 1px solid var(--glass-hairline); list-style: none; }
-.edition-list li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--glass-hairline); color: var(--text); font: 15px/1.4 "Inter", sans-serif; }
-.edition-list .mark { color: var(--ink); font: 700 13px/1 "IBM Plex Mono", monospace; }
-.edition-list .is-off, .edition-list .is-off .mark { color: var(--muted); }
-.edition-pair { margin-top: 18px; color: var(--text); font: 14px/1.6 "Inter", sans-serif; }
-.edition-note { margin-top: 14px; }
-.edition-panel .primary-button { align-self: flex-start; margin-top: 24px; }
-.edition-panel .edition-note:first-of-type { margin-top: auto; padding-top: 18px; }
-.suite-home .family-grid--two { align-items: start; }
-.suite-home .control-card { min-height: 0; padding: clamp(22px, 3vw, 30px); }
-.suite-home .control-card h3 { margin-top: 18px; }
-.control-shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 22px; }
-.control-shot { display: block; overflow: hidden; border: 1px solid var(--glass-hairline); border-radius: 16px; background: #121216; }
-.control-shot--lead { grid-column: 1 / -1; }
-.control-shot img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; }
-.control-editions { margin-top: 22px; border-top: 1px solid var(--glass-hairline); }
-.control-edition { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--glass-hairline); }
-.control-edition p { margin: 0; color: var(--text); font: 13px/1.6 "Inter", sans-serif; }
-.control-store-note { margin-top: 14px; }
-.suite-home .control-card .client-downloads { margin-top: 22px; padding-top: 0; }
-.suite-home .control-card .client-download { display: flex; align-items: center; gap: 14px; padding: 16px 0; }
-.suite-home .control-card .client-download > div { flex: 1; min-width: 0; }
-.suite-home .control-card .client-download .secondary-button { flex: none; }
-.client-thumb { flex: none; width: 52px; overflow: hidden; border: 1px solid var(--glass-hairline); border-radius: 10px; }
-.client-thumb img { display: block; width: 100%; height: auto; aspect-ratio: 589 / 1280; object-fit: cover; object-position: top; }
-@media (max-width: 980px) {
-  body.glass-product .edition-grid, body.glass-product .glass-shot-pair { grid-template-columns: 1fr; }
-}
-@media (max-width: 720px) {
-  body.glass-product .glass-shot { padding: 10px; }
-  body.glass-product .glass-shot img { border-radius: 12px; }
-  .control-edition { grid-template-columns: 1fr; gap: 6px; }
-  .control-shots { gap: 8px; }
-}
+
+/* Full-size previews use the active page theme and a native modal focus trap. */
+.preview-enlarge { display: block; width: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
+.product-visual > .preview-enlarge { display: contents; }
+.preview-enlarge:focus-visible img, a[aria-haspopup="dialog"]:focus-visible img { outline: 3px solid var(--accent); outline-offset: -3px; }
+a[aria-haspopup="dialog"] img { cursor: zoom-in; }
+.preview-lightbox { position: fixed; inset: 0; box-sizing: border-box; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 64px 24px 24px; border: 0; background: transparent; }
+.preview-lightbox[open] { display: grid; place-items: center; }
+.preview-lightbox::backdrop { background: #080808e8; backdrop-filter: blur(12px); }
+.preview-lightbox > img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100dvh - 88px); object-fit: contain; border-radius: 12px; box-shadow: 0 20px 80px #0008; }
+.preview-lightbox-close { position: absolute; top: 12px; right: 20px; width: 40px; height: 40px; border: 1px solid #ffffff70; border-radius: 50%; color: #fff; background: #222; font: 28px/1 sans-serif; cursor: pointer; }
+.preview-lightbox-close:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+@media (max-width: 720px) { .preview-lightbox { padding-inline: 8px; } }

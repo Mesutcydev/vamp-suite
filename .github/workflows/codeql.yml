@@ -71,6 +71,14 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
+      # Reviewed SwiftTerm 1.20.0 plugin only; keep fingerprint validation enabled.
+      # This build tool writes version metadata into its sandboxed output folder.
+      - name: Trust pinned SwiftTerm build plugin
+        if: matrix.build-mode == 'manual'
+        run: |
+          mkdir -p "$HOME/Library/org.swift.swiftpm/security"
+          cp .github/swiftpm/plugins.json "$HOME/Library/org.swift.swiftpm/security/plugins.json"
+
       - name: Resolve app dependencies
         if: matrix.build-mode == 'manual'
         run: >-
@@ -93,3 +101,20 @@ jobs:
         uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
         with:
           category: ${{ matrix.category }}
+
+  required-analysis:
+    # Preserve the branch-protection check names while retaining every component
+    # scan above. A failed, skipped, or cancelled matrix must never report success.
+    name: Analyze ${{ matrix.language }}
+    needs: analyze
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        language: [swift, c-cpp]
+    steps:
+      - name: Require all component analyses
+        env:
+          ANALYSIS_RESULT: ${{ needs.analyze.result }}
+        run: test "$ANALYSIS_RESULT" = success
