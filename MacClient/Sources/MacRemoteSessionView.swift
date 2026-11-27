@@ -258,7 +258,15 @@ struct MacRemoteSessionView: View {
         } message: {
             Text("In the App Store edition, app windows are shared only over Wi-Fi or Ethernet. Connect to this Mac on your local network to view them.")
         }
+        .task(id: rendererVM.isReceiving) {
+            // Keeps this Mac's card thumbnail close to the screen as the session ends.
+            while rendererVM.isReceiving, !Task.isCancelled {
+                recordThumbnail()
+                try? await Task.sleep(for: .seconds(3))
+            }
+        }
         .onDisappear {
+            recordThumbnail()
             multiDisplay.stopAll()
             appStream.stop()
             stopSession()
@@ -1157,6 +1165,11 @@ struct MacRemoteSessionView: View {
 
     /// GPU-backed context shared across captures for converting frames to images.
     private static let screenshotContext = CIContext(options: [.useSoftwareRenderer: false])
+
+    private func recordThumbnail() {
+        guard let frame = rendererVM.latestPixelBuffer, let hostID = coordinator.lastEndpoint?.id else { return }
+        MacHostThumbnails.shared.record(frame, for: hostID)
+    }
 
     /// Capture the current remote frame as a PNG and let the user choose where to
     /// save it. A no-op until at least one frame has been decoded.

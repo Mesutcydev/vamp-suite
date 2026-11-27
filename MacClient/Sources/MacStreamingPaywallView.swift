@@ -8,15 +8,13 @@ struct MacStreamingPaywallView: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 12) {
-                Image(systemName: unlock.isEffectivelyUnlocked ? "checkmark.seal.fill" : "sparkles")
-                    .font(.title)
-                    .foregroundStyle(unlock.isEffectivelyUnlocked ? Color.green : MacBrand.accent)
-                    .frame(width: 42, height: 42)
-                VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                MacMarkTile(size: 52, arc: .control, badge: unlock.isEffectivelyUnlocked ? "checkmark" : "sparkles")
+                VStack(alignment: .leading, spacing: 3) {
+                    MacMetaLabel(text: "Vamp Pro · one-time")
                     Text("Vamp Pro")
-                        .font(.title2.weight(.semibold))
+                        .font(.system(size: 20, weight: .bold))
                     Text(unlock.isEffectivelyUnlocked ? "Unlocked on this Mac" : "Free: 15 minutes of streaming a day")
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -24,28 +22,33 @@ struct MacStreamingPaywallView: View {
             }
 
             if !unlock.isEffectivelyUnlocked {
-                usageMeter
+                MacUsageMeter(usage: usage)
             }
 
             Text("One-time purchase. No subscription. Removes the daily limit for Vamp Control.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             if let error = unlock.purchaseError {
-                Label(error, systemImage: "xmark.circle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.red)
+                HStack(alignment: .top, spacing: 6) {
+                    MacStatusDot(tone: .attention)
+                    Text(error).font(.callout)
+                }
             } else if let notice = unlock.purchaseNotice {
-                Label(notice, systemImage: "clock.fill")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 6) {
+                    MacStatusDot(tone: .idle)
+                    Text(notice).font(.callout).foregroundStyle(.secondary)
+                }
             }
 
-            HStack {
+            HStack(spacing: 8) {
                 Button("Restore Purchase") { Task { await unlock.restore() } }
+                    .buttonStyle(MacCapsuleButtonStyle(kind: .quiet, large: true))
                     .disabled(unlock.isLoading)
                 Spacer()
                 Button("Done", action: onDismiss)
+                    .buttonStyle(MacCapsuleButtonStyle(kind: .glass, large: true))
                     .keyboardShortcut(.cancelAction)
                 if !unlock.isEffectivelyUnlocked {
                     Button {
@@ -53,14 +56,14 @@ struct MacStreamingPaywallView: View {
                     } label: {
                         Text("Unlock for \(unlock.product?.displayPrice ?? "$14.99")")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(MacCapsuleButtonStyle(kind: .primary, large: true))
                     .keyboardShortcut(.defaultAction)
                     .disabled(unlock.isLoading || unlock.product == nil)
                 }
             }
         }
         .padding(24)
-        .frame(width: 440)
+        .frame(width: 460)
         .background(MacBrand.pageBackdrop)
         .task {
             if unlock.product == nil { await unlock.refresh() }
@@ -68,18 +71,6 @@ struct MacStreamingPaywallView: View {
         .onChange(of: unlock.isEffectivelyUnlocked) { unlocked in
             guard unlocked else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: onDismiss)
-        }
-    }
-
-    private var usageMeter: some View {
-        let minutesUsed = Int(usage.secondsUsedToday / 60)
-        let minutesLeft = max(0, Int(DailyStreamingUsage.dailyLimitSeconds / 60) - minutesUsed)
-        return VStack(alignment: .leading, spacing: 6) {
-            ProgressView(value: min(usage.secondsUsedToday / DailyStreamingUsage.dailyLimitSeconds, 1))
-            Text(minutesLeft == 0 ? "Daily limit reached. Resets at midnight." : "\(minutesLeft) minutes left today")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
         }
     }
 }

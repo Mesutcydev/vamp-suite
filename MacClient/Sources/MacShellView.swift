@@ -105,9 +105,23 @@ struct MacShellView: View {
         .onChange(of: usage.secondsUsedToday) { _ in
             // The cap ends a live session and presents Vamp Pro in its place.
             guard StreamingUnlockStore.isEnforced, !unlock.isEffectivelyUnlocked, !usage.hasTimeRemaining,
-                  coordinator.activeSessionID != nil else { return }
+                  coordinator.activeSessionID != nil || assistant.connected != nil else { return }
+            if assistant.connected != nil { assistant.disconnect() }
             Task { await coordinator.endSession() }
             showsPaywall = true
+        }
+        // Assistant sessions stream the Mac too, so they share the daily allowance.
+        .onChange(of: assistant.connected?.id) { id in
+            guard id != nil else {
+                if !showsSession { usage.stopSession() }
+                return
+            }
+            guard allowsNewSession else {
+                assistant.disconnect()
+                showsPaywall = true
+                return
+            }
+            usage.startSession()
         }
         .onChange(of: coordinator.phase) { phase in
             if phase == .receiving || phase == .waitingForMedia {
@@ -141,7 +155,7 @@ struct MacShellView: View {
             }
         }
         .sheet(isPresented: $showOnboarding) {
-            MacOnboardingView {
+            MacOnboardingView(fingerprint: environment.clientIdentity.publicKeyFingerprint) {
                 onboardingCompleted = true
                 showOnboarding = false
             }
