@@ -15,7 +15,7 @@ info=plistlib.loads((args.archive/'Products/Applications/Vamp Control.app/Conten
 if info.get('CFBundleIdentifier') != 'com.mesutcy.remotedesktop.macclient' or info.get('VampDistributionChannel') != 'app-store':
  parser.error('Expected the Vamp Control store archive')
 root.mkdir(parents=True,exist_ok=True)
-scenes=[('01-find-your-macs.png',{'en-US':'Find your Macs on your network','tr':'Mac’lerinizi ağınızda bulun'}),('02-session-settings.png',{'en-US':'Set quality and session behavior','tr':'Kalite ve oturum davranışını ayarlayın'}),('03-trusted-hosts.png',{'en-US':'Forget any trusted Mac at any time','tr':'Güvenilen Mac’i istediğiniz zaman unutun'})]
+scenes=[('01-find-your-macs.png',{'en-US':'Find your Macs on your network','tr':'Mac’lerinizi ağınızda bulun'}),('02-session-settings.png',{'en-US':'Set quality and session behavior','tr':'Kalite ve oturum davranışını ayarlayın'}),('03-trusted-hosts.png',{'en-US':'Forget any trusted Mac at any time','tr':'Güvenilen Mac’i istediğiniz zaman unutun'}),('03-vamp-pro.png',{'en-US':'15 free minutes a day. Pro is one payment','tr':'Günde 15 dakika ücretsiz. Pro tek ödeme'})]
 scenes=[scene for scene in scenes if (raw/scene[0]).is_file()]
 if not scenes: parser.error('No supported real window captures found')
 font_path='/System/Library/Fonts/SFNS.ttf'

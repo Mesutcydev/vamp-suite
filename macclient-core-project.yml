@@ -79,7 +79,7 @@ targets:
     settings:
       base:
         MARKETING_VERSION: 2.0.0
-        CURRENT_PROJECT_VERSION: 70
+        CURRENT_PROJECT_VERSION: 74
         VAMP_DISTRIBUTION_CHANNEL: website
         PRODUCT_BUNDLE_IDENTIFIER: com.mesutcy.remotedesktop.macclient
         PRODUCT_NAME: Vamp Control macOS
