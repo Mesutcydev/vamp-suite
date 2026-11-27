@@ -1588,6 +1588,10 @@ struct MirrorFullscreenStreamView: View {
     private let screenshotService = SessionScreenshotService()
     /// "classic" (default) keeps this view's existing fullscreen UI; "modern" uses the portrait trackpad layout.
     @AppStorage("client.ui.streamingUITheme") private var streamingUITheme = "classic"
+    /// An open foldable's crease. Half-folded, the session becomes the deck (`deckStreamContent`).
+    @State private var fold: ControlFold?
+    /// Read by Home's fold tip: once the deck has been used, the tip stops explaining it.
+    @AppStorage("control.duo.deckLearned") private var deckLearned = false
     @State private var modernInputMode: ModernInputMode = .pointer
     private enum ModernInputMode { case pointer, gestures }
 
@@ -1683,7 +1687,20 @@ struct MirrorFullscreenStreamView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            classicStreamContent(viewSize: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
+            Group {
+                if let fold, fold.isHalfOpen {
+                    deckStreamContent(viewSize: proxy.size, fold: fold)
+                } else {
+                    classicStreamContent(viewSize: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
+                }
+            }
+#if canImport(UIKit) && !os(macOS)
+            .background {
+                ControlHingeReader(fold: $fold)
+                MirrorSafeAreaInsetsReader(insets: $deviceSafeAreaInsets)
+            }
+#endif
+            .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: fold?.isHalfOpen)
             .overlay(alignment: .top) { multiDisplayBar }
             // The screenshot result was set but never drawn here, so the camera button
             // gave no sign of whether a file was saved.
@@ -1830,7 +1847,7 @@ struct MirrorFullscreenStreamView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.keyboardWillChangeFrameNotification)) { notif in
             guard let end = (notif.userInfo?[UIApplication.keyboardFrameEndUserInfoKey] as? CGRect) else { return }
             // The notification's screen is the active panel on a foldable; UIScreen.main may not be.
-            let screenH = (notif.object as? UIScreen ?? UIScreen.main).bounds.height
+            guard let screenH = (notif.object as? UIScreen)?.bounds.height else { return }
             let kbH = max(0, screenH - end.origin.y)
             withAnimation(.easeOut(duration: 0.25)) {
                 keyboardOverlayBottomPad = kbH
@@ -1852,24 +1869,15 @@ struct MirrorFullscreenStreamView: View {
         streamingUITheme == "modern"
     }
 
-    /// True hardware safe-area insets, read straight from the active window.
+    /// True hardware safe-area insets of this view's own window, reported by
+    /// `MirrorSafeAreaInsetsReader` and updated each time they change (a foldable switching
+    /// panels, a rotation, a resize).
     ///
     /// This view is presented with `.ignoresSafeArea()` so the classic path can run the video
     /// edge-to-edge — which means the body's `GeometryReader` reports `safeAreaInsets == .zero`.
     /// The modern chrome still has to clear the Dynamic Island and the home indicator, so it reads
     /// the real insets here instead of trusting the zeroed proxy values.
-    private var deviceSafeAreaInsets: EdgeInsets {
-#if canImport(UIKit) && !os(macOS)
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first { $0.isKeyWindow }
-        if let i = window?.safeAreaInsets {
-            return EdgeInsets(top: i.top, leading: i.left, bottom: i.bottom, trailing: i.right)
-        }
-#endif
-        return EdgeInsets()
-    }
+    @State private var deviceSafeAreaInsets = EdgeInsets()
 
     // MARK: - Classic content (verbatim — unchanged behavior)
 
@@ -1884,8 +1892,15 @@ struct MirrorFullscreenStreamView: View {
                 hostLockedOverlay
             }
         }
-        .overlay(alignment: .bottom) {
-            fullscreenBottomChrome(bottomInset: safeAreaInsets.bottom)
+        .overlay(alignment: fold?.isVertical == true ? .bottomTrailing : .bottom) {
+            if let fold, fold.isVertical {
+                // Open flat like a book: the controls stay on the right page, off the crease.
+                fullscreenBottomChrome(bottomInset: max(safeAreaInsets.bottom, deviceSafeAreaInsets.bottom))
+                    .frame(width: max(viewSize.width - fold.crease - ControlFold.gutter - deviceSafeAreaInsets.trailing, 0))
+                    .padding(.trailing, deviceSafeAreaInsets.trailing)
+            } else {
+                fullscreenBottomChrome(bottomInset: safeAreaInsets.bottom)
+            }
         }
         .overlay(alignment: .bottom) {
             if isKeyboardOverlayPresented {
@@ -1897,6 +1912,124 @@ struct MirrorFullscreenStreamView: View {
                 .padding(.bottom, keyboardOverlayBottomPad)
             }
         }
+    }
+
+    // MARK: - Half-folded Duo deck
+
+    /// A half-folded Duo is a small laptop. The Mac's screen takes the far side of the crease
+    /// (above it when held like a laptop, the left page when held like a book) and the near side,
+    /// under the thumbs, is a trackpad with the session controls. View Only sessions take no
+    /// input, so their near side says so instead of offering a trackpad that would do nothing.
+    @ViewBuilder
+    private func deckStreamContent(viewSize: CGSize, fold: ControlFold) -> some View {
+        let gutter = ControlFold.gutter
+        let insets = EdgeInsets(top: max(deviceSafeAreaInsets.top, 12), leading: max(deviceSafeAreaInsets.leading, 12),
+                                bottom: max(deviceSafeAreaInsets.bottom, 10), trailing: max(deviceSafeAreaInsets.trailing, 12))
+        let layout = fold.isVertical ? AnyLayout(HStackLayout(spacing: gutter * 2))
+                                     : AnyLayout(VStackLayout(spacing: gutter * 2))
+        ZStack {
+            Color.black.ignoresSafeArea()
+            layout {
+                deckVideo
+                    .frame(width: fold.isVertical ? max(fold.crease - gutter - insets.leading, 0) : nil,
+                           height: fold.isVertical ? nil : max(fold.crease - gutter - insets.top, 0))
+                deck
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .padding(insets)
+
+            if sessionCoordinator.hostLockState == .lockedOrLoginWindow {
+                hostLockedOverlay
+            }
+        }
+        .environment(\.colorScheme, .dark)
+        .overlay(alignment: .bottom) {
+            if isKeyboardOverlayPresented {
+                KeyboardOverlayView(
+                    interactionVM: interactionVM,
+                    onDismiss: { isKeyboardOverlayPresented = false }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.bottom, keyboardOverlayBottomPad)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isKeyboardOverlayPresented)
+        .onAppear { deckLearned = true }
+    }
+
+    /// The Mac's screen on the far side of the deck. Built like the full-screen layer (the
+    /// display layer letterboxes itself), with the local cursor the trackpad moves.
+    private var deckVideo: some View {
+        let host = rendererVM.frameSize.map {
+            CGSize(width: max(CGFloat($0.width), 1), height: max(CGFloat($0.height), 1))
+        } ?? CGSize(width: 16, height: 10)
+        return GeometryReader { geo in
+            let scale = min(geo.size.width / host.width, geo.size.height / host.height)
+            let fitted = CGSize(width: host.width * scale, height: host.height * scale)
+            let rect = CGRect(x: (geo.size.width - fitted.width) / 2, y: (geo.size.height - fitted.height) / 2,
+                              width: fitted.width, height: fitted.height)
+            let _ = cursorModel.setSurface(size: geo.size, contentRect: rect)
+            VideoFrameRendererView(pixelBuffer: rendererVM.latestPixelBuffer, displayMode: .fitDisplay,
+                                   renderer: rendererVM, pictureInPicture: pictureInPicture)
+                .frame(width: geo.size.width, height: geo.size.height)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                        .frame(width: fitted.width, height: fitted.height)
+                }
+                .overlay {
+                    if usesLocalCursor {
+                        LocalCursorOverlay(cursor: cursorModel, contentZoom: 1,
+                                           pointsPerDesktopPoint: interactionVM.cursorViewPointsPerDesktopPoint)
+                    }
+                }
+        }
+    }
+
+    /// The near side of the deck: stats when asked for, the trackpad, then the usual controls.
+    private var deck: some View {
+        VStack(spacing: 12) {
+            if environment.showsStatsOverlay {
+                HStack {
+                    Spacer()
+                    MirrorHUD(isDismissible: true, fps: statsVM.fpsText, latency: statsVM.latencyText,
+                              bandwidth: statsVM.bitrateText, onClose: { environment.showsStatsOverlay = false })
+                }
+            }
+            if effectiveSessionMode == .viewOnly {
+                deckViewOnlyNote
+            } else if !isKeyboardOverlayPresented {
+                TrackpadSurfaceView(interactionVM: interactionVM, onRelativeMove: { dx, dy in
+                    updateLocalCursorRelative(dx: dx, dy: dy)
+                })
+                .transition(.opacity)
+            } else {
+                Spacer(minLength: 0)
+            }
+            chromePill
+        }
+        .sheet(isPresented: $isBluetoothStatusPresented) {
+            BluetoothInputStatusView(controller: bluetoothInput, onDismiss: { isBluetoothStatusPresented = false })
+        }
+    }
+
+    private var deckViewOnlyNote: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "eye")
+                .font(.system(size: 26, weight: .medium))
+            Text("View only").font(.headline)
+            Text("This Mac takes no input from here. Open it flat for the biggest picture.")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(.white)
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color.white.opacity(0.05)))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Modern theme (portrait trackpad layout)
@@ -2705,6 +2838,7 @@ struct MirrorFullscreenStreamView: View {
         }
         .padding(8)
         .frame(maxWidth: 420)
+        .background(Color.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 30, style: .continuous))
         .controlGlass(radius: 30)
         .environment(\.colorScheme, .dark)
         .tint(.white)
@@ -3008,6 +3142,54 @@ private struct MirrorHUD: View {
 }
 
 #if canImport(UIKit) && !os(macOS)
+/// Reports the safe area insets of the window region this view covers, and reports again whenever
+/// UIKit changes them: a foldable switching panels, a rotation, or a resize. `safeAreaInsets` uses
+/// physical edges, so left and right are resolved to leading and trailing with this view's own
+/// layout direction, and each edge keeps its own value.
+private struct MirrorSafeAreaInsetsReader: UIViewRepresentable {
+    @Binding var insets: EdgeInsets
+
+    func makeUIView(context: Context) -> InsetsView {
+        let view = InsetsView()
+        view.onChange = { value in if insets != value { insets = value } }
+        return view
+    }
+
+    func updateUIView(_ view: InsetsView, context: Context) {
+        view.onChange = { value in if insets != value { insets = value } }
+    }
+
+    final class InsetsView: UIView {
+        var onChange: ((EdgeInsets) -> Void)?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            backgroundColor = .clear
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+        override func safeAreaInsetsDidChange() {
+            super.safeAreaInsetsDidChange()
+            report()
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            report()
+        }
+
+        private func report() {
+            let i = safeAreaInsets
+            let isRightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
+            let value = EdgeInsets(top: i.top, leading: isRightToLeft ? i.right : i.left,
+                                   bottom: i.bottom, trailing: isRightToLeft ? i.left : i.right)
+            DispatchQueue.main.async { [weak self] in self?.onChange?(value) }
+        }
+    }
+}
+
 private struct MirrorFullscreenGestureView: UIViewRepresentable {
     var viewportZoom: CGFloat
     var viewportOffset: CGSize

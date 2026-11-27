@@ -1175,3 +1175,35 @@ struct MultiDisplayThumbnailStrip: View {
         }
     }
 }
+
+#if SCREENSHOTS && canImport(UIKit)
+extension VideoRendererViewModel {
+    /// Screenshot builds only: show a fictional desktop as if it were the stream, so store
+    /// images of a session never carry a real screen.
+    func showSample(_ image: UIImage) {
+        guard let cg = image.cgImage else { return }
+        var buffer: CVPixelBuffer?
+        let attrs = [kCVPixelBufferCGImageCompatibilityKey: true, kCVPixelBufferCGBitmapContextCompatibilityKey: true,
+                     kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary] as CFDictionary
+        guard CVPixelBufferCreate(nil, cg.width, cg.height, kCVPixelFormatType_32BGRA, attrs, &buffer) == kCVReturnSuccess,
+              let buffer else { return }
+        CVPixelBufferLockBaseAddress(buffer, [])
+        let context = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: cg.width, height: cg.height,
+                                bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+                                space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        context?.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        CVPixelBufferUnlockBaseAddress(buffer, [])
+        latestPixelBuffer = buffer
+        frameSize = DesktopSize(width: Double(cg.width), height: Double(cg.height))
+        // A stream sends frames continuously; a display view made later (a fold, a new layout)
+        // waits for the next one. Keep resending the sample so every view gets a picture.
+        Task { @MainActor [weak self] in
+            while let self, self.latestPixelBuffer === buffer {
+                self.framePublisher.send(buffer)
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+}
+#endif

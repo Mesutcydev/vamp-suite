@@ -29,6 +29,8 @@ struct ControlAddMacView: View {
     @ObservedObject var hosts: HostsListViewModel
     @ObservedObject var companion: BeetCodeRemoteSessionViewModel
     let onConnectSync: (DiscoveredHostRow) -> Void
+    /// Set when the view is a page of an open Duo rather than a sheet: Cancel calls it.
+    var onClose: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var source = ControlMacSource.sync
     /// Vamp Companion pairing is an experimental option for a future app, off by default.
@@ -84,7 +86,11 @@ struct ControlAddMacView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { pairingTask?.cancel(); companion.cancelConnectionAttempt(); dismiss() }
+                    Button("Cancel") {
+                        pairingTask?.cancel()
+                        companion.cancelConnectionAttempt()
+                        if let onClose { onClose() } else { dismiss() }
+                    }
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()

@@ -25,6 +25,10 @@ struct ControlHomeView: View {
     /// Set when leaving the app browser for the desktop, so the desktop view asks the host for its display back.
     @State private var restoresDesktop = false
     @State private var showsAddMac = false
+    /// Add a Mac as the right page of an open Duo, beside the list, instead of a sheet across the crease.
+    @State private var addsMacOnPage = false
+    /// Set once a session has used the half-folded deck, so the fold tip stops explaining it.
+    @AppStorage("control.duo.deckLearned") private var deckLearned = false
     @State private var destination: SessionDestination?
     @State private var connectingHost: DiscoveredHostRow?
     @State private var isRefreshing = false
@@ -34,13 +38,17 @@ struct ControlHomeView: View {
     @State private var layoutSize = CGSize.zero
     @State private var appeared = false
     /// Where an open foldable's crease crosses the content, in content points (iPhone Duo inner panel).
-    @State private var hingeX: CGFloat?
+    @State private var fold: ControlFold?
     /// Duo panels keep the status bar in a side column, so they have no top inset.
     @State private var windowTopInset: CGFloat = 59
-    /// The fold leaves this much clear space on each side of the crease.
-    private let hingeGutter: CGFloat = 22
-    /// Unfolded iPhone Duo (951 pt), iPad, and wide landscape get two columns.
+    /// The Mac shown on the stage page of a two-page layout. Rows pick it; nil means the first Mac.
+    @State private var stagedHostID: UUID?
+    /// Unfolded iPhone Duo (951 pt), iPad, and wide landscape get two pages.
     private var isWide: Bool { layoutSize.width >= ControlDesign.wideMinWidth }
+    /// Two pages side by side (book): the library on the left, the stage on the right.
+    private var hasPages: Bool { fold.map(\.isVertical) ?? isWide }
+    /// The Duo held like a laptop: the stage above the crease, the library below it.
+    private var isLaptop: Bool { fold.map { !$0.isVertical } ?? false }
 
     private enum SessionDestination: String, Identifiable {
         case sync, companion, apps
@@ -77,14 +85,14 @@ struct ControlHomeView: View {
         NavigationStack {
             ScrollView {
                 content
-                    .background { ControlHingeReader(hingeX: $hingeX) }
+                    .background { ControlHingeReader(fold: $fold) }
                     .padding(.horizontal, ControlDesign.gutter)
                     .padding(.top, ControlDesign.gap)
                     .padding(.bottom, ControlDesign.section)
                     .frame(maxWidth: .infinity)
             }
             .onGeometryChange(for: CGSize.self) { $0.size } action: { layoutSize = $0 }
-            .animation(.smooth, value: hingeX)
+            .animation(.smooth, value: fold)
             .animation(.smooth, value: isWide)
             .animation(.smooth, value: notice)
             .animation(.smooth, value: isLive)
@@ -100,6 +108,18 @@ struct ControlHomeView: View {
             }
             #if SCREENSHOTS
             .onReceive(hosts.$hosts) { thumbnails.seedSamples(for: $0.map(\.id)) }
+            .task {
+                // Screenshot builds only: `-VampSampleSession YES` opens the session view on the first
+                // fictional desktop, with no Mac connected.
+                guard UserDefaults.standard.bool(forKey: "VampSampleSession"),
+                      let path = (UserDefaults.standard.string(forKey: "VampSampleThumbnails") ?? "").split(separator: ",").first,
+                      let image = UIImage(contentsOfFile: String(path)) else { return }
+                try? await Task.sleep(for: .seconds(1.5))
+                destination = .sync
+                // After the session view has started its renderer, which clears any frame.
+                try? await Task.sleep(for: .seconds(1))
+                renderer.showSample(image)
+            }
             #endif
             .background { ControlBackground() }
             .refreshable { await refresh() }
@@ -121,7 +141,32 @@ struct ControlHomeView: View {
                                                   onCancel: cancelConnection)
                     }
                 }
+                .frame(width: stagePageWidth)
+                .frame(maxWidth: .infinity, alignment: hasPages ? .trailing : .center)
                 .padding(.horizontal, ControlDesign.gutter).padding(.bottom, ControlDesign.gap)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if addsMacOnPage, let fold, fold.isVertical, layoutSize.width > 0 {
+                ControlAddMacView(hosts: hosts, companion: companion, onConnectSync: { host in
+                    addsMacOnPage = false
+                    connect(host)
+                }, onClose: {
+                    addsMacOnPage = false
+                    presentPairedCompanion()
+                })
+                // The right page, from just past the crease to the trailing edge.
+                .frame(width: max(layoutSize.width - fold.crease - ControlDesign.gutter - ControlFold.gutter, 320))
+                .frame(maxHeight: .infinity)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.smooth, value: addsMacOnPage)
+        .onChange(of: fold) { _, fold in
+            // Folding closed or into a laptop mid-flow carries on as the usual sheet.
+            if addsMacOnPage, fold?.isVertical != true {
+                addsMacOnPage = false
+                showsAddMac = true
             }
         }
         .sheet(isPresented: $showsAddMac, onDismiss: presentPairedCompanion) {
@@ -241,35 +286,37 @@ struct ControlHomeView: View {
             guard allowsNewSession else {
                 companion.disconnect()
                 if showsAddMac { showsAddMac = false }
+                addsMacOnPage = false
                 showsPaywall = true
                 return
             }
             usage.startSession()
             Task { await coordinator.endSession() }
             if showsAddMac { showsAddMac = false }
-            else { destination = .companion }
+            else { addsMacOnPage = false; destination = .companion }
         }
         .onChange(of: companion.lastError) { _, error in
-            if !showsAddMac { notice = error.map(ControlDesign.companionMessage) }
+            if !showsAddMac && !addsMacOnPage { notice = error.map(ControlDesign.companionMessage) }
         }
     }
 
     // MARK: Layout
 
     @ViewBuilder private var content: some View {
-        if isWide {
-            // Unfolded iPhone Duo: the columns split exactly at the crease, so nothing straddles the fold.
-            // The featured Mac's screen gets the right page; status and the rest of the list the left.
-            HStack(alignment: .top, spacing: hingeX == nil ? ControlDesign.section : hingeGutter * 2) {
-                VStack(alignment: .leading, spacing: ControlDesign.section) {
-                    status
-                    notices
-                    otherMacs
-                    promo
-                    footnote
-                }
-                .frame(width: hingeX.map { max($0 - hingeGutter, 240) } ?? 340, alignment: .leading)
-                hero.frame(maxWidth: .infinity, alignment: .leading)
+        if isLaptop, let fold {
+            // Duo held like a laptop: the Mac's screen stands above the crease, the library lies below.
+            VStack(alignment: .leading, spacing: ControlFold.gutter * 2) {
+                hero(fitting: fold.crease - ControlFold.gutter)
+                    .frame(height: max(fold.crease - ControlFold.gutter, 0), alignment: .bottom)
+                library
+            }
+            .frame(maxWidth: ControlDesign.maxWidth, alignment: .leading)
+        } else if hasPages {
+            // Unfolded Duo held like a book: the pages split exactly at the crease, so nothing
+            // straddles the fold. The library is the left page; the chosen Mac's stage the right.
+            HStack(alignment: .top, spacing: fold == nil ? ControlDesign.section : ControlFold.gutter * 2) {
+                library.frame(width: libraryPageWidth, alignment: .leading)
+                stage.frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: ControlDesign.wideMaxWidth, alignment: .leading)
         } else {
@@ -285,6 +332,44 @@ struct ControlHomeView: View {
         }
     }
 
+    /// The left page: what is here, every Mac, and the way to add one.
+    private var library: some View {
+        VStack(alignment: .leading, spacing: ControlDesign.section) {
+            status
+            notices
+            if hasPages { allMacs } else { otherMacs }
+            promo
+            if fold != nil, !isEmpty, !deckLearned {
+                ControlFoldTip().controlAppear(appeared, delay: 0.18)
+            }
+            footnote
+        }
+    }
+
+    private var libraryPageWidth: CGFloat {
+        fold.map { max($0.crease - ControlFold.gutter, 240) } ?? 340
+    }
+
+    /// The right page's width in the scroll view, for overlays that must stay on it.
+    private var stagePageWidth: CGFloat? {
+        guard hasPages, layoutSize.width > 0 else { return nil }
+        let spacing = fold == nil ? ControlDesign.section : ControlFold.gutter * 2
+        let content = min(layoutSize.width - ControlDesign.gutter * 2, ControlDesign.wideMaxWidth)
+        return max(content - libraryPageWidth - spacing, 280)
+    }
+
+    /// The right page: the chosen Mac as its screen, what the next session will use, and,
+    /// on a foldable, what folding it does.
+    private var stage: some View {
+        VStack(alignment: .leading, spacing: ControlDesign.section) {
+            hero
+            if !isEmpty && !isLive {
+                ControlSessionSetup(environment: environment)
+                    .controlAppear(appeared, delay: 0.14)
+            }
+        }
+    }
+
     /// The shared Vamp Sync promo card: idle only, never while a session is live.
     @ViewBuilder private var promo: some View {
         if !isLive {
@@ -296,7 +381,7 @@ struct ControlHomeView: View {
         HStack(spacing: ControlDesign.stack) {
             ControlSerifWordmark()
             Spacer()
-            ControlGlassIconButton(symbol: "plus", label: "Add a Mac") { showsAddMac = true }
+            ControlGlassIconButton(symbol: "plus", label: "Add a Mac") { addMac() }
                 .accessibilityIdentifier("control.addMacTop")
                 .disabled(isBusy)
         }
@@ -370,7 +455,11 @@ struct ControlHomeView: View {
         return syncHosts.first { coordinator.connectedHostName == $0.endpoint.metadata.displayName }
     }
     /// Live: the live Mac (or none, when it was added by address and isn't listed). Otherwise the first Mac.
-    private var heroSync: DiscoveredHostRow? { isLive ? liveHost : syncHosts.first }
+    private var heroSync: DiscoveredHostRow? {
+        if isLive { return liveHost }
+        if hasPages || isLaptop, let staged = syncHosts.first(where: { $0.id == stagedHostID }) { return staged }
+        return syncHosts.first
+    }
     private var heroCompanion: BeetCodeRemoteSessionViewModel.SavedAssistant? {
         !isLive && heroSync == nil ? companion.savedAssistants.first : nil
     }
@@ -379,11 +468,20 @@ struct ControlHomeView: View {
         companion.savedAssistants.filter { $0.id != heroCompanion?.id }
     }
 
+    /// The hero sized so it fits `height`: its screen narrows until card and heading fit above the crease.
+    private func hero(fitting height: CGFloat) -> some View {
+        // Heading (~26) + card padding and name row (~94) sit around a 16:10 screen.
+        let screenHeight = max(height - 120, 120)
+        return hero
+            .frame(maxWidth: isEmpty && !isLive ? nil : screenHeight * 1.6 + 16)
+            .frame(maxWidth: .infinity)
+    }
+
     @ViewBuilder private var hero: some View {
         if isEmpty && !isLive {
             VStack(alignment: .leading, spacing: ControlDesign.gap) {
                 ControlPrompt(command: "ls macs", label: "Your Macs")
-                ControlFirstMac(isSearching: isRefreshing, onAdd: { showsAddMac = true },
+                ControlFirstMac(isSearching: isRefreshing, onAdd: addMac,
                                 onRefresh: { Task { await refresh() } })
             }
             .controlAppear(appeared, delay: 0.08)
@@ -448,7 +546,46 @@ struct ControlHomeView: View {
                     .controlGlass()
                     .disabled(isBusy)
                 }
-                ControlAddRow { showsAddMac = true }
+                ControlAddRow(action: addMac)
+                    .disabled(isBusy)
+            }
+            .controlAppear(appeared, delay: 0.12)
+        }
+    }
+
+    /// Two-page library: every Mac, the one on the stage marked. A row stages its Mac; the
+    /// stage connects. Companion Macs still connect from their row.
+    @ViewBuilder private var allMacs: some View {
+        if !isEmpty {
+            VStack(alignment: .leading, spacing: ControlDesign.gap) {
+                HStack {
+                    ControlPrompt(command: "ls macs", label: "Your Macs · \(macCount)")
+                    Spacer()
+                    Button(isRefreshing ? "Looking…" : "Look nearby") { Task { await refresh() } }
+                        .font(.footnote.weight(.semibold)).foregroundStyle(ControlDesign.secondary)
+                        .disabled(isRefreshing)
+                        .padding(.trailing, ControlDesign.gap)
+                }
+                VStack(spacing: 0) {
+                    ForEach(Array(syncHosts.enumerated()), id: \.element.id) { index, host in
+                        if index > 0 { ControlRule().padding(.leading, ControlMacRow.textLeading) }
+                        let isStaged = host.id == heroSync?.id
+                        ControlMacRow(name: host.title, source: "sync", route: isTailscale(host) ? "tailscale" : "local",
+                                      status: syncStatus(host), thumbnail: thumbnails.images[host.id],
+                                      isStaged: isStaged, isLive: isStaged && isLive) {
+                            AppHaptics.selection()
+                            stagedHostID = host.id
+                        }
+                        .contextMenu { syncMenu(host) }
+                    }
+                    ForEach(Array(otherCompanions.enumerated()), id: \.element.id) { index, saved in
+                        if index > 0 || !syncHosts.isEmpty { ControlRule().padding(.leading, ControlMacRow.textLeading) }
+                        companionRow(saved)
+                    }
+                }
+                .controlGlass()
+                .disabled(isBusy || isLive)
+                ControlAddRow(action: addMac)
                     .disabled(isBusy)
             }
             .controlAppear(appeared, delay: 0.12)
@@ -554,6 +691,11 @@ struct ControlHomeView: View {
         }
     }
 
+    /// Add a Mac: beside the list on an open Duo held like a book, a sheet everywhere else.
+    private func addMac() {
+        if fold?.isVertical == true { addsMacOnPage = true } else { showsAddMac = true }
+    }
+
     private func presentPairedCompanion() {
         if companion.session != nil { destination = .companion }
     }
@@ -638,6 +780,46 @@ private struct ControlKeyRow<Value: View>: View {
     }
 }
 
+/// The stage page's choices for the next session. They are the Settings tab's own settings,
+/// so changing one here changes it there.
+private struct ControlSessionSetup: View {
+    @ObservedObject var environment: ClientAppEnvironment
+
+    var body: some View {
+        ControlConfigSection(command: "config stream", label: "Next session") {
+            ControlChoiceRow(key: "Quality", selection: $environment.preferredQualityPreset,
+                             options: [(.performance, "Eco"), (.balanced, "Balanced"),
+                                       (.quality, "Sharp"), (.ultra, "Full")])
+            ControlRule()
+            Toggle("View only", isOn: $environment.prefersViewOnly)
+        }
+        .toggleStyle(ControlSwitchStyle())
+    }
+}
+
+/// What folding does, said once on an open Duo's stage page.
+private struct ControlFoldTip: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: ControlDesign.stack) {
+            Image(systemName: "laptopcomputer")
+                .font(.title3).foregroundStyle(ControlDesign.ink)
+                .frame(width: 44, height: 44)
+                .background(ControlDesign.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                ControlMono(text: "Fold it halfway", size: 10.5)
+                Text("In a session, your Mac’s screen takes one side and a trackpad the other.")
+                    .font(.subheadline).foregroundStyle(ControlDesign.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(ControlDesign.inset)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .controlGlass()
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// Hairline between terminal lines inside one glass block.
 struct ControlRule: View {
     var body: some View {
@@ -672,6 +854,9 @@ private struct ControlMacRow: View {
     let status: ControlMacStatus
     /// The last frame of this run's session with the Mac, if any.
     var thumbnail: UIImage?
+    /// Two-page library: this Mac is on the stage, so the row shows that instead of Connect.
+    var isStaged: Bool?
+    var isLive = false
     let action: () -> Void
 
     /// Where the name starts inside the list; dividers start here too.
@@ -702,18 +887,27 @@ private struct ControlMacRow: View {
                         .saturation(status == .offline ? 0.35 : 1)
                         .accessibilityHidden(true)
                 }
-                ControlCapsule(title: verb)
+                if let isStaged {
+                    Image(systemName: isLive ? "dot.radiowaves.left.and.right" : "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(isStaged ? ControlDesign.ink : ControlDesign.secondary.opacity(0.6))
+                        .frame(width: 20)
+                } else {
+                    ControlCapsule(title: verb)
+                }
             }
             .padding(.horizontal, ControlDesign.inset)
             .frame(minHeight: ControlDesign.rowHeight)
+            .background { if isStaged == true { ControlDesign.ink.opacity(0.07) } }
             .contentShape(Rectangle())
         }
         .buttonStyle(ControlRowPressStyle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: name))
-        .accessibilityValue(Text(status.title))
-        .accessibilityHint(status == .offline ? "Tries to connect again" : "Connects to this Mac")
-        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(isLive ? Text("live") : Text(status.title))
+        .accessibilityHint(isStaged == nil ? (status == .offline ? "Tries to connect again" : "Connects to this Mac")
+                                           : "Shows this Mac beside the list")
+        .accessibilityAddTraits(isStaged == true ? [.isButton, .isSelected] : .isButton)
     }
 }
 

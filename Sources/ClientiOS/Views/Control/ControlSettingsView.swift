@@ -67,7 +67,7 @@ struct ControlSettingsView: View {
                     ControlRule()
                     Toggle("Live Activity", isOn: $liveActivityEnabled)
                 }
-
+            } trailing: {
                 ControlConfigSection(command: "config privacy", label: "Privacy and trust",
                                      note: "App Lock asks for Face ID or your passcode. Pairing stays on this device.") {
                     Toggle("App Lock", isOn: $appLock.isEnabled)
@@ -161,18 +161,49 @@ struct ControlSettingsView: View {
 }
 
 /// A scrolling Control page on the ambient backdrop, laid out on the shared grid.
-struct ControlPage<Content: View>: View {
-    @ViewBuilder var content: Content
+/// One scrolling column of sections. On an open Duo held like a book, `trailing` becomes a
+/// second page right of the crease; everywhere else it follows `content` in the same column.
+struct ControlPage<Content: View, Trailing: View>: View {
+    private let content: Content
+    private let trailing: Trailing
+    @State private var fold: ControlFold?
+
+    init(@ViewBuilder content: () -> Content, @ViewBuilder trailing: () -> Trailing) {
+        self.content = content()
+        self.trailing = trailing()
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: ControlDesign.section) { content }
-                .frame(maxWidth: ControlDesign.maxWidth, alignment: .leading)
-                .padding(.horizontal, ControlDesign.gutter)
-                .padding(.top, ControlDesign.gap)
-                .padding(.bottom, ControlDesign.section)
-                .frame(maxWidth: .infinity)
+            Group {
+                if let fold, fold.isVertical, Trailing.self != EmptyView.self {
+                    HStack(alignment: .top, spacing: ControlFold.gutter * 2) {
+                        column { content }.frame(width: max(fold.crease - ControlFold.gutter, 240), alignment: .leading)
+                        column { trailing }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxWidth: ControlDesign.wideMaxWidth, alignment: .leading)
+                } else {
+                    column { content; trailing }.frame(maxWidth: ControlDesign.maxWidth, alignment: .leading)
+                }
+            }
+            .background { ControlHingeReader(fold: $fold) }
+            .padding(.horizontal, ControlDesign.gutter)
+            .padding(.top, ControlDesign.gap)
+            .padding(.bottom, ControlDesign.section)
+            .frame(maxWidth: .infinity)
         }
+        .animation(.smooth, value: fold)
         .background { ControlBackground() }
+    }
+
+    private func column<C: View>(@ViewBuilder _ sections: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: ControlDesign.section) { sections() }
+    }
+}
+
+extension ControlPage where Trailing == EmptyView {
+    init(@ViewBuilder content: () -> Content) {
+        self.init(content: content, trailing: { EmptyView() })
     }
 }
 
@@ -284,6 +315,8 @@ struct ControlChoiceRow<Value: Hashable>: View {
 struct ControlTrustedMacsView: View {
     @ObservedObject var trusted: ClientTrustedHostsViewModel
     @ObservedObject var companion: BeetCodeRemoteSessionViewModel
+    /// This device's fingerprint, shown beside the list in the Trusted tab.
+    var deviceFingerprint: String?
     @State private var forgetAction: (() -> Void)?
     @State private var showsForget = false
 
@@ -327,6 +360,18 @@ struct ControlTrustedMacsView: View {
             }
             if let error = trusted.errorMessage {
                 ControlNotice(message: error)
+            }
+        } trailing: {
+            if let deviceFingerprint {
+                ControlConfigSection(command: "whoami", label: "This device",
+                                     note: "A Mac shows this fingerprint when it asks to approve this device. Approve only when they match.") {
+                    Text(verbatim: ControlConnectionProgress.grouped(deviceFingerprint))
+                        .font(.system(.subheadline, design: .monospaced)).foregroundStyle(ControlDesign.ink)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, ControlDesign.stack)
+                }
             }
         }
         .navigationTitle("Paired Macs")
@@ -381,7 +426,8 @@ struct ControlTrustedTab: View {
 
     var body: some View {
         NavigationStack {
-            ControlTrustedMacsView(trusted: trusted, companion: companion)
+            ControlTrustedMacsView(trusted: trusted, companion: companion,
+                                   deviceFingerprint: environment.clientIdentity.publicKeyFingerprint)
                 .navigationBarTitleDisplayMode(.inline)
         }
         .tint(ControlDesign.accent)

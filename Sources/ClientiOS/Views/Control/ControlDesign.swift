@@ -425,26 +425,39 @@ struct ControlPromoCard: View {
     }
 }
 
-/// Reports where an open foldable's crease crosses this view, in the view's own points.
-/// nil when the device has no hinge, the hinge is closed (the cover panel shows the UI),
-/// or the OS is older than iOS 27.1. The iPhone Duo's crease runs down the middle of
-/// its inner panel, so it is the window's horizontal midpoint.
+/// An open foldable's crease, seen from one view. The iPhone Duo's crease runs across the
+/// middle of its inner panel's long side: top to bottom when the panel is held like a book
+/// (landscape), side to side when it is held like a laptop (portrait).
+struct ControlFold: Equatable {
+    /// The crease runs top to bottom, so the screen splits into left and right pages.
+    var isVertical: Bool
+    /// Where the crease crosses the view, in the view's own points: x when vertical, y otherwise.
+    var crease: CGFloat
+    /// Folded partway (a book, or a laptop), rather than open flat.
+    var isHalfOpen: Bool
+    /// Clear space the layout leaves on each side of the crease.
+    static let gutter: CGFloat = 22
+}
+
+/// Reports the open foldable's crease as seen from this view. nil when the device has no
+/// hinge, the hinge is closed (the cover panel shows the UI), or the OS is older than iOS 27.1.
 struct ControlHingeReader: UIViewRepresentable {
-    @Binding var hingeX: CGFloat?
+    @Binding var fold: ControlFold?
 
     func makeUIView(context: Context) -> HingeView {
         let view = HingeView()
-        view.onChange = { value in if hingeX != value { hingeX = value } }
+        view.onChange = { value in if fold != value { fold = value } }
         return view
     }
 
     func updateUIView(_ view: HingeView, context: Context) {
-        view.onChange = { value in if hingeX != value { hingeX = value } }
+        view.onChange = { value in if fold != value { fold = value } }
     }
 
     final class HingeView: UIView {
-        var onChange: ((CGFloat?) -> Void)?
+        var onChange: ((ControlFold?) -> Void)?
         private var isOpen = false
+        private var isHalfOpen = false
 
         override init(frame: CGRect) {
             super.init(frame: frame)
@@ -455,6 +468,7 @@ struct ControlHingeReader: UIViewRepresentable {
                     guard let self else { return }
                     let status = update.hinge?.status
                     self.isOpen = status == .fullyOpen || status == .partiallyOpen
+                    self.isHalfOpen = status == .partiallyOpen
                     self.report()
                 })
             }
@@ -473,9 +487,13 @@ struct ControlHingeReader: UIViewRepresentable {
         }
 
         private func report() {
-            var value: CGFloat?
+            var value: ControlFold?
             if isOpen, let window {
-                value = (convert(CGPoint(x: window.bounds.midX, y: 0), from: window).x).rounded()
+                let bounds = window.bounds
+                let isVertical = bounds.width >= bounds.height
+                let mid = convert(CGPoint(x: bounds.midX, y: bounds.midY), from: window)
+                value = ControlFold(isVertical: isVertical, crease: (isVertical ? mid.x : mid.y).rounded(),
+                                    isHalfOpen: isHalfOpen)
             }
             DispatchQueue.main.async { [weak self] in self?.onChange?(value) }
         }
