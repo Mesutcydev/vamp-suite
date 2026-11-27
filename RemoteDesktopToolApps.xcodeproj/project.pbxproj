@@ -72,6 +72,8 @@
 		3579C241D2DE24D1A37C19C1 /* PRCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD078F1B9F9630D45A4A57C1 /* PRCard.swift */; };
 		38DEAAED5FB8171C69EA05C7 /* ScreenAIToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8C51B5818A4BB67162D1C3 /* ScreenAIToolsView.swift */; };
 		3A35470F99F872D8EC1D300D /* ClientFileTransferManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 793096FA7CF9657B352099BC /* ClientFileTransferManager.swift */; };
+		12C52CBA2A6F7E2145FD04E6 /* ClientFileTransferPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B74E94F4DCCF47DDEEA4D50 /* ClientFileTransferPreference.swift */; };
+		BAFD9C49370941C3CDFCC74C /* ClientFileTransferPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B74E94F4DCCF47DDEEA4D50 /* ClientFileTransferPreference.swift */; };
 		3C996A4696C8067F6B2318F0 /* HostStreamingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1106DF457830D8DB494D255B /* HostStreamingCoordinator.swift */; };
 		3D11D2CFF21A842B4D1E7528 /* HostWakeReadiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF517FC3CBBE72919EC7B3E /* HostWakeReadiness.swift */; };
 		3D54EB8F75DBA41CEAECE299 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 704857ED6C992414A3F7B6A5 /* PrivacyInfo.xcprivacy */; };
@@ -292,6 +294,7 @@
 		765566B12ADC7B90721E6457 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		78B4EF95A3EF2C5FCCC56334 /* HostStatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostStatusChip.swift; sourceTree = "<group>"; };
 		793096FA7CF9657B352099BC /* ClientFileTransferManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientFileTransferManager.swift; sourceTree = "<group>"; };
+		6B74E94F4DCCF47DDEEA4D50 /* ClientFileTransferPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientFileTransferPreference.swift; sourceTree = "<group>"; };
 		7A702848993DB19DEA38E297 /* HostAppLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostAppLogo.swift; sourceTree = "<group>"; };
 		7A9C3F82AAEDD1C40FB44BDA /* HostTerminalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostTerminalService.swift; sourceTree = "<group>"; };
 		B1C0DE5E5510F1E500000002 /* HostSessionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostSessionRegistry.swift; sourceTree = "<group>"; };
@@ -492,6 +495,7 @@
 				29C501666FFC1EB1008320D4 /* ClientAudioRenderer.swift */,
 				BAC12D9674133B1583C58E59 /* ClientClipboardSyncManager.swift */,
 				793096FA7CF9657B352099BC /* ClientFileTransferManager.swift */,
+				6B74E94F4DCCF47DDEEA4D50 /* ClientFileTransferPreference.swift */,
 				BED6A0E8BC0E4EAEEFBD4673 /* ClientHostBlockedState.swift */,
 				CBBE5CB889E4B1399F822B0B /* ClientiOSApp.swift */,
 				3D50F51A5242421995FA705F /* ClientReconnectCoordinator.swift */,
@@ -1160,6 +1164,7 @@
 				11E0E603F0591EFF5BA74C5A /* ClientAudioRenderer.swift in Sources */,
 				E60ED875BB6FF9498EF7A170 /* ClientClipboardSyncManager.swift in Sources */,
 				3A35470F99F872D8EC1D300D /* ClientFileTransferManager.swift in Sources */,
+				BAFD9C49370941C3CDFCC74C /* ClientFileTransferPreference.swift in Sources */,
 				1F2AE0F18D955A8D8CDD77FE /* ClientHostBlockedState.swift in Sources */,
 				12C1ACF4FE7CB4E61DC0C6A2 /* ClientReconnectCoordinator.swift in Sources */,
 				05C6BBEFBD98F811F5050E17 /* ClientSessionCoordinator.swift in Sources */,
@@ -1242,6 +1247,7 @@
 				11E0E603F0591EFF5BA74C5A /* ClientAudioRenderer.swift in Sources */,
 				E60ED875BB6FF9498EF7A170 /* ClientClipboardSyncManager.swift in Sources */,
 				3A35470F99F872D8EC1D300D /* ClientFileTransferManager.swift in Sources */,
+				12C52CBA2A6F7E2145FD04E6 /* ClientFileTransferPreference.swift in Sources */,
 				1F2AE0F18D955A8D8CDD77FE /* ClientHostBlockedState.swift in Sources */,
 				12C1ACF4FE7CB4E61DC0C6A2 /* ClientReconnectCoordinator.swift in Sources */,
 				05C6BBEFBD98F811F5050E17 /* ClientSessionCoordinator.swift in Sources */,
