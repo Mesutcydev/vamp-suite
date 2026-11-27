@@ -5,6 +5,15 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         <title>Vamp Sync</title>
         <item>
             <title>4.0.0</title>
+            <pubDate>Fri, 27 Nov 2026 17:01:23 +0300</pubDate>
+            <link>https://thevamp.app/sync/</link>
+            <sparkle:version>90</sparkle:version>
+            <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-sync-4.0.0-build-90/VampSync-macOS-4.0.0-build-90-notarized.dmg" length="11627629" type="application/octet-stream" sparkle:edSignature="4heCROKTQ+BxE1hf4A1G88kSEWnf83HyZ8JNQAxp+pc+gA95tDwqOx5m4YHoj/liQzHXfLoPsty3DjtqN3moBg=="/>
+        </item>
+        <item>
+            <title>4.0.0</title>
             <pubDate>Mon, 23 Nov 2026 13:46:43 +0300</pubDate>
             <link>https://thevamp.app/sync/</link>
             <sparkle:version>87</sparkle:version>
@@ -307,6 +316,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: iX9dwi/qhW80zB8xCI5GYvKZ/+VyzBxNbzTY5RdKiMWczLPfD4pu7BlfyKbISVj2PYeraFcYUqIpm1v4g3YEDQ==
-length: 23803
+edSignature: pHWjGk377ZPqJTOLKPQcVtEkUBMqs0HVu+G1Ndr115IgcjyK4ImDMxGa/eux5G6r+BDl0S7vMG+5fLE9odriBg==
+length: 24504
 -->
