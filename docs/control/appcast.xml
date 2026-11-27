@@ -5,6 +5,15 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         <title>Vamp Control macOS</title>
         <item>
             <title>2.0.0</title>
+            <pubDate>Fri, 27 Nov 2026 18:04:08 +0300</pubDate>
+            <link>https://thevamp.app/control/</link>
+            <sparkle:version>74</sparkle:version>
+            <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-74/VampControl-macOS-2.0.0-build-74-notarized.dmg" length="12968001" type="application/octet-stream" sparkle:edSignature="CwRxOwz24x5CYh9TDNzNYv9jhnxgWK4EnVCsUZWW7Y4GnK8bIInGh5g/2rNQsx7JYaOT7vVtbUQME4KmpRTDDA=="></enclosure>
+        </item>
+        <item>
+            <title>2.0.0</title>
             <pubDate>Fri, 27 Nov 2026 16:58:01 +0300</pubDate>
             <link>https://thevamp.app/control/</link>
             <sparkle:version>73</sparkle:version>
@@ -77,6 +86,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: IHPD02t28DX9JNyDeAGmBbwP/ARZq6/8B+jR/tf9HqlHarat5Is8zi0LD8XY35cfvzJkSf7doDqifqSBnzZeAw==
-length: 6257
+edSignature: ADdLH5eTS1780dCKFpI4u7ZZw1ejY6bAh6L92mUQNrrhpu0k5Z26nfqByM3GTFarGN3t3pA4vajtBAFMRmzSAw==
+length: 6984
 -->
