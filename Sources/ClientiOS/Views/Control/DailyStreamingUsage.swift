@@ -50,6 +50,10 @@ final class DailyStreamingUsage: ObservableObject {
 
     private func tick() {
         refresh()
+        // Save the running total as the session goes. It used to be written only when the session
+        // stopped, so force-quitting mid-stream refunded the minutes.
+        defaults.set(secondsUsedToday, forKey: Self.secondsKey)
+        defaults.set(Self.dayStamp(Date()), forKey: Self.dayKey)
     }
 
     private func refresh() {

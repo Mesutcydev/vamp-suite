@@ -287,6 +287,8 @@ targets:
         SUScheduledCheckInterval: 86400
         SUAutomaticallyUpdate: false
         SUVerifyUpdateBeforeExtraction: true
+        # release-vamp-sync.sh signs and verifies the appcast on every release; refuse an unsigned feed.
+        SURequireSignedFeed: true
     dependencies:
       - package: Sparkle
         product: Sparkle

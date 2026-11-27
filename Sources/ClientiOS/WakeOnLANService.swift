@@ -49,10 +49,10 @@ struct WakeOnLANService {
                 do {
                     try await sendPackets(packet, to: host, port: port)
                     sent = true
-                    Self.logger.info("WoL: sent to \(String(describing: host), privacy: .public):\(port.rawValue, privacy: .public)")
+                    Self.logger.info("WoL: sent to \(String(describing: host), privacy: .private):\(port.rawValue, privacy: .public)")
                 } catch {
                     lastError = error
-                    Self.logger.error("WoL: failed to \(String(describing: host), privacy: .public):\(port.rawValue, privacy: .public) — \(error.localizedDescription, privacy: .public)")
+                    Self.logger.error("WoL: failed to \(String(describing: host), privacy: .private):\(port.rawValue, privacy: .public) — \(error.localizedDescription, privacy: .public)")
                 }
             }
         }

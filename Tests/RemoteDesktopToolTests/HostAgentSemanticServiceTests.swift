@@ -8,14 +8,22 @@ final class HostAgentSemanticServiceTests: XCTestCase {
         let prompt = "--not-a-provider-flag"
         for provider in AgentProviderKind.allCases {
             let launch = HostAgentSemanticService.launch(provider: provider, prompt: prompt, previousSessionID: nil)
-            XCTAssertEqual(launch.arguments.filter { $0 == prompt }.count, 1, "\(provider.rawValue)")
-            guard let promptIndex = launch.arguments.firstIndex(of: prompt), promptIndex > 0 else {
+            // Flag-value providers get the prompt behind a leading space so a prompt that
+            // starts with "-" can never be parsed as an option.
+            let isPrompt: (String) -> Bool = { $0 == prompt || $0 == " " + prompt }
+            XCTAssertEqual(launch.arguments.filter(isPrompt).count, 1, "\(provider.rawValue)")
+            guard let promptIndex = launch.arguments.firstIndex(where: isPrompt), promptIndex > 0 else {
                 return XCTFail("\(provider.rawValue) must pass the prompt as an argument")
             }
+            let delimiter = launch.arguments[promptIndex - 1]
             XCTAssertTrue(
-                ["--", "--prompt", "--message"].contains(launch.arguments[promptIndex - 1]),
+                ["--", "--prompt", "--message"].contains(delimiter),
                 "\(provider.rawValue) must place the prompt after its prompt delimiter"
             )
+            if delimiter != "--" {
+                XCTAssertFalse(launch.arguments[promptIndex].hasPrefix("-"),
+                               "\(provider.rawValue) must not hand a flag-like value to an option parser")
+            }
         }
     }
 

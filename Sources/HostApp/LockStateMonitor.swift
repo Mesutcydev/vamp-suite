@@ -190,8 +190,21 @@ final class LockStateMonitor: ObservableObject {
     }
 
     private func handleScreenUnlocked() {
-        apply(.unlockedActiveSession)
-        logger.info("Screen unlocked notification")
+        // Any process can post this notification name, and trusting it reopens the input gate
+        // while the Mac is still locked. Confirm with CGSession like the lock handler does, and
+        // retry for a few seconds because WindowServer can lag the notification.
+        Task { @MainActor [weak self] in
+            for delay in [0.0, 0.5, 1.5, 3.0] {
+                if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+                guard let self else { return }
+                if !self.cgSessionIsLocked() {
+                    self.apply(.unlockedActiveSession)
+                    self.logger.info("Screen unlocked notification confirmed")
+                    return
+                }
+            }
+            self?.logger.warning("Ignored an unlock notification that CGSession did not confirm")
+        }
     }
 
     // MARK: - Helpers

@@ -77,6 +77,16 @@ final class ConnectionSecurityTests: XCTestCase {
     func testTokenFromHexRejectsInvalidInput() {
         XCTAssertNil(ConnectionSecurity.tokenFromHex("zz"))
         XCTAssertNil(ConnectionSecurity.tokenFromHex("0"))  // odd length
+        XCTAssertNil(ConnectionSecurity.tokenFromHex("+1"), "UInt8(radix:) accepts a sign; a token must not")
+        XCTAssertNil(ConnectionSecurity.tokenFromHex("-1"))
+    }
+
+    func testSecureRandomBytesAreFreshAndTheRequestedLength() {
+        let first = ConnectionSecurity.secureRandomBytes(count: 32)
+        let second = ConnectionSecurity.secureRandomBytes(count: 32)
+        XCTAssertEqual(first.count, 32)
+        XCTAssertNotEqual(first, second)
+        XCTAssertNotEqual(first, [UInt8](repeating: 0, count: 32))
     }
 
     func testTokenFromHexAcceptsEmptyString() {
@@ -196,6 +206,16 @@ final class InputValidationSecurityTests: XCTestCase {
         let cmd = KeyCommand(keyCode: 53, action: .down, modifiers: [.command, .option])
         let rejection = InputCommandValidation.validateContent(.key(cmd))
         XCTAssertNotNil(rejection, "Cmd+Option+Esc should be blocked")
+    }
+
+    func testBlocksImmediateLogoutAndForceQuitChords() {
+        for keyCode: UInt16 in [12, 53] {
+            let cmd = KeyCommand(keyCode: keyCode, action: .down, modifiers: [.command, .option, .shift])
+            XCTAssertNotNil(InputCommandValidation.validateContent(.key(cmd)), "Cmd+Option+Shift+\(keyCode) should be blocked")
+        }
+        // An ordinary shortcut with the same modifiers still works.
+        let allowed = KeyCommand(keyCode: 0, action: .down, modifiers: [.command, .option, .shift])
+        XCTAssertNil(InputCommandValidation.validateContent(.key(allowed)))
     }
 
     func testBlocksCtrlCmdQ() {

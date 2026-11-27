@@ -110,6 +110,19 @@ final class HostSessionJournalTests: XCTestCase {
         XCTAssertEqual(tail.first.map { String(data: $0.payload, encoding: .utf8) }, "final")
     }
 
+    func testSequencesKeepCountingAfterTheJournalIsRemoved() {
+        let journal = makeJournal()
+        let sessionID = UUID()
+        _ = event(journal, sessionID: sessionID, type: .agentPrompt)
+        let before = event(journal, sessionID: sessionID, type: .providerSemantic)
+
+        // A terminal closes and takes the journal with it while the chat session carries on.
+        journal.remove(sessionID: sessionID)
+        let after = event(journal, sessionID: sessionID, type: .providerSemantic)
+
+        XCTAssertGreaterThan(after, before, "a client drops any sequence it has already applied")
+    }
+
     func testRemoveDeletesFileAndStopsReplay() {
         let journal = makeJournal()
         let sessionID = UUID()

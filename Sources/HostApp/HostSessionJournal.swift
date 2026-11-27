@@ -57,6 +57,9 @@ final class HostSessionJournal: @unchecked Sendable {
     private let rootURL: URL
     private let queue = DispatchQueue(label: "host.session.journal")
     private var sequences: [UUID: UInt64] = [:]
+    /// Highest sequence of a session whose journal was removed. A chat-only session can outlive its
+    /// terminals, and restarting at 1 would make the client drop every later event as already seen.
+    private var retiredSequences: [UUID: UInt64] = [:]
     private var pending: [UUID: [Event]] = [:]
     private var flushTimers: [UUID: DispatchSourceTimer] = [:]
     private let logger = Logger(subsystem: "com.remotedesktop.host", category: "SessionJournal")
@@ -92,7 +95,7 @@ final class HostSessionJournal: @unchecked Sendable {
     @discardableResult
     func append(sessionID: UUID, type: EventType, payload: Data) -> UInt64 {
         queue.sync {
-            let sequence = (sequences[sessionID] ?? 0) + 1
+            let sequence = max(sequences[sessionID] ?? 0, retiredSequences[sessionID] ?? 0) + 1
             sequences[sessionID] = sequence
             let event = Event(
                 sequence: sequence,
@@ -134,7 +137,10 @@ final class HostSessionJournal: @unchecked Sendable {
             flushTimers[sessionID]?.cancel()
             flushTimers.removeValue(forKey: sessionID)
             pending.removeValue(forKey: sessionID)
-            sequences.removeValue(forKey: sessionID)
+            if let last = sequences.removeValue(forKey: sessionID) {
+                if retiredSequences.count >= 4096 { retiredSequences.removeAll() }
+                retiredSequences[sessionID] = max(last, retiredSequences[sessionID] ?? 0)
+            }
             try? FileManager.default.removeItem(at: fileURL(for: sessionID))
         }
     }

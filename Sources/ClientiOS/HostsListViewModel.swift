@@ -86,9 +86,40 @@ final class HostsListViewModel: ObservableObject {
 
     private static let savedHostsKey = "com.remotedesktop.savedHosts"
 
+    /// Posted with `hostID` when a saved Mac is forgotten from Settings, so every list drops it.
+    static let savedHostForgottenNotification = Notification.Name("com.remotedesktop.savedHostForgotten")
+
+    /// Macs whose key a verified exchange pinned, for the Settings "paired Macs" list.
+    static func pinnedMacs() -> [TrustedPeer] {
+        guard let data = UserDefaults.standard.data(forKey: savedHostsKey),
+              let records = try? JSONDecoder().decode([SavedHost].self, from: data) else { return [] }
+        return records.compactMap { record in
+            guard let raw = record.publicKeyFingerprint?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                  RemoteDesktopConstants.isValidPublicKeyFingerprint(raw) else { return nil }
+            return TrustedPeer(id: record.id, displayName: record.displayName, fingerprint: raw,
+                               trustedAt: record.lastConnected, lastSeenAt: record.lastConnected)
+        }
+    }
+
+    /// Forgets a saved Mac and its pin: the next connection asks "Is this your Mac?" again.
+    static func forgetSavedMac(_ hostID: UUID) {
+        if let data = UserDefaults.standard.data(forKey: savedHostsKey),
+           var records = try? JSONDecoder().decode([SavedHost].self, from: data) {
+            records.removeAll { $0.id == hostID }
+            if let updated = try? JSONEncoder().encode(records) {
+                UserDefaults.standard.set(updated, forKey: savedHostsKey)
+            }
+        }
+        NotificationCenter.default.post(name: savedHostForgottenNotification, object: nil, userInfo: ["hostID": hostID])
+    }
+
     init(browser: any BonjourDiscoveryBrowsing) {
         self.browser = browser
         CrashSafeStartupDiagnostics.mark("hosts.init.begin")
+        NotificationCenter.default.addObserver(forName: Self.savedHostForgottenNotification, object: nil, queue: .main) { [weak self] note in
+            guard let hostID = note.userInfo?["hostID"] as? UUID else { return }
+            MainActor.assumeIsolated { self?.removeSavedHost(hostID) }
+        }
         loadSavedHosts()
         CrashSafeStartupDiagnostics.mark("hosts.init.end", details: "saved=\(hosts.count)")
     }
@@ -231,17 +262,27 @@ final class HostsListViewModel: ObservableObject {
         // Tailscale is active. The sibling must be purely additive; the LAN/primary upsert path
         // still performs the full stale-collapse.
         var inheritedSaved = false
+        // What the replaced saved record already proved. An advertisement never adds to it.
+        var inheritedPinnedFingerprint: String?
+        var inheritedSignedKeyExchange = false
         if !skipTailscaleSibling {
             let fingerprint = normalizedFingerprint(endpoint.metadata.publicKeyFingerprint)
             let macAddress = normalizedMACAddress(endpoint.metadata.macAddress)
             let staleIndexes = hosts.indices.filter { index in
                 staleHost(hosts[index], matches: endpoint, fingerprint: fingerprint, macAddress: macAddress)
+                    && !advertisementContradictsPin(of: hosts[index], advertisedFingerprint: fingerprint)
             }
             for staleIndex in staleIndexes.sorted(by: >) {
                 let stale = hosts[staleIndex]
                 inheritedSaved = inheritedSaved || stale.isSaved
                 if stale.isSaved {
                     var records = loadSavedHostRecords()
+                    let replaced = records.filter { savedRecordMatchesStaleHost($0, stale: stale) }
+                    if inheritedPinnedFingerprint == nil {
+                        inheritedPinnedFingerprint = replaced.compactMap { normalizedFingerprint($0.publicKeyFingerprint) }.first
+                    }
+                    inheritedSignedKeyExchange = inheritedSignedKeyExchange
+                        || replaced.contains { $0.signedKeyExchange == true }
                     records.removeAll { savedRecordMatchesStaleHost($0, stale: stale) }
                     persistSavedHosts(records)
                 }
@@ -289,11 +330,14 @@ final class HostsListViewModel: ObservableObject {
                 bonjourServiceName: endpoint.bonjourServiceName,
                 wakeSupported: endpoint.metadata.wakeSupported,
                 magicWakeCapable: endpoint.metadata.magicWakeCapable,
-                publicKeyFingerprint: endpoint.metadata.publicKeyFingerprint,
+                // Keep the pin the replaced record already had (the advertised key matched it, or
+                // there was none). Bonjour is unauthenticated, so it never sets or moves a pin.
+                publicKeyFingerprint: inheritedPinnedFingerprint,
                 tailscaleHostname: endpoint.metadata.tailscaleHostname,
                 tailscaleIP: endpoint.metadata.tailscaleIP,
                 secureTLSPort: endpoint.metadata.secureTLSPort,
-                keyAgreementPublicKey: endpoint.metadata.keyAgreementPublicKey
+                keyAgreementPublicKey: endpoint.metadata.keyAgreementPublicKey,
+                signedKeyExchange: inheritedSignedKeyExchange ? true : nil
             )
             upsertSavedHostRecord(saved)
         }
@@ -310,9 +354,21 @@ final class HostsListViewModel: ObservableObject {
         updateState()
     }
 
+    /// A tailnet address from an advertisement. Bonjour is unauthenticated, and this value becomes
+    /// somewhere the client connects (leaking its name and key to whatever answers), so only a
+    /// MagicDNS name or a Tailscale address is taken; anything else is ignored.
+    static func validTailnetHost(_ value: String?) -> String? {
+        guard var host = value?.trimmingCharacters(in: .whitespacesAndNewlines), !host.isEmpty else { return nil }
+        if host.hasSuffix(".") { host.removeLast() }
+        let lowered = host.lowercased()
+        guard lowered.hasSuffix(".ts.net") || StorePrivateNetworkConnectionPolicy.isTailscaleHost(lowered) else { return nil }
+        return host
+    }
+
     private func makeTailscaleSiblingEndpoint(parent: ResolvedHostEndpoint) -> ResolvedHostEndpoint? {
-        let candidate = parent.metadata.tailscaleHostname ?? parent.metadata.tailscaleIP
-        guard let host = candidate, !host.isEmpty else { return nil }
+        let candidate = Self.validTailnetHost(parent.metadata.tailscaleHostname)
+            ?? Self.validTailnetHost(parent.metadata.tailscaleIP)
+        guard let host = candidate else { return nil }
 
         var siblingMetadata = parent.metadata
         siblingMetadata.hostID = tailscaleSiblingID(from: parent.metadata.hostID)
@@ -366,11 +422,11 @@ final class HostsListViewModel: ObservableObject {
         }
         // Backfill the tailnet address learned on the LAN so the host stays reachable over
         // Tailscale after a restart away from home (where Bonjour can't rediscover it).
-        if records[index].tailscaleHostname == nil, let tailscaleHostname, !tailscaleHostname.isEmpty {
+        if records[index].tailscaleHostname == nil, let tailscaleHostname = Self.validTailnetHost(tailscaleHostname) {
             records[index].tailscaleHostname = tailscaleHostname
             changed = true
         }
-        if records[index].tailscaleIP == nil, let tailscaleIP, !tailscaleIP.isEmpty {
+        if records[index].tailscaleIP == nil, let tailscaleIP = Self.validTailnetHost(tailscaleIP) {
             records[index].tailscaleIP = tailscaleIP
             changed = true
         }
@@ -386,11 +442,9 @@ final class HostsListViewModel: ObservableObject {
             records[index].magicWakeCapable = magicWakeCapable
             changed = true
         }
-        if normalizedFingerprint(records[index].publicKeyFingerprint) == nil,
-           let publicKeyFingerprint = normalizedFingerprint(publicKeyFingerprint) {
-            records[index].publicKeyFingerprint = publicKeyFingerprint
-            changed = true
-        }
+        // The fingerprint is deliberately not back-filled from the advertisement: Bonjour is
+        // unauthenticated, and a saved key is trusted without a prompt. A record gets its key
+        // only from `recordVerifiedHostIdentity`, after the Mac proved it.
         if records[index].secureTLSPort == nil, let secureTLSPort {
             records[index].secureTLSPort = secureTLSPort
             changed = true
@@ -544,6 +598,12 @@ final class HostsListViewModel: ObservableObject {
         }
 
         let displayName = host.endpoint.metadata.displayName
+        // Saving a row is not verifying it. The advertised key came from unauthenticated Bonjour,
+        // and a saved key is later trusted without a prompt, so keep only the key this Mac already
+        // proved. Anything else is pinned by the first verified connection.
+        let provenFingerprint = loadSavedHostRecords()
+            .first { $0.id == host.id }
+            .flatMap { normalizedFingerprint($0.publicKeyFingerprint) }
         let saved = SavedHost(
             id: host.id,
             hostname: host.endpoint.hostname,
@@ -554,7 +614,7 @@ final class HostsListViewModel: ObservableObject {
             bonjourServiceName: host.endpoint.bonjourServiceName,
             wakeSupported: host.endpoint.metadata.wakeSupported,
             magicWakeCapable: host.endpoint.metadata.magicWakeCapable,
-            publicKeyFingerprint: host.endpoint.metadata.publicKeyFingerprint,
+            publicKeyFingerprint: provenFingerprint,
             tailscaleHostname: host.endpoint.metadata.tailscaleHostname,
             tailscaleIP: host.endpoint.metadata.tailscaleIP,
             secureTLSPort: host.endpoint.metadata.secureTLSPort,
@@ -1173,6 +1233,19 @@ final class HostsListViewModel: ObservableObject {
             return true
         }
         return record.hostname == endpoint.hostname && record.port == endpoint.port
+    }
+
+    /// A saved Mac's key is pinned only by a verified exchange. An unauthenticated advertisement
+    /// that claims the same MAC, address or host ID with a different key, or none, must never
+    /// replace that record or its pin. It is listed as its own unverified Mac, and connecting to
+    /// it is judged against the pin like any other connection.
+    private func advertisementContradictsPin(of host: DiscoveredHostRow, advertisedFingerprint: String?) -> Bool {
+        guard host.isSaved else { return false }
+        return loadSavedHostRecords().contains { record in
+            guard savedRecordMatchesStaleHost(record, stale: host),
+                  let pinned = normalizedFingerprint(record.publicKeyFingerprint) else { return false }
+            return pinned != advertisedFingerprint
+        }
     }
 
     private func savedRecordMatchesStaleHost(_ record: SavedHost, stale: DiscoveredHostRow) -> Bool {

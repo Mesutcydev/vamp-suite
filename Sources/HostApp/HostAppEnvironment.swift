@@ -590,6 +590,12 @@ final class HostAppEnvironment: ObservableObject {
         self.inputCommandRouter.onSessionTransportEnded = { [weak terminalService = self.terminalService] sessionID in
             terminalService?.transportDetached(sessionID: sessionID)
         }
+        // Revoking a device is an explicit end: its shells and agent runs must not outlive its access.
+        self.sessionCoordinator.onSessionRevoked = { [weak terminalService = self.terminalService,
+                                                       weak agentSemanticService = self.agentSemanticService] sessionID in
+            terminalService?.sessionDidEnd(sessionID: sessionID, reason: "device-revoked")
+            agentSemanticService?.sessionDidEnd(sessionID: sessionID)
+        }
 
         #if os(macOS)
         self.browserControlService.terminalModeProvider = { [weak self] in

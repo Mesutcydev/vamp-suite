@@ -50,6 +50,8 @@
 	<string>https://mesut.uk/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>jyN/42y+0M/G26dx2UbQg1MNZq8lKyX2vvzUu26pcZo=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 	<key>SUVerifyUpdateBeforeExtraction</key>

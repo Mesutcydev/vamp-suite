@@ -68,6 +68,17 @@ struct BeetCodeRemoteEndpoint: Equatable, Hashable, Sendable {
         return Self(url: url, pairingCode: normalizedCode)
     }
 
+    /// Whether the link to a typed address is encrypted: HTTPS or a Tailscale address. `nil` while
+    /// the text is not a usable address yet. Plain HTTP on a LAN is allowed, but anyone on that
+    /// network can read the pairing code, the token and everything sent after it.
+    static func usesEncryptedRoute(address: String) -> Bool? {
+        guard let endpoint = try? parse(address: address) else { return nil }
+        return BeetCodeRemoteClient.isEncryptedRoute(endpoint.url)
+    }
+
+    static let unencryptedRouteWarning =
+        "This address is not encrypted. Anyone on this network can read the pairing code and everything you do. Use your Mac's Tailscale address for a private link."
+
     static func savedURL(address: String) throws -> URL {
         try parse(address: address).url
     }
@@ -481,8 +492,24 @@ struct BeetCodeRemoteClient: Sendable {
         return try await request("api/control/input", method: "POST", body: body)
     }
 
+    /// Remote Unlock sends the Mac's login password. Plain HTTP on a LAN or `.local` address is
+    /// readable by anyone on the network and is trusted only by its name, so the password goes out
+    /// only over HTTPS or a Tailscale address (encrypted, and the host is a tailnet device).
+    var canSendUnlockPassword: Bool { Self.isEncryptedRoute(baseURL) }
+
+    static func isEncryptedRoute(_ url: URL) -> Bool {
+        if url.scheme?.lowercased() == "https" { return true }
+        guard let host = url.host?.lowercased() else { return false }
+        return StorePrivateNetworkConnectionPolicy.isTailscaleHost(host) || host.hasSuffix(".ts.net")
+    }
+
     func unlockMac(password: String) async throws -> BeetCodeAcceptedResponse {
-        try await request(
+        guard canSendUnlockPassword else {
+            throw BeetCodeRemoteError.controlUnavailable(
+                "Remote Unlock is only available over Tailscale. Connect to this Mac by its Tailscale address."
+            )
+        }
+        return try await request(
             "api/control/unlock",
             method: "POST",
             body: ["password": password],
@@ -577,7 +604,7 @@ struct BeetCodeRemoteClient: Sendable {
 
     private func decode<Response: Decodable>(_ type: Response.Type, request: URLRequest) async throws -> Response {
         let request = try await Self.privateStoreRequest(request)
-        let session = StorePrivateNetworkConnectionPolicy.requiresPrivateNetwork ? Self.storeSession : URLSession.shared
+        let session = Self.storeSession
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw BeetCodeRemoteError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
@@ -630,7 +657,9 @@ struct BeetCodeRemoteClient: Sendable {
                 func urlSession(_ session: URLSession, task: URLSessionTask,
                                 willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
                                 completionHandler: @escaping (URLRequest?) -> Void) {
-                    completionHandler(StorePrivateNetworkConnectionPolicy.requiresPrivateNetwork ? nil : request)
+                    // The Assistant API has no redirects. Following one would forward the bearer
+                    // token, or a POST body, to a host the user never paired with.
+                    completionHandler(nil)
                 }
 
                 func urlSession(
@@ -792,6 +821,11 @@ struct BeetCodeScreenStreamParser {
             return .skip
         }
         guard length <= maxFrameBytes else {
+            // Skipping an oversized frame means buffering all of it first. A length far past any
+            // real frame is a broken or hostile peer, and `+ length` would overflow near Int.max.
+            guard length <= maxFrameBytes * 2 else {
+                throw BeetCodeRemoteError.invalidResponseReason("frame too large")
+            }
             let end = headerEnd.upperBound + length
             guard buffer.count >= end else { return .needMoreData }
             buffer.removeSubrange(0..<min(end + 2, buffer.count))
@@ -810,10 +844,17 @@ struct BeetCodeScreenStreamParser {
         return .frame(frame)
     }
 
+    /// `Int(Double(_))` traps on `nan`, `inf` and anything past Int's range, and these headers come
+    /// from the peer.
+    private static func headerInt(_ value: String?) -> Int? {
+        guard let value, let number = Double(value), number.isFinite, abs(number) <= Double(Int32.max) else { return nil }
+        return Int(number)
+    }
+
     private static func frame(headers: [String: String], body: Data) throws -> BeetCodeScreenFrame? {
         let contentType = (headers["content-type"] ?? "video/avc").lowercased()
-        let width = Int(Double(headers["x-beet-image-width"] ?? "") ?? 0)
-        let height = Int(Double(headers["x-beet-image-height"] ?? "") ?? 0)
+        let width = Self.headerInt(headers["x-beet-image-width"]) ?? 0
+        let height = Self.headerInt(headers["x-beet-image-height"]) ?? 0
         guard (1...8192).contains(width), (1...8192).contains(height), !body.isEmpty else {
             throw BeetCodeRemoteError.invalidResponseReason("invalid frame dimensions")
         }

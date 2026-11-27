@@ -180,6 +180,13 @@ struct BeetCodePairingView: View {
             }
             .font(.footnote)
             .foregroundStyle(StreamReading.secondary)
+
+            if BeetCodeRemoteEndpoint.usesEncryptedRoute(address: address) == false {
+                Label(BeetCodeRemoteEndpoint.unencryptedRouteWarning, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(.bottom, AppSpacing.xl)
     }

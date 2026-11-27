@@ -307,4 +307,54 @@ final class BeetCodeRemoteClientTests: XCTestCase {
         XCTAssertTrue(keyframe)
         XCTAssertEqual(params, parameterSets)
     }
+
+    private func parserForBoundary(_ boundary: String) throws -> BeetCodeScreenStreamParser {
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: URL(string: "http://192.168.1.20:9575/api/control/screen/stream")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "multipart/mixed; boundary=\(boundary)"]))
+        var parser = BeetCodeScreenStreamParser()
+        try parser.configure(response: response)
+        return parser
+    }
+
+    func testHostileGeometryHeadersAreRejectedInsteadOfCrashing() throws {
+        // `Int(Double("1e30"))`, nan and inf all trap, and the peer controls these headers.
+        for width in ["1e30", "nan", "inf", "-inf", "9999999999999999999"] {
+            var parser = try parserForBoundary("b")
+            let message = Data(
+                "--b\r\nContent-Type: video/avc\r\nContent-Length: 4\r\nX-Beet-Image-Width: \(width)\r\nX-Beet-Image-Height: 100\r\n\r\nabcd\r\n".utf8
+            )
+            XCTAssertThrowsError(try parser.append(message), width)
+        }
+    }
+
+    func testAbsurdContentLengthEndsTheStreamInsteadOfOverflowing() throws {
+        var parser = try parserForBoundary("b")
+        let message = Data(
+            "--b\r\nContent-Type: video/avc\r\nContent-Length: 9223372036854775807\r\nX-Beet-Image-Width: 100\r\nX-Beet-Image-Height: 100\r\n\r\n".utf8
+        )
+        XCTAssertThrowsError(try parser.append(message))
+    }
+
+    func testTypedAddressesAreFlaggedWhenTheirLinkIsNotEncrypted() {
+        XCTAssertEqual(BeetCodeRemoteEndpoint.usesEncryptedRoute(address: "192.168.1.20:9575"), false)
+        XCTAssertEqual(BeetCodeRemoteEndpoint.usesEncryptedRoute(address: "studio.local"), false)
+        XCTAssertEqual(BeetCodeRemoteEndpoint.usesEncryptedRoute(address: "100.90.80.70"), true)
+        XCTAssertEqual(BeetCodeRemoteEndpoint.usesEncryptedRoute(address: "studio.tail1234.ts.net:9575"), true)
+        XCTAssertNil(BeetCodeRemoteEndpoint.usesEncryptedRoute(address: ""), "nothing to warn about yet")
+    }
+
+    func testUnlockPasswordTravelsOnlyOverAnEncryptedRoute() throws {
+        func route(_ address: String) throws -> Bool {
+            BeetCodeRemoteClient(baseURL: try BeetCodeRemoteEndpoint.parse(address: address).url, token: "t").canSendUnlockPassword
+        }
+        XCTAssertTrue(try route("http://100.90.80.70:9575"))
+        XCTAssertTrue(try route("http://studio.tail1234.ts.net:9575"))
+        XCTAssertTrue(try route("https://studio.example.com"))
+        XCTAssertFalse(try route("http://192.168.1.20:9575"), "LAN HTTP is readable by anyone on the network")
+        XCTAssertFalse(try route("http://studio.local:9575"), "a .local name is trusted only by its suffix")
+        XCTAssertFalse(try route("http://10.0.0.5:9575"))
+    }
 }

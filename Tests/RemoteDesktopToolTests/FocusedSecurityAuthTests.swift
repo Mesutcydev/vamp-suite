@@ -168,6 +168,104 @@ final class ControlChannelAuthEnforcementTests: XCTestCase {
         router.stopListening()
     }
 
+    private func makeTerminalGateRouter(terminalMode: Bool) -> (HostInputCommandRouter, ControlAuthTestSessionManager, UUID, String) {
+        let sessionManager = ControlAuthTestSessionManager()
+        let router = HostInputCommandRouter(
+            inputService: RecordingInputInjectionService(),
+            webRTCSessionManager: sessionManager,
+            eventLogStore: RecordingEventLogStore(),
+            modeProvider: HostSessionModeController(mode: .fullControl)
+        )
+        router.setTerminalModeEnabled(terminalMode)
+        return (router, sessionManager, UUID(), ConnectionSecurity.tokenToHex(ConnectionSecurity.generateSessionToken()))
+    }
+
+    func testAgentPromptRejectedWhenTerminalModeDisabled() async throws {
+        let (router, sessionManager, sessionID, token) = makeTerminalGateRouter(terminalMode: false)
+        let reached = expectation(description: "agent prompt must not reach the handler")
+        reached.isInverted = true
+        router.onAgentPrompt = { _ in reached.fulfill() }
+        router.startListening(sessionID: sessionID, expectedSessionTokenHex: token)
+        try sessionManager.emit(try DataChannelEnvelope.controlAuth(
+            ControlChannelAuthMessage(sessionID: sessionID, sessionToken: token)
+        ))
+        let prompt = AgentPromptMessage(sessionID: sessionID, terminalID: UUID(), provider: .claude,
+                                        prompt: "hello", workingDirectory: nil)
+        try sessionManager.emit(try XCTUnwrap(
+            try DataChannelEnvelope.agentPrompt(prompt).authenticated(using: token, counter: 1)
+        ))
+        await fulfillment(of: [reached], timeout: 0.4)
+        XCTAssertGreaterThanOrEqual(router.commandsRejected, 1)
+        router.stopListening()
+    }
+
+    func testAgentPromptReachesHandlerWhenTerminalModeEnabled() async throws {
+        let (router, sessionManager, sessionID, token) = makeTerminalGateRouter(terminalMode: true)
+        let reached = expectation(description: "agent prompt reached handler")
+        router.onAgentPrompt = { _ in reached.fulfill() }
+        router.startListening(sessionID: sessionID, expectedSessionTokenHex: token)
+        try sessionManager.emit(try DataChannelEnvelope.controlAuth(
+            ControlChannelAuthMessage(sessionID: sessionID, sessionToken: token)
+        ))
+        let prompt = AgentPromptMessage(sessionID: sessionID, terminalID: UUID(), provider: .claude,
+                                        prompt: "hello", workingDirectory: nil)
+        try sessionManager.emit(try XCTUnwrap(
+            try DataChannelEnvelope.agentPrompt(prompt).authenticated(using: token, counter: 1)
+        ))
+        await fulfillment(of: [reached], timeout: 1.0)
+        XCTAssertEqual(router.commandsRejected, 0)
+        router.stopListening()
+    }
+
+    func testSessionThatSentItsTokenUnsealedGetsNoShellsOrAgents() async throws {
+        let (router, sessionManager, sessionID, token) = makeTerminalGateRouter(terminalMode: true)
+        router.setLegacyTokenSession(true)
+        let reached = expectation(description: "agent prompt must not reach the handler")
+        reached.isInverted = true
+        router.onAgentPrompt = { _ in reached.fulfill() }
+        router.startListening(sessionID: sessionID, expectedSessionTokenHex: token)
+        try sessionManager.emit(try DataChannelEnvelope.controlAuth(
+            ControlChannelAuthMessage(sessionID: sessionID, sessionToken: token)
+        ))
+        let prompt = AgentPromptMessage(sessionID: sessionID, terminalID: UUID(), provider: .claude,
+                                        prompt: "hello", workingDirectory: nil)
+        try sessionManager.emit(try XCTUnwrap(
+            try DataChannelEnvelope.agentPrompt(prompt).authenticated(using: token, counter: 1)
+        ))
+        await fulfillment(of: [reached], timeout: 0.4)
+        XCTAssertTrue(router.isLegacyTokenSession)
+        // A sealed session is unaffected.
+        router.setLegacyTokenSession(false)
+        XCTAssertFalse(router.isLegacyTokenSession)
+        router.stopListening()
+    }
+
+    func testWorkspaceListRejectedWhenTerminalModeDisabled() async throws {
+        let (router, sessionManager, sessionID, token) = makeTerminalGateRouter(terminalMode: false)
+        let reached = expectation(description: "workspace list must not reach the handler")
+        reached.isInverted = true
+        router.onWorkspaceListRequest = { _ in reached.fulfill() }
+        router.startListening(sessionID: sessionID, expectedSessionTokenHex: token)
+        try sessionManager.emit(try DataChannelEnvelope.controlAuth(
+            ControlChannelAuthMessage(sessionID: sessionID, sessionToken: token)
+        ))
+        let request = WorkspaceListRequestMessage(sessionID: sessionID, refresh: true)
+        try sessionManager.emit(try XCTUnwrap(
+            try DataChannelEnvelope.workspaceListRequest(request).authenticated(using: token, counter: 1)
+        ))
+        await fulfillment(of: [reached], timeout: 0.4)
+        router.stopListening()
+    }
+
+    func testFlagValuePromptsCannotBecomeOptions() {
+        XCTAssertEqual(HostAgentSemanticService.flagValue("hello"), "hello")
+        XCTAssertEqual(HostAgentSemanticService.flagValue("--approval-mode yolo"), " --approval-mode yolo")
+        for provider in [AgentProviderKind.kimi, .qwen, .aider, .gemini] {
+            let args = HostAgentSemanticService.launch(provider: provider, prompt: "--yolo", previousSessionID: nil).arguments
+            XCTAssertFalse(args.contains("--yolo"), "\(provider.rawValue) must not receive a bare option")
+        }
+    }
+
     func testImmediateApplicationListReachesViewOnlyHostOverBroadcastTransport() async throws {
         // Use the production broadcast stream: unlike ControlAuthTestSessionManager,
         // it drops packets received before a subscriber is registered.

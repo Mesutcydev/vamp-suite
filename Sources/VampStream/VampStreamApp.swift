@@ -79,6 +79,9 @@ struct VampStreamRootView: View {
     @State private var scannedAssistantEndpoint: BeetCodeRemoteEndpoint?
     @State private var showVampHostScanner = false
     @State private var hostScannerError: String?
+    /// A scanned Mac waits here until the camera sheet has gone, then for the user's go-ahead.
+    @State private var pendingScannedHost: DiscoveredHostRow?
+    @State private var scannedHostToConfirm: DiscoveredHostRow?
     @AppStorage(VampStreamForgottenHosts.key) private var forgottenHostsRaw = ""
     @AppStorage(VampStreamHostSourceStore.key) private var hostSourceRaw = ""
 
@@ -149,6 +152,10 @@ struct VampStreamRootView: View {
         .sheet(isPresented: $showVampHostScanner, onDismiss: {
             // Present only after the camera sheet finishes dismissing.
             if scannedAssistantEndpoint != nil { showVampAssistantPairing = true }
+            if let host = pendingScannedHost {
+                pendingScannedHost = nil
+                scannedHostToConfirm = host
+            }
         }) {
             NavigationStack {
                 BeetCodeQRScannerView(source: .mac, onPayload: handleVampHostPayload)
@@ -177,6 +184,19 @@ struct VampStreamRootView: View {
             Button("Cancel", role: .cancel) { forgetChoice = nil }
         } message: {
             Text("This removes the saved connection from this device. You will need to pair with this Mac again.")
+        }
+        .confirmationDialog(
+            "Connect to \(scannedHostToConfirm?.title ?? "this Mac")?",
+            isPresented: Binding(get: { scannedHostToConfirm != nil }, set: { if !$0 { scannedHostToConfirm = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Connect") {
+                if let host = scannedHostToConfirm { connect(to: host) }
+                scannedHostToConfirm = nil
+            }
+            Button("Cancel", role: .cancel) { scannedHostToConfirm = nil }
+        } message: {
+            Text("\(scannedHostToConfirm?.subtitle ?? ""). Only continue if this code was shown on your own Mac's screen: a code from anywhere else can point you to someone else's computer.")
         }
         .alert("QR code not recognised", isPresented: Binding(
             get: { hostScannerError != nil },
@@ -281,8 +301,10 @@ struct VampStreamRootView: View {
                 hostSourceRaw = VampStreamHostSource.both.rawValue
             }
             hostScannerError = nil
+            // A scanned address and key are trusted, so ask before connecting rather than
+            // letting any printed or posted code send the app straight to a host.
+            pendingScannedHost = host
             showVampHostScanner = false
-            connect(to: host)
         case nil:
             rejectScannedPayload()
         }

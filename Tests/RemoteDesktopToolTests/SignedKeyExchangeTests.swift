@@ -674,6 +674,108 @@ final class FirstContactFingerprintTests: XCTestCase {
         XCTAssertEqual(makeViewModel().trustedIdentity(matching: again), required)
     }
 
+    private func advertised(
+        hostID: UUID, host: String, fingerprint: String?, mac: String?
+    ) -> ResolvedHostEndpoint {
+        ResolvedHostEndpoint(
+            hostname: host,
+            port: 9471,
+            metadata: HostAdvertisementMetadata(
+                protocolVersion: 1, hostID: hostID, displayName: "Studio Mac", appVersion: "4.0",
+                signalingPort: 9471, capabilities: [], publicKeyFingerprint: fingerprint, macAddress: mac
+            )
+        )
+    }
+
+    func testBonjourCannotMoveAPinnedKeyOrClearTheDowngradeProtection() async throws {
+        let browser = StubBrowser()
+        let viewModel = HostsListViewModel(browser: browser)
+        let mac = "aa:bb:cc:dd:ee:ff"
+        let real = advertised(hostID: UUID(), host: "studio.local", fingerprint: macFingerprint, mac: mac)
+        let verified = try XCTUnwrap(viewModel.recordVerifiedHostIdentity(
+            endpoint: real, hostID: real.metadata.hostID, publicKeyFingerprint: macFingerprint, signedKeyExchange: true
+        ))
+        let required = TrustedHostIdentity(fingerprint: macFingerprint, requiresSignedKeyExchange: true)
+        XCTAssertEqual(viewModel.trustedIdentity(matching: verified), required)
+
+        // A LAN impostor copies the Mac's public MAC and advertises its own key, or none.
+        let impostorWithKey = advertised(hostID: UUID(), host: "evil.local", fingerprint: String(repeating: "e", count: 64), mac: mac)
+        let impostorWithoutKey = advertised(hostID: UUID(), host: "evil2.local", fingerprint: nil, mac: mac)
+        browser.hosts = [impostorWithKey, impostorWithoutKey]
+        await viewModel.refresh()
+
+        XCTAssertEqual(viewModel.trustedIdentity(matching: verified), required, "the pin and its flag must survive")
+        XCTAssertEqual(viewModel.trustedIdentity(matching: impostorWithKey), required, "an impostor is judged against the pin")
+        XCTAssertEqual(viewModel.trustedIdentity(matching: impostorWithoutKey), required)
+        XCTAssertEqual(makeViewModel().trustedIdentity(matching: impostorWithKey), required, "and so is a cold start")
+        XCTAssertFalse(viewModel.hosts.contains { $0.endpoint.hostname.hasPrefix("evil") && $0.isSaved },
+                       "an unverified advertisement must not inherit the saved record")
+        XCTAssertTrue(viewModel.hosts.contains { $0.endpoint.hostname == "studio.local" && $0.isSaved },
+                      "the verified Mac keeps its own saved tile")
+    }
+
+    func testSettingsListsAndForgetsPinnedMacs() async throws {
+        let browser = StubBrowser()
+        let viewModel = HostsListViewModel(browser: browser)
+        let real = advertised(hostID: UUID(), host: "studio.local", fingerprint: macFingerprint, mac: "aa:bb:cc:dd:ee:ff")
+        _ = viewModel.recordVerifiedHostIdentity(
+            endpoint: real, hostID: real.metadata.hostID, publicKeyFingerprint: macFingerprint, signedKeyExchange: true
+        )
+        XCTAssertEqual(HostsListViewModel.pinnedMacs().map(\.fingerprint), [macFingerprint])
+        XCTAssertNotNil(viewModel.trustedIdentity(matching: real))
+
+        HostsListViewModel.forgetSavedMac(real.metadata.hostID)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertTrue(HostsListViewModel.pinnedMacs().isEmpty)
+        XCTAssertNil(viewModel.trustedIdentity(matching: real), "forgetting must clear the pin")
+        XCTAssertFalse(viewModel.hosts.contains { $0.id == real.metadata.hostID && $0.isSaved })
+    }
+
+    func testSavingADiscoveredMacDoesNotPinItsAdvertisedKey() async throws {
+        let browser = StubBrowser()
+        let viewModel = HostsListViewModel(browser: browser)
+        let advert = advertised(hostID: UUID(), host: "studio.local", fingerprint: macFingerprint, mac: "aa:bb:cc:dd:ee:ff")
+        browser.hosts = [advert]
+        await viewModel.refresh()
+
+        viewModel.saveHost(advert.metadata.hostID)
+
+        XCTAssertNil(viewModel.trustedIdentity(matching: advert),
+                     "Bonjour can be spoofed; tapping Save must not make its key trusted without a prompt")
+    }
+
+    func testOnlyTailnetNamesAndAddressesAreTakenFromAnAdvertisement() {
+        XCTAssertEqual(HostsListViewModel.validTailnetHost("studio.tail1234.ts.net."), "studio.tail1234.ts.net")
+        XCTAssertEqual(HostsListViewModel.validTailnetHost("100.101.102.103"), "100.101.102.103")
+        XCTAssertEqual(HostsListViewModel.validTailnetHost("fd7a:115c:a1e0::1"), "fd7a:115c:a1e0::1")
+        XCTAssertNil(HostsListViewModel.validTailnetHost("evil.example.com"))
+        XCTAssertNil(HostsListViewModel.validTailnetHost("203.0.113.9"), "a public address is not a tailnet address")
+        XCTAssertNil(HostsListViewModel.validTailnetHost("192.168.1.9"))
+        XCTAssertNil(HostsListViewModel.validTailnetHost("ts.net.evil.example"))
+        XCTAssertNil(HostsListViewModel.validTailnetHost(""))
+        XCTAssertNil(HostsListViewModel.validTailnetHost(nil))
+    }
+
+    func testSameMacUnderANewHostIDKeepsItsPinAndTheDowngradeProtection() async throws {
+        let browser = StubBrowser()
+        let viewModel = HostsListViewModel(browser: browser)
+        let mac = "aa:bb:cc:dd:ee:ff"
+        let real = advertised(hostID: UUID(), host: "studio.local", fingerprint: macFingerprint, mac: mac)
+        _ = viewModel.recordVerifiedHostIdentity(
+            endpoint: real, hostID: real.metadata.hostID, publicKeyFingerprint: macFingerprint, signedKeyExchange: true
+        )
+
+        // Older builds advertised a new host ID on every launch. Same key, so it is the same Mac.
+        let relaunched = advertised(hostID: UUID(), host: "studio.local", fingerprint: macFingerprint, mac: mac)
+        browser.hosts = [relaunched]
+        await viewModel.refresh()
+
+        let required = TrustedHostIdentity(fingerprint: macFingerprint, requiresSignedKeyExchange: true)
+        XCTAssertEqual(viewModel.trustedIdentity(matching: relaunched), required)
+        XCTAssertEqual(viewModel.hosts.filter { $0.isSaved }.count, 1, "the relaunched Mac replaces the old tile")
+    }
+
     func testSavedFingerprintWinsOverALaterScanOfADifferentOne() throws {
         let viewModel = makeViewModel()
         let row = try XCTUnwrap(viewModel.addManualHost(address: "192.168.1.20:9471"))
@@ -685,6 +787,16 @@ final class FirstContactFingerprintTests: XCTestCase {
         ))
 
         XCTAssertEqual(viewModel.trustedIdentity(matching: rescanned.endpoint)?.fingerprint, macFingerprint)
+    }
+}
+
+private final class StubBrowser: BonjourDiscoveryBrowsing {
+    var hosts: [ResolvedHostEndpoint] = []
+    func startBrowsing(serviceType: String, domain: String) async throws {}
+    func stopBrowsing() async {}
+    func resolvedHosts() async -> [ResolvedHostEndpoint] { hosts }
+    func events() -> AsyncStream<BonjourDiscoveryEvent> {
+        AsyncStream { $0.finish() }
     }
 }
 

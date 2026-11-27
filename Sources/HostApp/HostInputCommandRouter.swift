@@ -23,6 +23,10 @@ final class HostInputCommandRouter: @unchecked Sendable {
     private var _isEnabled: Bool = false
     private var _terminalOnly: Bool = false
     private var _terminalModeEnabled: Bool = true
+    /// The device that owns the session sent its token unsealed (an app that predates the signed
+    /// key exchange). Anyone who read that token on the network holds the session key, so such a
+    /// session never gets shells, agent runs or the Mac password.
+    private var _legacyTokenSession: Bool = false
     private var _commandsProcessed: UInt64 = 0
     private var _commandsRejected: UInt64 = 0
     private var _lastQualityAdjustAt: Date?
@@ -34,6 +38,10 @@ final class HostInputCommandRouter: @unchecked Sendable {
     private var _lastAcceptedAuthCounter: UInt64 = 0
     private var _unlockAttempts: Int = 0
     private var _lastUnlockAttemptAt: Date?
+    /// Unlock attempts over the last hour across sessions. The per-session budget resets whenever
+    /// a trusted device reconnects, which on its own allows hundreds of guesses an hour.
+    private var _unlockHistory: [Date] = []
+    private static let maxUnlockAttemptsPerHour = 30
     private var listenTask: Task<Void, Never>?
     private var authTimeoutTask: Task<Void, Never>?
     #if DEBUG
@@ -204,6 +212,21 @@ final class HostInputCommandRouter: @unchecked Sendable {
         defer { lock.unlock() }
         return _terminalModeEnabled
     }
+
+    var isLegacyTokenSession: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _legacyTokenSession
+    }
+
+    func setLegacyTokenSession(_ isLegacy: Bool) {
+        lock.lock()
+        _legacyTokenSession = isLegacy
+        lock.unlock()
+    }
+
+    /// Terminal Mode is on and the session's key was exchanged sealed.
+    private var allowsShellFeatures: Bool { terminalModeEnabled && !isLegacyTokenSession }
 
     func setTerminalModeEnabled(_ enabled: Bool) {
         lock.lock()
@@ -512,6 +535,11 @@ final class HostInputCommandRouter: @unchecked Sendable {
     }
 
     private func handleAgentPromptEnvelope(_ envelope: DataChannelEnvelope) async {
+        // Agent CLIs run as the host user, so they need the same opt-in as a PTY.
+        guard allowsShellFeatures else {
+            rejectCommand(reason: "Agent prompt rejected: Terminal Mode is disabled")
+            return
+        }
         guard validateControlEnvelopeAuth(envelope),
               let activeSessionID = withLock({ _activeSessionID }),
               let message = try? envelope.decodeAgentPrompt(),
@@ -575,6 +603,10 @@ final class HostInputCommandRouter: @unchecked Sendable {
         guard envelope.hasAcceptableTimestamp else { return }
         guard validateControlEnvelopeAuth(envelope) else { return }
 
+        guard !isLegacyTokenSession else {
+            rejectCommand(reason: "Remote Unlock needs an updated Vamp app: this session's key was sent unsealed")
+            return
+        }
         guard remoteUnlockEnabled() else {
             logger.info("Remote unlock is disabled in host settings — ignoring")
             return
@@ -601,6 +633,15 @@ final class HostInputCommandRouter: @unchecked Sendable {
         }
         guard attempt <= 5 else {
             logger.warning("Remote unlock attempt \(attempt) exceeds 30-second limit — ignored")
+            return
+        }
+        let attemptsThisHour = withLock { () -> Int in
+            _unlockHistory.removeAll { now.timeIntervalSince($0) > 3600 }
+            _unlockHistory.append(now)
+            return _unlockHistory.count
+        }
+        guard attemptsThisHour <= Self.maxUnlockAttemptsPerHour else {
+            logger.warning("Remote unlock exceeded \(Self.maxUnlockAttemptsPerHour) attempts in an hour — ignored")
             return
         }
 
@@ -685,7 +726,7 @@ final class HostInputCommandRouter: @unchecked Sendable {
             return
         }
 
-        guard terminalModeEnabled else {
+        guard allowsShellFeatures else {
             logger.info("Rejecting terminal open because Terminal Mode is disabled")
             rejectCommand(reason: "Terminal Mode is disabled")
             let close = TerminalCloseMessage(
@@ -760,6 +801,8 @@ final class HostInputCommandRouter: @unchecked Sendable {
     }
 
     private func handleWorkspaceListRequestEnvelope(_ envelope: DataChannelEnvelope) async {
+        // Workspace discovery enumerates the home folder and runs git in each repo.
+        guard allowsShellFeatures else { return }
         guard envelope.hasAcceptableTimestamp,
               validateControlEnvelopeAuth(envelope),
               let message = try? envelope.decodeWorkspaceListRequest(),
@@ -775,6 +818,10 @@ final class HostInputCommandRouter: @unchecked Sendable {
     }
 
     private func handleWorkspaceDirectoryRequestEnvelope(_ envelope: DataChannelEnvelope) async {
+        guard allowsShellFeatures else {
+            rejectCommand(reason: "Workspace directory request rejected: Terminal Mode is disabled")
+            return
+        }
         guard envelope.hasAcceptableTimestamp else {
             rejectCommand(reason: "Workspace directory request timestamp rejected")
             return
@@ -803,6 +850,7 @@ final class HostInputCommandRouter: @unchecked Sendable {
     }
 
     private func handleWorkspaceAccessRequestEnvelope(_ envelope: DataChannelEnvelope) async {
+        guard allowsShellFeatures else { return }
         guard envelope.hasAcceptableTimestamp,
               validateControlEnvelopeAuth(envelope),
               let message = try? envelope.decodeWorkspaceAccessRequest(),

@@ -191,8 +191,19 @@ public final class CryptoIdentityService: @unchecked Sendable {
     }
 
     private func loadFromFile() -> P256.Signing.PrivateKey? {
-        guard let data = try? Data(contentsOf: keyFileURL) else { return nil }
-        return try? P256.Signing.PrivateKey(x963Representation: data)
+        guard let data = try? Data(contentsOf: keyFileURL),
+              let key = try? P256.Signing.PrivateKey(x963Representation: data) else { return nil }
+        hardenKeyStorePermissions()
+        return key
+    }
+
+    /// The key file is 0600 but the folder around it was created 0755 by older builds, and the
+    /// 0700 passed at creation does not apply to a folder that already exists.
+    private func hardenKeyStorePermissions() {
+        let url = keyFileURL
+        let manager = FileManager.default
+        try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.deletingLastPathComponent().path)
+        try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     private func saveToFile(_ key: P256.Signing.PrivateKey) {
@@ -216,6 +227,7 @@ public final class CryptoIdentityService: @unchecked Sendable {
                 throw CocoaError(.fileWriteUnknown)
             }
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            hardenKeyStorePermissions()
         } catch {
             // Last-resort fallback so we don't lose the identity entirely.
             saveToKeychain(key)

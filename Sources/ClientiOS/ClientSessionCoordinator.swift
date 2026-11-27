@@ -1373,7 +1373,7 @@ final class ClientSessionCoordinator: ObservableObject {
             let claimed = normalizedFingerprint(message.envelope.sender.publicKeyFingerprint)
             if let expected = expectedHostFingerprint, !expected.isEmpty {
                 guard claimed == expected else {
-                    logger.warning("Rejected answer due to host fingerprint mismatch expected=\(expected, privacy: .public) claimed=\(claimed, privacy: .public)")
+                    logger.warning("Rejected answer due to host fingerprint mismatch expected=\(expected, privacy: .private) claimed=\(claimed, privacy: .private)")
                     phase = .error
                     errorMessage = "This Mac's identity changed since you last connected. If you reinstalled the Mac host, remove this saved Mac and reconnect; otherwise don't proceed."
                     await eventLogStore.append(EventLogItem(
@@ -1780,7 +1780,11 @@ final class ClientSessionCoordinator: ObservableObject {
                         }
                         if message.activeSessionID == sessionID,
                            let allowsUnlock = message.allowsRemoteUnlockEntry {
+                            // The password is typed on this device's word that the Mac wants it, so it is
+                            // offered only on a session whose host proved its key. On the older handshake
+                            // the session token crossed the network unsealed.
                             self.canOfferRemoteUnlock = allowsUnlock
+                                && self.hostKeyExchangeVerified && !self.hostUsesLegacyHandshake
                         }
                         if let quality = message.quality {
                             self.networkQuality = quality
@@ -1954,6 +1958,7 @@ final class ClientSessionCoordinator: ObservableObject {
 
     func sendUnlockPassword(_ password: String) {
         guard webRTCSessionManager.connectionState == .connected,
+              hostKeyExchangeVerified, !hostUsesLegacyHandshake,
               let sessionID = activeSessionID,
               !password.isEmpty else { return }
         let message = UnlockPasswordMessage(sessionID: sessionID, password: password)

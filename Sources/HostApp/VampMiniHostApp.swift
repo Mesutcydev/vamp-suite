@@ -270,6 +270,28 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
         if environment?.runtimePolicy.canRequestAccessibilityPermission == true {
             addMenuItem("Accessibility Settings…", action: #selector(openAccessibilitySettings), to: menu)
         }
+        // Terminal Mode is carried over from an older Vamp Host install, so it can be on without
+        // anything in this app saying so. Show it, and let it be switched.
+        if environment?.runtimePolicy.supportsTerminalSessions == true {
+            let terminalMode = NSMenuItem(
+                title: "Terminal Mode (Safari terminal and Chat)",
+                action: #selector(toggleTerminalMode),
+                keyEquivalent: ""
+            )
+            terminalMode.target = self
+            terminalMode.state = environment?.terminalModeEnabled == true ? .on : .off
+            menu.addItem(terminalMode)
+        }
+        // Apps that predate the signed key exchange send their session token unsealed. Accepted by
+        // default so no installed app stops working; switch off once every device is updated.
+        let olderApps = NSMenuItem(
+            title: "Allow Older Vamp Apps (unsealed token)",
+            action: #selector(toggleLegacyClients),
+            keyEquivalent: ""
+        )
+        olderApps.target = self
+        olderApps.state = HostSessionTokenPolicy.acceptsLegacyPlaintextToken ? .on : .off
+        menu.addItem(olderApps)
         menu.addItem(.separator())
 
         let checkForUpdates = NSMenuItem(title: VampSyncUpdater.usesStoreUpdates ? "App Store Updates…" : "Check for Updates…", action: #selector(checkForUpdatesFromMenu), keyEquivalent: "")
@@ -354,6 +376,29 @@ private final class VampMiniHostAppDelegate: NSObject, NSApplicationDelegate, NS
         alert.addButton(withTitle: verb)
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    @objc private func toggleLegacyClients() {
+        UserDefaults.standard.set(
+            !HostSessionTokenPolicy.acceptsLegacyPlaintextToken,
+            forKey: HostSessionTokenPolicy.legacyClientsDefaultsKey
+        )
+    }
+
+    @objc private func toggleTerminalMode() {
+        guard let environment else { return }
+        if environment.terminalModeEnabled {
+            environment.setTerminalModeEnabled(false)
+            return
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Turn on Terminal Mode?"
+        alert.informativeText = "Paired devices, and the Safari terminal on this Mac's Tailscale address, will be able to open shells and run coding agents as you. Only turn it on if you use them."
+        alert.addButton(withTitle: "Turn On")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        environment.setTerminalModeEnabled(true)
     }
 
     @objc private func copyPairingAddress() {

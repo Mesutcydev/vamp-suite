@@ -77,6 +77,17 @@ final class HostAgentSemanticService: @unchecked Sendable {
         }
     }
 
+    /// Stops the agent turns of one session (a revoked device's) and leaves the others running.
+    func sessionDidEnd(sessionID: UUID) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            for (key, state) in self.states where key.sessionID == sessionID {
+                state.task?.cancel()
+                self.states.removeValue(forKey: key)
+            }
+        }
+    }
+
     private func _handlePrompt(_ message: AgentPromptMessage) {
         guard !message.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               message.prompt.utf8.count <= AgentPromptMessage.maxPromptBytes else {
@@ -315,6 +326,13 @@ final class HostAgentSemanticService: @unchecked Sendable {
         }
     }
 
+    /// Providers that take the prompt as a flag value have no `--` separator, so a prompt
+    /// that starts with `-` could be parsed as an option (for example one that lifts the
+    /// read-only approval mode). A leading space keeps it a plain value.
+    static func flagValue(_ prompt: String) -> String {
+        prompt.hasPrefix("-") ? " " + prompt : prompt
+    }
+
     static func launch(provider: AgentProviderKind, prompt: String, previousSessionID: String?) -> (executable: String, arguments: [String]) {
         switch provider {
         case .grok:
@@ -357,20 +375,20 @@ final class HostAgentSemanticService: @unchecked Sendable {
         case .kimi:
             var args = ["--output-format", "stream-json"]
             if let previousSessionID { args += ["--session", previousSessionID] }
-            return ("kimi", args + ["--prompt", prompt])
+            return ("kimi", args + ["--prompt", Self.flagValue(prompt)])
         case .qwen:
             var args = ["--output-format", "stream-json", "--include-partial-messages", "--approval-mode", "plan"]
             if let previousSessionID { args += ["--resume", previousSessionID] }
-            return ("qwen", args + ["--prompt", prompt])
+            return ("qwen", args + ["--prompt", Self.flagValue(prompt)])
         case .aider:
             // Scripted `--message` mode. Edit confirmation stays with the
             // provider (no `--yes`), matching the Linux host.
-            let args = ["--message", prompt, "--stream", "--no-pretty", "--no-auto-commits", "--no-check-update"]
+            let args = ["--message", Self.flagValue(prompt), "--stream", "--no-pretty", "--no-auto-commits", "--no-check-update"]
             return ("aider", args)
         case .gemini:
             var args = ["--output-format", "stream-json", "--approval-mode", "plan"]
             if let previousSessionID { args += ["--resume", previousSessionID] }
-            return ("gemini", args + ["--prompt", prompt])
+            return ("gemini", args + ["--prompt", Self.flagValue(prompt)])
         }
     }
 

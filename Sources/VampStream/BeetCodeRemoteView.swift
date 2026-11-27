@@ -132,7 +132,7 @@ struct BeetCodeRemoteView: View {
         Group {
             if session.status.ready {
                 streamSurface
-            } else if session.status.shouldOfferRemoteUnlock {
+            } else if session.status.shouldOfferRemoteUnlock, session.client.canSendUnlockPassword {
                 BeetCodeRemoteUnlockStateView(
                     message: session.status.remoteUnlockMessage,
                     clientName: clientName,

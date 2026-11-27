@@ -277,6 +277,10 @@ public final class LANPeerConnection: LANTransportSecurityConfigurable, @uncheck
     /// (AP roam, NAT table timeout, peer power loss) surface as `.failed`
     /// within ~15 s instead of sitting in `.ready` indefinitely.
     private static let tlsPSKIdentity = Data("vamp-data-channel-v1".utf8)
+    // 0x00AD is TLS_RSA_PSK_WITH_AES_256_GCM_SHA384. Appending it only adds a candidate: a
+    // loopback test negotiated TLS_PSK_WITH_AES_128_GCM_SHA256 (0x00A8) with these parameters, which
+    // has no forward secrecy. The key is the per-session token, so an eavesdropper who later learns
+    // the token (see SessionTokenSealing) can read a recorded session.
     private static let tlsPSKCiphersuite = tls_ciphersuite_t(rawValue: UInt16(0x00AD))
 
     private static func makeTCPParameters(sessionTokenHex: String?) throws -> NWParameters {
@@ -305,7 +309,7 @@ public final class LANPeerConnection: LANTransportSecurityConfigurable, @uncheck
     }
 
     private static func tokenFromHex(_ hex: String) -> Data? {
-        guard hex.count == 64 else { return nil }
+        guard hex.count == 64, hex.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return nil }
         var result = Data(capacity: 32)
         var index = hex.startIndex
         while index < hex.endIndex {

@@ -45,6 +45,12 @@ public enum InputCommandValidation {
         53,   // Cmd+Option+Esc — Force Quit dialog
     ]
 
+    /// Key codes blocked with Cmd+Option+Shift.
+    private static let dangerousCmdOptionShiftKeyCodes: Set<UInt16> = [
+        12,   // Cmd+Option+Shift+Q — log out immediately, with no confirmation
+        53,   // Cmd+Option+Shift+Esc — force quit the frontmost app
+    ]
+
     /// Key codes blocked with Ctrl+Cmd.
     private static let dangerousCtrlCmdKeyCodes: Set<UInt16> = [
         12,   // Ctrl+Cmd+Q — Lock Screen
@@ -154,6 +160,11 @@ public enum InputCommandValidation {
         // Cmd+Option+<key>
         if mods.contains(.command) && mods.contains(.option) && !mods.contains(.shift) && !mods.contains(.control) {
             if dangerousCmdOptionKeyCodes.contains(key.keyCode) { return true }
+        }
+
+        // Cmd+Option+Shift+<key>
+        if mods.contains(.command) && mods.contains(.option) && mods.contains(.shift) && !mods.contains(.control) {
+            if dangerousCmdOptionShiftKeyCodes.contains(key.keyCode) { return true }
         }
 
         // Ctrl+Cmd+<key>

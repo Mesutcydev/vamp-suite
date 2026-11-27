@@ -14,6 +14,99 @@ final class HostTerminalServiceTests: XCTestCase {
         XCTAssertFalse(HostBrowserControlService.isAllowedBrowserOrigin("https://evil.example", hostHeader: "127.0.0.1:9475"))
     }
 
+    func testBrowserHostHeaderMustBeAServedName() {
+        for allowed in ["127.0.0.1:9475", "localhost:9475", "[::1]:9475", "100.101.102.103", "mac", "mac.local:9475",
+                        "studio.tail1234.ts.net", "studio.tail1234.ts.net:443", nil] as [String?] {
+            XCTAssertTrue(HostBrowserControlService.isAllowedHostHeader(allowed, extraAllowed: []), "\(allowed ?? "nil")")
+        }
+        // A page that rebinds its own name to 127.0.0.1 must not be served.
+        for rejected in ["evil.example:9475", "attacker.com", "127.0.0.1.evil.example", "mac.example.test"] {
+            XCTAssertFalse(HostBrowserControlService.isAllowedHostHeader(rejected, extraAllowed: []), rejected)
+        }
+        // The explicit opt-in for a private domain still works.
+        XCTAssertTrue(HostBrowserControlService.isAllowedHostHeader("mac.example.test", extraAllowed: ["mac.example.test"]))
+        XCTAssertTrue(HostBrowserControlService.isAllowedHostHeader("a.corp.test:9475", extraAllowed: [".corp.test"]))
+        XCTAssertFalse(HostBrowserControlService.isAllowedHostHeader("corp.test.evil.example", extraAllowed: [".corp.test"]))
+    }
+
+    func testBrowserPairingThrottleActuallyLocksOutAfterTheGuessBudget() async throws {
+        let service = HostBrowserControlService()
+        service.terminalModeProvider = { true }
+        let port = UInt16.random(in: 30000...45000)
+        service.start(port: port)
+        defer { service.stop() }
+        var status = service.currentStatus()
+        for _ in 0..<50 where !status.running {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            status = service.currentStatus()
+        }
+        try XCTSkipUnless(status.running, "browser listener did not start: \(status.lastError ?? "unknown")")
+
+        func pair(_ code: String) async throws -> Int {
+            var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/api/pair")!)
+            request.httpMethod = "POST"
+            request.httpBody = try JSONEncoder().encode(["code": code])
+            request.timeoutInterval = 3
+            let (_, response) = try await URLSession.shared.data(for: request)
+            return (response as? HTTPURLResponse)?.statusCode ?? -1
+        }
+
+        let wrong = status.pairingCode == "999999999999" ? "999999999998" : "999999999999"
+        for attempt in 1...HostBrowserControlService.maxPairFailuresPerWindow {
+            let code = try await pair(wrong)
+            XCTAssertEqual(code, 401, "guess \(attempt)")
+        }
+        // The budget is spent. This used to be unreachable because rotating the code cleared it.
+        let next = try await pair(wrong)
+        XCTAssertEqual(next, 429)
+        let rotated = service.currentStatus().pairingCode
+        let withRealCode = try await pair(rotated)
+        XCTAssertEqual(withRealCode, 429, "a locked-out address stays locked out for the window")
+    }
+
+    func testBrowserPageRunsScriptsOnlyWithItsOwnNonce() async throws {
+        let service = HostBrowserControlService()
+        service.terminalModeProvider = { true }
+        let port = UInt16.random(in: 30000...45000)
+        service.start(port: port)
+        defer { service.stop() }
+        var status = service.currentStatus()
+        for _ in 0..<50 where !status.running {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            status = service.currentStatus()
+        }
+        try XCTSkipUnless(status.running, "browser listener did not start: \(status.lastError ?? "unknown")")
+
+        func page() async throws -> (csp: String, body: String) {
+            let (data, response) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/")!)
+            let http = try XCTUnwrap(response as? HTTPURLResponse)
+            return (http.value(forHTTPHeaderField: "Content-Security-Policy") ?? "", String(decoding: data, as: UTF8.self))
+        }
+        let first = try await page()
+        let second = try await page()
+
+        XCTAssertFalse(first.csp.contains("script-src 'unsafe-inline'"), first.csp)
+        let nonce = try XCTUnwrap(first.csp.components(separatedBy: "'nonce-").dropFirst().first?.components(separatedBy: "'").first)
+        XCTAssertGreaterThanOrEqual(nonce.count, 32)
+        let scriptTags = first.body.components(separatedBy: "<script").count - 1
+        XCTAssertGreaterThan(scriptTags, 0)
+        XCTAssertEqual(first.body.components(separatedBy: "<script nonce=\"\(nonce)\">").count - 1, scriptTags,
+                       "every script tag must carry this response's nonce")
+        XCTAssertFalse(first.body.contains(" onclick=\""), "an inline handler would be blocked by the policy")
+        let secondNonce = second.csp.components(separatedBy: "'nonce-").dropFirst().first?.components(separatedBy: "'").first
+        XCTAssertNotEqual(nonce, secondNonce, "the nonce must change on every response")
+    }
+
+    func testBrowserTerminalClosesOnlyWhenIdleForLongerThanThePairingTokenLifetime() {
+        let now = Date()
+        let timeout = HostBrowserControlService.browserIdleTimeout
+        XCTAssertEqual(timeout, HostBrowserControlService.browserTokenLifetime)
+        XCTAssertFalse(HostBrowserControlService.isIdle(lastActivity: now.addingTimeInterval(-60), now: now))
+        XCTAssertFalse(HostBrowserControlService.isIdle(lastActivity: now.addingTimeInterval(-(timeout - 1)), now: now),
+                       "a session someone is using must never be cut off")
+        XCTAssertTrue(HostBrowserControlService.isIdle(lastActivity: now.addingTimeInterval(-(timeout + 1)), now: now))
+    }
+
     func testBrowserRemoteAddressMustBeInsideTailscaleRanges() {
         XCTAssertTrue(HostBrowserControlService.isTailscaleAddress(.ipv4(IPv4Address("100.64.0.1")!)))
         XCTAssertTrue(HostBrowserControlService.isTailscaleAddress(.ipv4(IPv4Address("100.127.255.254")!)))

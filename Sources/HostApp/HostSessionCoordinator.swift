@@ -102,9 +102,16 @@ enum HostSessionTokenPolicy {
     /// Apps released before the signed key exchange send the token in plaintext whenever they
     /// have no Bonjour key for this Mac (typed, scanned and Tailscale addresses). They stay
     /// accepted for the transition. Flip this in the release that stops supporting them.
-    // ponytail: one constant, not a setting. Add a Sync preference only if someone needs to
-    // end the transition on their own Mac before that release.
-    static let acceptsLegacyPlaintextToken = true
+    /// Accepted by default so no installed app stops working. An older app's plaintext token is the
+    /// TLS-PSK key for its data channel, so anyone who read it on the network can take the session.
+    /// A Mac whose devices are all updated can end the transition for itself (the same switch
+    /// becomes the default in the release that drops support):
+    /// `defaults write com.mesutcy.remotedesktop.host com.remotedesktop.host.acceptLegacyClients -bool false`
+    static let legacyClientsDefaultsKey = "com.remotedesktop.host.acceptLegacyClients"
+
+    static var acceptsLegacyPlaintextToken: Bool {
+        UserDefaults.standard.object(forKey: legacyClientsDefaultsKey) as? Bool ?? true
+    }
 
     enum Form: Equatable {
         case sealed(Data)
@@ -174,7 +181,9 @@ final class HostSessionCoordinator: ObservableObject {
     @Published private(set) var connectedClientName: String?
     /// The connected device sent its session token in plaintext (an app that predates the
     /// signed key exchange). Shown in the Sync panel so the user knows to update that app.
-    @Published private(set) var activeClientUsesLegacyToken = false
+    @Published private(set) var activeClientUsesLegacyToken = false {
+        didSet { inputCommandRouter.setLegacyTokenSession(activeClientUsesLegacyToken) }
+    }
     @Published private(set) var errorMessage: String?
     /// Non-nil only while an app window is actively captured. Vamp Sync uses
     /// this to distinguish an attached client from a real video stream.
@@ -698,14 +707,20 @@ final class HostSessionCoordinator: ObservableObject {
         ))
     }
 
+    /// Called with the session ID of a device whose access was just revoked, so its shells and
+    /// agent runs end with it instead of living on as detached sessions for hours.
+    var onSessionRevoked: ((UUID) -> Void)?
+
     func revokePeer(_ peer: TrustedPeer, store: any TrustedPeerStoreProtocol) async throws {
         trustRevision &+= 1
         revokingFingerprints.insert(peer.fingerprint)
         defer { revokingFingerprints.remove(peer.fingerprint) }
         if HostClientAttachmentIdentity.matchesRevokedPeer(activeClientID: activeClientID, activeClientFingerprint: activeClientFingerprint, peer: peer) {
             // Synchronous invalidation precedes every suspension. stopListening detaches
-            // terminals and releases held input; it does not destroy persistent sessions.
+            // terminals and releases held input; a revoked device's sessions are then ended.
+            let revokedSessionID = activeSessionID
             inputCommandRouter.stopListening()
+            if let revokedSessionID { onSessionRevoked?(revokedSessionID) }
             activeSessionID = nil
             webRTCSessionManager.configureControlChannelAuth(sessionTokenHex: nil)
             await resetForNextClient(reason: "Device access revoked")
@@ -2342,6 +2357,23 @@ final class HostSessionCoordinator: ObservableObject {
         guard activeSessionID == request.sessionID else { return }
 
         let startTime = Date()
+        // A session that streams application windows must not be moved to a whole display by a raw
+        // display-switch message. The target-switch path rejects it for the same reason, and the
+        // client's own UI never sends one, so only a modified client gets here.
+        guard !sessionStartsWithAppBrowser else {
+            let result = DisplaySwitchResultMessage(
+                sessionID: request.sessionID,
+                selectedDisplayID: captureEngine.diagnostics.currentDisplayID ?? request.targetDisplayID,
+                senderDeviceID: request.senderDeviceID,
+                status: .failed,
+                reason: "Vamp Sync streams application windows only.",
+                startedAt: startTime
+            )
+            if let envelope = try? DataChannelEnvelope.displaySwitchResult(result) {
+                try? webRTCSessionManager.sendDataMessage(envelope)
+            }
+            return
+        }
         let currentDisplayID = captureEngine.diagnostics.currentDisplayID
         #if os(macOS)
         let previousWindow = activeWindowTarget

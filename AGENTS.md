@@ -22,7 +22,7 @@ verification. Do not package, reinstall, or advertise discontinued products.
 | Terminal client | `Vamp Terminal` — discontinued; Terminal Mode remains in Vamp Control |
 | App-stream client | `Vamp Stream` — focused iOS/iPadOS app-window streaming client |
 | Assistant compatibility | `Vamp Assistant` — separate compatibility endpoint on private port `9575` |
-| Browser client | Safari control on host loopback `9475` |
+| Browser client | Safari control on host loopback `9475`; also the Tailscale interface while Tailscale is up, never the LAN |
 | Full host bundle ID | `com.mesutcy.remotedesktop.host` |
 | Light host bundle ID | `com.mesutcy.remotedesktop.terminalhost` |
 | Mini host bundle ID | `com.mesutcy.remotedesktop.host` |
@@ -40,7 +40,7 @@ verification. Do not package, reinstall, or advertise discontinued products.
 | Bonjour service | `_screenharbor._tcp` (wire-compatibility contract only) |
 | Signaling ports | `9471` plain, `9473` TLS |
 | Data port | `9472` |
-| Browser control | loopback `9475`, exposed privately with Tailscale Serve |
+| Browser control | loopback `9475` (plus the Tailscale interface), exposed privately with Tailscale Serve; only the Terminal Mode setting turns its pairing on |
 | URL scheme | `vamphost://action/{start,stop,restart}` and `vampterminalhost://` |
 | Mini URL scheme | `vampminihost://` |
 | License | Apache-2.0 |
@@ -148,6 +148,9 @@ action did not resolve, `7` for a fingerprint mismatch, and `8` on timeout.
   granted by the user in System Settings for the specific installed host.
   Preserve the bundle identifier, signing identity, data, and existing grants
   during updates; never reset or edit TCC permissions to force continuity.
+- Shells, agent prompts and workspace listing are all behind the host's Terminal Mode setting, checked
+  on the host for every command; never rely on a client hiding the control. Terminal Mode carries
+  over from an older Vamp Host install, so Sync shows it in its menu.
 - Never expose host or browser ports directly to the public internet. Use a
   trusted LAN or private Tailscale network.
 - Do not commit private keys, certificates, provisioning profiles, API

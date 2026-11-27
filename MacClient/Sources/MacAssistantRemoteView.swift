@@ -69,7 +69,8 @@ struct MacAssistantRemoteView: View {
             if let session = model.connected {
                 if session.status.ready {
                     stream(session)
-                } else if session.status.shouldOfferRemoteUnlock, MacDistributionPolicy.allowsRemoteChanges {
+                } else if session.status.shouldOfferRemoteUnlock, session.client.canSendUnlockPassword,
+                          MacDistributionPolicy.allowsRemoteChanges {
                     remoteUnlockState(session)
                 } else {
                     permissionState(session)
