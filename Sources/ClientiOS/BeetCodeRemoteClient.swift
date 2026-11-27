@@ -494,7 +494,9 @@ struct BeetCodeRemoteClient: Sendable {
 
     /// Remote Unlock sends the Mac's login password. Plain HTTP on a LAN or `.local` address is
     /// readable by anyone on the network and is trusted only by its name, so the password goes out
-    /// only over HTTPS or a Tailscale address (encrypted, and the host is a tailnet device).
+    /// without further ado only over HTTPS or a Tailscale address (encrypted, and the host is a
+    /// tailnet device). The Assistant host also accepts it over its LAN fallback, so a person who
+    /// chose that fallback can still send it, after being told it is not encrypted.
     var canSendUnlockPassword: Bool { Self.isEncryptedRoute(baseURL) }
 
     static func isEncryptedRoute(_ url: URL) -> Bool {
@@ -503,10 +505,12 @@ struct BeetCodeRemoteClient: Sendable {
         return StorePrivateNetworkConnectionPolicy.isTailscaleHost(host) || host.hasSuffix(".ts.net")
     }
 
-    func unlockMac(password: String) async throws -> BeetCodeAcceptedResponse {
-        guard canSendUnlockPassword else {
+    /// - Parameter allowUnencryptedRoute: set only after the person confirmed that this connection is
+    ///   not encrypted.
+    func unlockMac(password: String, allowUnencryptedRoute: Bool = false) async throws -> BeetCodeAcceptedResponse {
+        guard canSendUnlockPassword || allowUnencryptedRoute else {
             throw BeetCodeRemoteError.controlUnavailable(
-                "Remote Unlock is only available over Tailscale. Connect to this Mac by its Tailscale address."
+                "This connection is not encrypted, so the password was not sent. Connect through Tailscale, or confirm to send it anyway."
             )
         }
         return try await request(

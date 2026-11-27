@@ -26,6 +26,7 @@ struct MacAssistantRemoteView: View {
     @State private var sessionToastIsError = false
     @State private var unlockPassword = ""
     @State private var isUnlockSubmitting = false
+    @State private var confirmUnencryptedUnlock = false
     @State private var unlockError: String?
     @FocusState private var unlockPasswordFieldFocused: Bool
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
@@ -69,8 +70,7 @@ struct MacAssistantRemoteView: View {
             if let session = model.connected {
                 if session.status.ready {
                     stream(session)
-                } else if session.status.shouldOfferRemoteUnlock, session.client.canSendUnlockPassword,
-                          MacDistributionPolicy.allowsRemoteChanges {
+                } else if session.status.shouldOfferRemoteUnlock, MacDistributionPolicy.allowsRemoteChanges {
                     remoteUnlockState(session)
                 } else {
                     permissionState(session)
@@ -475,9 +475,11 @@ struct MacAssistantRemoteView: View {
             .controlSize(.large)
             .disabled(unlockPassword.isEmpty || isUnlockSubmitting)
 
-            Text("Remote Unlock is enabled. The password is sent once through the authenticated private connection, then cleared from this field.")
+            Text(session.client.canSendUnlockPassword
+                 ? "Remote Unlock is enabled. The password is sent once through the encrypted Tailscale connection, then cleared from this field."
+                 : "This connection is not encrypted. Connect through Tailscale to protect the password; you will be asked before it is sent.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(session.client.canSendUnlockPassword ? Color.secondary : Color.orange)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
 
@@ -503,6 +505,12 @@ struct MacAssistantRemoteView: View {
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MacBrand.pageBackdrop)
+        .alert("Send your Mac password without encryption?", isPresented: $confirmUnencryptedUnlock) {
+            Button("Send Anyway", role: .destructive) { submitRemoteUnlock(session, confirmed: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This connection is not encrypted. Anyone on this network could read the password. Connect through Tailscale to protect it.")
+        }
         .onAppear { focusRemoteUnlockField() }
         .onChange(of: model.connected?.status) { status in
             if status?.locked != true {
@@ -514,8 +522,12 @@ struct MacAssistantRemoteView: View {
         }
     }
 
-    private func submitRemoteUnlock(_ session: MacAssistantSession.ConnectedSession) {
+    private func submitRemoteUnlock(_ session: MacAssistantSession.ConnectedSession, confirmed: Bool = false) {
         guard !unlockPassword.isEmpty, !isUnlockSubmitting else { return }
+        if !session.client.canSendUnlockPassword, !confirmed {
+            confirmUnencryptedUnlock = true
+            return
+        }
         let submittedPassword = unlockPassword
         unlockPassword = ""
         unlockError = nil
@@ -523,7 +535,10 @@ struct MacAssistantRemoteView: View {
 
         Task {
             do {
-                _ = try await session.client.unlockMac(password: submittedPassword)
+                _ = try await session.client.unlockMac(
+                    password: submittedPassword,
+                    allowUnencryptedRoute: !session.client.canSendUnlockPassword
+                )
                 try? await Task.sleep(for: .milliseconds(700))
                 unlockError = await model.refreshStatus()
             } catch {

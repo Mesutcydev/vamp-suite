@@ -132,7 +132,7 @@ struct BeetCodeRemoteView: View {
         Group {
             if session.status.ready {
                 streamSurface
-            } else if session.status.shouldOfferRemoteUnlock, session.client.canSendUnlockPassword {
+            } else if session.status.shouldOfferRemoteUnlock {
                 BeetCodeRemoteUnlockStateView(
                     message: session.status.remoteUnlockMessage,
                     clientName: clientName,
@@ -846,6 +846,7 @@ private struct BeetCodeRemoteUnlockStateView: View {
 
     @State private var password = ""
     @State private var isSubmitting = false
+    @State private var confirmUnencryptedUnlock = false
     @State private var unlockError: String?
 
     var body: some View {
@@ -880,14 +881,16 @@ private struct BeetCodeRemoteUnlockStateView: View {
                             .strokeBorder(.white.opacity(0.24), lineWidth: 1)
                     }
                     .frame(maxWidth: 340)
-                    .onSubmit(submitUnlock)
+                    .onSubmit { submitUnlock() }
 
-                StreamPrimaryButton(title: isSubmitting ? "Unlocking…" : "Unlock Mac", symbol: "lock.open", isDisabled: password.isEmpty || isSubmitting, action: submitUnlock)
+                StreamPrimaryButton(title: isSubmitting ? "Unlocking…" : "Unlock Mac", symbol: "lock.open", isDisabled: password.isEmpty || isSubmitting, action: { submitUnlock() })
                     .frame(maxWidth: 340)
 
-                Text("Available only through the encrypted Tailscale connection. The password is sent once, then cleared from this field.")
+                Text(client.canSendUnlockPassword
+                     ? "Sent through the encrypted Tailscale connection. The password is sent once, then cleared from this field."
+                     : "This connection is not encrypted. Connect through Tailscale to protect the password; you will be asked before it is sent.")
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.56))
+                    .foregroundStyle(client.canSendUnlockPassword ? .white.opacity(0.56) : .orange)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 340)
 
@@ -912,10 +915,20 @@ private struct BeetCodeRemoteUnlockStateView: View {
             if let presentationBackground { presentationBackground.ignoresSafeArea() }
             else { StreamAtmosphere().environment(\.colorScheme, .dark) }
         }
+        .alert("Send your Mac password without encryption?", isPresented: $confirmUnencryptedUnlock) {
+            Button("Send Anyway", role: .destructive) { submitUnlock(confirmed: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This connection is not encrypted. Anyone on this network could read the password. Connect through Tailscale to protect it.")
+        }
     }
 
-    private func submitUnlock() {
+    private func submitUnlock(confirmed: Bool = false) {
         guard !password.isEmpty, !isSubmitting else { return }
+        if !client.canSendUnlockPassword, !confirmed {
+            confirmUnencryptedUnlock = true
+            return
+        }
         let submittedPassword = password
         password = ""
         unlockError = nil
@@ -923,7 +936,7 @@ private struct BeetCodeRemoteUnlockStateView: View {
 
         Task {
             do {
-                _ = try await client.unlockMac(password: submittedPassword)
+                _ = try await client.unlockMac(password: submittedPassword, allowUnencryptedRoute: !client.canSendUnlockPassword)
                 try? await Task.sleep(for: .milliseconds(700))
                 unlockError = await onRefresh()
             } catch {

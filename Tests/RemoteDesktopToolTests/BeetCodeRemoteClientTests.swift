@@ -338,6 +338,22 @@ final class BeetCodeRemoteClientTests: XCTestCase {
         XCTAssertThrowsError(try parser.append(message))
     }
 
+    func testUnlockOverAnUnencryptedRouteNeedsExplicitConsent() async throws {
+        let client = BeetCodeRemoteClient(
+            baseURL: try BeetCodeRemoteEndpoint.parse(address: "http://192.168.1.20:9575").url, token: "t"
+        )
+        XCTAssertFalse(client.canSendUnlockPassword)
+        do {
+            // Refused before any network traffic: the Assistant host also accepts the password on its
+            // LAN fallback, so the screen asks first and only then passes the consent.
+            _ = try await client.unlockMac(password: "secret")
+            XCTFail("an unencrypted route must not send the password without consent")
+        } catch let error as BeetCodeRemoteError {
+            guard case .controlUnavailable(let message) = error else { return XCTFail("\(error)") }
+            XCTAssertTrue(message.contains("not encrypted"))
+        }
+    }
+
     func testTypedAddressesAreFlaggedWhenTheirLinkIsNotEncrypted() {
         XCTAssertEqual(BeetCodeRemoteEndpoint.usesEncryptedRoute(address: "192.168.1.20:9575"), false)
         XCTAssertEqual(BeetCodeRemoteEndpoint.usesEncryptedRoute(address: "studio.local"), false)
