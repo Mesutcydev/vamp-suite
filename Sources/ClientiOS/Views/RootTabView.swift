@@ -11,9 +11,28 @@ struct RootTabView: View {
     @ObservedObject private var paletteManager = PaletteManager.shared
     @AppStorage(ControlAppearance.storageKey) private var appearance = ControlAppearance.system
     @AppStorage("control.appearance.migrated") private var migratedAppearance = false
+    /// One copy each for every tab: Home, Trusted and Settings read the same pairing and Pro state.
+    @StateObject private var companion = BeetCodeRemoteSessionViewModel()
+    @StateObject private var usage = DailyStreamingUsage()
+    @StateObject private var unlock = StreamingUnlockStore()
 
     var body: some View {
-        ControlHomeView(environment: environment, appLock: appLock)
+        // The system tab bar: Liquid Glass on iOS 26, the standard bar before it.
+        TabView {
+            Tab("Macs", systemImage: "display") {
+                ControlHomeView(environment: environment, appLock: appLock, companion: companion,
+                                usage: usage, unlock: unlock)
+            }
+            Tab("Trusted", systemImage: "checkmark.shield") {
+                ControlTrustedTab(environment: environment, companion: companion)
+            }
+            .accessibilityIdentifier("control.trusted")
+            Tab("Settings", systemImage: "gearshape") {
+                ControlSettingsView(environment: environment, appLock: appLock, companion: companion,
+                                    unlock: unlock, usage: usage)
+            }
+            .accessibilityIdentifier("control.settings")
+        }
         .preferredColorScheme(appearance.colorScheme)
         .tint(ControlDesign.accent)
         .environmentObject(paletteManager)

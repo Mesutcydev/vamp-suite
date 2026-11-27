@@ -18,13 +18,10 @@ struct ControlLaunchView: View {
                         .frame(width: 132, height: 132)
 
                     VStack(spacing: 10) {
-                        Text(verbatim: "vamp")
-                            .font(.system(size: 58, weight: .bold, design: .rounded))
-                            .tracking(-3.2)
-                            .foregroundStyle(ControlDesign.ink)
-                        Text(verbatim: "CONTROL")
-                            .font(.system(size: 11, weight: .semibold))
-                            .tracking(4.5)
+                        ControlSerifWordmark(size: 40)
+                        Text(verbatim: "YOUR MAC, WITHIN REACH")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .tracking(2.2)
                             .foregroundStyle(ControlDesign.secondary)
                     }
                     .opacity(typeVisible ? 1 : 0)

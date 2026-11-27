@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreImage
 import SharedModels
 import SharedUtilities
 
@@ -10,19 +11,20 @@ struct ControlHomeView: View {
     @ObservedObject var appLock: AppLockService
     @ObservedObject private var hosts: HostsListViewModel
     @ObservedObject private var coordinator: ClientSessionCoordinator
-    @StateObject private var companion = BeetCodeRemoteSessionViewModel()
+    /// Shared with the Trusted and Settings tabs, so they are owned by RootTabView.
+    @ObservedObject var companion: BeetCodeRemoteSessionViewModel
     @StateObject private var renderer: VideoRendererViewModel
     @StateObject private var stats: SessionStatsViewModel
     @StateObject private var appStream: AppStreamViewModel
     /// Free 15-minute daily allowance and the Pro unlock that removes it.
-    @StateObject private var usage = DailyStreamingUsage()
-    @StateObject private var unlock = StreamingUnlockStore()
+    @ObservedObject var usage: DailyStreamingUsage
+    @ObservedObject var unlock: StreamingUnlockStore
+    @ObservedObject private var thumbnails = ControlHostThumbnails.shared
     @State private var showsPaywall = false
     @Environment(\.scenePhase) private var scenePhase
     /// Set when leaving the app browser for the desktop, so the desktop view asks the host for its display back.
     @State private var restoresDesktop = false
     @State private var showsAddMac = false
-    @State private var showsSettings = false
     @State private var destination: SessionDestination?
     @State private var connectingHost: DiscoveredHostRow?
     @State private var isRefreshing = false
@@ -45,9 +47,13 @@ struct ControlHomeView: View {
         var id: String { rawValue }
     }
 
-    init(environment: ClientAppEnvironment, appLock: AppLockService) {
+    init(environment: ClientAppEnvironment, appLock: AppLockService, companion: BeetCodeRemoteSessionViewModel,
+         usage: DailyStreamingUsage, unlock: StreamingUnlockStore) {
         self.environment = environment
         self.appLock = appLock
+        self.companion = companion
+        self.usage = usage
+        self.unlock = unlock
         hosts = environment.sharedHostsViewModel
         coordinator = environment.sessionCoordinator
         _renderer = StateObject(wrappedValue: VideoRendererViewModel(webRTCSessionManager: environment.webRTCSessionManager))
@@ -82,6 +88,19 @@ struct ControlHomeView: View {
             .animation(.smooth, value: isWide)
             .animation(.smooth, value: notice)
             .animation(.smooth, value: isLive)
+            .task(id: isLive) {
+                // Keeps each Mac's card close to its screen as the session ends. Desktop sessions
+                // only: an app-window session is not a picture of the Mac.
+                while isLive, !Task.isCancelled {
+                    if let frame = renderer.latestPixelBuffer, let hostID = coordinator.lastEndpoint?.id {
+                        thumbnails.record(frame, for: hostID)
+                    }
+                    try? await Task.sleep(for: .seconds(3))
+                }
+            }
+            #if SCREENSHOTS
+            .onReceive(hosts.$hosts) { thumbnails.seedSamples(for: $0.map(\.id)) }
+            #endif
             .background { ControlBackground() }
             .refreshable { await refresh() }
             .toolbar(.hidden, for: .navigationBar)
@@ -89,18 +108,20 @@ struct ControlHomeView: View {
             .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { windowTopInset = $0 }
             .onAppear { appeared = true }
             .safeAreaInset(edge: .bottom) {
-                // A pending host confirmation always gets its card, whichever path started the
-                // connection: a prompt nobody can see would stall pairing until it times out.
-                if connectingHost != nil || companion.isPairing || coordinator.pendingHostConfirmation != nil {
-                    ControlConnectionProgress(name: connectingHost?.title ?? coordinator.pendingHostConfirmation?.hostName,
-                                              fingerprint: connectingHost == nil ? nil : environment.clientIdentity.publicKeyFingerprint,
-                                              isApproved: coordinator.phase == .waitingForMedia,
-                                              hostConfirmation: coordinator.pendingHostConfirmation,
-                                              usesOlderSync: connectingHost != nil && coordinator.hostUsesLegacyHandshake,
-                                              onConfirmHost: coordinator.confirmPendingHost,
-                                              onCancel: cancelConnection)
-                        .padding(.horizontal, ControlDesign.gutter).padding(.bottom, ControlDesign.stack)
+                Group {
+                    // A pending host confirmation always gets its card, whichever path started the
+                    // connection: a prompt nobody can see would stall pairing until it times out.
+                    if connectingHost != nil || companion.isPairing || coordinator.pendingHostConfirmation != nil {
+                        ControlConnectionProgress(name: connectingHost?.title ?? coordinator.pendingHostConfirmation?.hostName,
+                                                  fingerprint: connectingHost == nil ? nil : environment.clientIdentity.publicKeyFingerprint,
+                                                  isApproved: coordinator.phase == .waitingForMedia,
+                                                  hostConfirmation: coordinator.pendingHostConfirmation,
+                                                  usesOlderSync: connectingHost != nil && coordinator.hostUsesLegacyHandshake,
+                                                  onConfirmHost: coordinator.confirmPendingHost,
+                                                  onCancel: cancelConnection)
+                    }
                 }
+                .padding(.horizontal, ControlDesign.gutter).padding(.bottom, ControlDesign.gap)
             }
         }
         .sheet(isPresented: $showsAddMac, onDismiss: presentPairedCompanion) {
@@ -113,10 +134,6 @@ struct ControlHomeView: View {
         .sheet(isPresented: $showsPaywall) {
             StreamingPaywallView(unlockStore: unlock, usage: usage, onDismiss: { showsPaywall = false })
         }
-        .sheet(isPresented: $showsSettings) {
-            ControlSettingsView(environment: environment, appLock: appLock, companion: companion)
-                .presentationSizing(.form)
-        }
         .fullScreenCover(item: $destination) { destination in
             switch destination {
             case .sync:
@@ -125,14 +142,18 @@ struct ControlHomeView: View {
                                            restoresDesktop: restoresDesktop, onMinimize: minimizeSession)
                     .ignoresSafeArea()
                     .preferredColorScheme(.dark)
+                    // Session chrome keeps the monospaced voice it was laid out and tested with.
+                    .fontDesign(.monospaced)
             case .apps:
                 AppStreamBrowserView(environment: environment, vm: appStream, chrome: .control, onClose: leaveApps)
+                    .fontDesign(.monospaced)
             case .companion:
                 if let session = companion.session {
                     BeetCodeRemoteView(session: session, clientName: "Vamp Control", hostProductName: "Vamp Companion",
                                        presentationBackground: ControlDesign.canvas, onClose: closeSession,
                                        onRefresh: { await companion.refreshStatus() })
                         .preferredColorScheme(.dark)
+                        .fontDesign(.monospaced)
                 }
             }
         }
@@ -212,7 +233,18 @@ struct ControlHomeView: View {
             }
         }
         .onChange(of: companion.session?.address) { _, address in
-            guard address != nil else { return }
+            // Companion sessions stream the Mac too, so they use the same daily allowance.
+            guard address != nil else {
+                if coordinator.phase != .receiving { usage.stopSession() }
+                return
+            }
+            guard allowsNewSession else {
+                companion.disconnect()
+                if showsAddMac { showsAddMac = false }
+                showsPaywall = true
+                return
+            }
+            usage.startSession()
             Task { await coordinator.endSession() }
             if showsAddMac { showsAddMac = false }
             else { destination = .companion }
@@ -233,6 +265,7 @@ struct ControlHomeView: View {
                     status
                     notices
                     otherMacs
+                    promo
                     footnote
                 }
                 .frame(width: hingeX.map { max($0 - hingeGutter, 240) } ?? 340, alignment: .leading)
@@ -245,22 +278,26 @@ struct ControlHomeView: View {
                 notices
                 hero
                 otherMacs
+                promo
                 footnote
             }
             .frame(maxWidth: ControlDesign.maxWidth, alignment: .leading)
         }
     }
 
+    /// The shared Vamp Sync promo card: idle only, never while a session is live.
+    @ViewBuilder private var promo: some View {
+        if !isLive {
+            ControlPromoCard().controlAppear(appeared, delay: 0.16)
+        }
+    }
+
     private var topBar: some View {
         HStack(spacing: ControlDesign.stack) {
-            ControlGlassLogo()
-            Text("\(Text(verbatim: "vamp").fontWeight(.bold).foregroundStyle(ControlDesign.ink)) \(Text(verbatim: "~/control").foregroundStyle(ControlDesign.secondary))")
-                .font(.system(.title3, design: .monospaced))
-                .accessibilityLabel("Vamp Control")
-                .accessibilityAddTraits(.isHeader)
+            ControlSerifWordmark()
             Spacer()
-            ControlGlassIconButton(symbol: "gearshape", label: "Settings") { showsSettings = true }
-                .accessibilityIdentifier("control.settings")
+            ControlGlassIconButton(symbol: "plus", label: "Add a Mac") { showsAddMac = true }
+                .accessibilityIdentifier("control.addMacTop")
                 .disabled(isBusy)
         }
         .padding(.horizontal, ControlDesign.gutter)
@@ -284,21 +321,25 @@ struct ControlHomeView: View {
 
     // MARK: $ vamp status
 
+    /// One meta line: how many Macs are ready, and over which kind of network.
     private var status: some View {
-        VStack(alignment: .leading, spacing: ControlDesign.gap) {
-            ControlPrompt(command: "vamp status", label: "Status")
-            VStack(spacing: 0) {
-                ControlKeyRow(key: "macs") {
-                    Text(isEmpty ? "none yet" : "\(availableCount) of \(macCount) ready")
-                        .foregroundStyle(availableCount > 0 ? ControlDesign.available : ControlDesign.secondary)
+        HStack(spacing: ControlDesign.gap) {
+            ControlPulseDot(color: availableCount > 0 ? ControlDesign.available : ControlDesign.secondary.opacity(0.55),
+                            isLive: false)
+            Group {
+                if isEmpty {
+                    Text("No Macs yet")
+                } else {
+                    Text("\(Text("\(availableCount) of \(macCount) ready")) · \(Text(networkLabel))")
                 }
-                ControlRule()
-                ControlKeyRow(key: "network") { Text(networkLabel) }
             }
-            .padding(.horizontal, ControlDesign.inset)
-            .controlGlass()
-            .accessibilityElement(children: .combine)
+            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .textCase(.uppercase).tracking(1.1)
+            .foregroundStyle(ControlDesign.secondary)
+            .lineLimit(1).minimumScaleFactor(0.8)
         }
+        .padding(.leading, ControlDesign.inset)
+        .accessibilityElement(children: .combine)
         .controlAppear(appeared)
     }
 
@@ -348,9 +389,7 @@ struct ControlHomeView: View {
             .controlAppear(appeared, delay: 0.08)
         } else {
             VStack(alignment: .leading, spacing: ControlDesign.gap) {
-                // Idle, the screen itself shows `$ vamp connect …`; the heading is the listing.
-                ControlPrompt(command: isLive ? "vamp attach \(ControlScreenCard.slug(heroName))" : "ls macs",
-                              label: isLive ? "Live session" : "Your Macs")
+                ControlPrompt(command: "", label: isLive ? "Live now" : "Your Mac")
                 heroCard.disabled(isBusy)
             }
             .controlAppear(appeared, delay: 0.08)
@@ -367,7 +406,8 @@ struct ControlHomeView: View {
         if let host = heroSync {
             ControlScreenCard(name: host.title, source: "sync", route: isTailscale(host) ? "tailscale" : "local",
                               status: syncStatus(host), isLive: isLive, renderer: renderer,
-                              onPrimary: { isLive ? openSession() : connect(host) }, onEnd: closeSession)
+                              onPrimary: { isLive ? openSession() : connect(host) }, onEnd: closeSession,
+                              thumbnail: thumbnails.images[host.id])
                 .contextMenu { syncMenu(host) }
         } else if isLive {
             ControlScreenCard(name: heroName, source: "sync", route: "private", status: .online, isLive: true,
@@ -387,8 +427,14 @@ struct ControlHomeView: View {
         if !isEmpty {
             VStack(alignment: .leading, spacing: ControlDesign.gap) {
                 if !otherSync.isEmpty || !otherCompanions.isEmpty {
-                    // On a phone, idle, these rows continue the hero's `ls macs`.
-                    if isWide || isLive { ControlPrompt(command: "ls macs", label: "More Macs") }
+                    HStack {
+                        ControlPrompt(command: "", label: "More Macs · \(otherSync.count + otherCompanions.count)")
+                        Spacer()
+                        Button(isRefreshing ? "Looking…" : "Look nearby") { Task { await refresh() } }
+                            .font(.footnote.weight(.semibold)).foregroundStyle(ControlDesign.secondary)
+                            .disabled(isRefreshing)
+                            .padding(.trailing, ControlDesign.gap)
+                    }
                     VStack(spacing: 0) {
                         ForEach(Array(otherSync.enumerated()), id: \.element.id) { index, host in
                             if index > 0 { ControlRule().padding(.leading, ControlMacRow.textLeading) }
@@ -424,7 +470,16 @@ struct ControlHomeView: View {
         }
     }
 
+    /// Store builds stop new sessions once the free daily minutes are used; website builds are never gated.
+    private var allowsNewSession: Bool {
+        !StreamingUnlockStore.isEnforced || unlock.isEffectivelyUnlocked || usage.hasTimeRemaining
+    }
+
     private func connectCompanion(_ saved: BeetCodeRemoteSessionViewModel.SavedAssistant) {
+        guard allowsNewSession else {
+            showsPaywall = true
+            return
+        }
         connectionTask?.cancel()
         companion.cancelConnectionAttempt()
         connectionTask = Task {
@@ -436,7 +491,7 @@ struct ControlHomeView: View {
 
     private func syncRow(_ host: DiscoveredHostRow) -> some View {
         ControlMacRow(name: host.title, source: "sync", route: isTailscale(host) ? "tailscale" : "local",
-                      status: syncStatus(host)) { connect(host) }
+                      status: syncStatus(host), thumbnail: thumbnails.images[host.id]) { connect(host) }
             .contextMenu { syncMenu(host) }
     }
 
@@ -472,7 +527,7 @@ struct ControlHomeView: View {
 
     private func connect(_ host: DiscoveredHostRow) {
         guard !host.isTerminalOnlyHost else { return }
-        guard !StreamingUnlockStore.isEnforced || unlock.isEffectivelyUnlocked || usage.hasTimeRemaining else {
+        guard allowsNewSession else {
             showsPaywall = true
             return
         }
@@ -615,27 +670,39 @@ private struct ControlMacRow: View {
     let source: LocalizedStringKey
     let route: LocalizedStringKey
     let status: ControlMacStatus
+    /// The last frame of this run's session with the Mac, if any.
+    var thumbnail: UIImage?
     let action: () -> Void
 
     /// Where the name starts inside the list; dividers start here too.
     static let textLeading = ControlDesign.inset + 8 + ControlDesign.gap
 
-    private var verb: LocalizedStringKey { status == .offline ? "retry →" : "connect →" }
+    private var verb: LocalizedStringKey { status == .offline ? "Retry" : "Connect" }
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: ControlDesign.gap) {
+            HStack(spacing: ControlDesign.stack) {
                 ControlPulseDot(color: status.tint, isLive: false)
                     .frame(width: 8)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(verbatim: name).font(.body.weight(.semibold)).foregroundStyle(ControlDesign.ink)
                     Text("\(Text(source)) · \(status == .online ? Text(route) : Text(status.title))")
-                        .font(.subheadline).foregroundStyle(ControlDesign.secondary)
+                        .font(.system(size: 12, design: .monospaced)).foregroundStyle(ControlDesign.secondary)
                 }
                 .lineLimit(1)
+                .opacity(status == .offline ? 0.8 : 1)
                 Spacer(minLength: ControlDesign.gap)
-                Text(verb).font(.subheadline.weight(.semibold))
-                    .foregroundStyle(status == .offline ? ControlDesign.secondary : ControlDesign.ink)
+                if let thumbnail {
+                    let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    Color.black
+                        .overlay { Image(uiImage: thumbnail).resizable().aspectRatio(contentMode: .fill) }
+                        .frame(width: 52, height: 33)
+                        .clipShape(shape)
+                        .overlay { shape.strokeBorder(Color.white.opacity(0.12)) }
+                        .saturation(status == .offline ? 0.35 : 1)
+                        .accessibilityHidden(true)
+                }
+                ControlCapsule(title: verb)
             }
             .padding(.horizontal, ControlDesign.inset)
             .frame(minHeight: ControlDesign.rowHeight)
@@ -661,6 +728,8 @@ private struct ControlScreenCard: View {
     @ObservedObject var renderer: VideoRendererViewModel
     let onPrimary: () -> Void
     let onEnd: () -> Void
+    /// The last frame of this run's session with the Mac, shown while no session runs.
+    var thumbnail: UIImage?
 
     /// `Mac M4` → `mac-m4`, the way a shell would name it.
     static func slug(_ name: String) -> String { name.lowercased().replacingOccurrences(of: " ", with: "-") }
@@ -692,7 +761,7 @@ private struct ControlScreenCard: View {
             .buttonStyle(ControlPressStyle())
             .accessibilityLabel(isLive ? Text("Open \(name)") : Text("Connect to \(name)"))
 
-            HStack(spacing: ControlDesign.stack) {
+            HStack(spacing: ControlDesign.gap) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: name).font(.title3.weight(.semibold)).foregroundStyle(ControlDesign.ink)
                     HStack(spacing: ControlDesign.gap) {
@@ -701,20 +770,18 @@ private struct ControlScreenCard: View {
                         // The dot carries readiness; the words say where, or what's wrong.
                         Text("\(Text(source)) · \(isLive ? Text("live") : status == .online ? Text(route) : Text(status.title))")
                     }
-                    .font(.subheadline).foregroundStyle(ControlDesign.secondary)
+                    .font(.system(size: 12, design: .monospaced)).foregroundStyle(ControlDesign.secondary)
                 }
                 .lineLimit(1)
                 Spacer(minLength: 0)
                 if isLive {
                     Button(action: onEnd) {
-                        Text("end").font(.subheadline.weight(.semibold)).foregroundStyle(ControlDesign.ink)
-                            .padding(.horizontal, ControlDesign.inset).frame(height: ControlDesign.buttonHeight)
-                            .controlGlass(radius: ControlDesign.buttonHeight / 2, interactive: true, emphasis: .control)
+                        ControlCapsule(title: "End", style: .end, height: ControlDesign.buttonHeight)
                     }
                     .buttonStyle(ControlPressStyle())
                     .accessibilityLabel("End session")
                 }
-                ControlPrimaryButton(title: isLive ? "open" : status == .offline ? "retry" : "connect",
+                ControlPrimaryButton(title: isLive ? "Open" : status == .offline ? "Retry" : "Connect",
                                      symbol: isLive ? "arrow.up.right" : "arrow.right", action: onPrimary)
             }
             // 8 pt card padding + 8 here puts the name on the shared 16 pt text column.
@@ -735,14 +802,28 @@ private struct ControlScreenCard: View {
             }
             .overlay(alignment: .topLeading) {
                 HStack(spacing: 6) {
-                    Circle().fill(ControlDesign.available).frame(width: 7, height: 7)
-                    Text(verbatim: "live").font(.caption.weight(.bold))
+                    ControlPulseDot(color: ControlDesign.available, isLive: true)
+                    Text(verbatim: "LIVE").font(.system(size: 10.5, weight: .semibold, design: .monospaced)).tracking(1.2)
                 }
                 .foregroundStyle(.white)
-                .padding(.horizontal, ControlDesign.gap).padding(.vertical, 4)
+                .padding(.horizontal, ControlDesign.stack - 2).padding(.vertical, 5)
                 .background(.black.opacity(0.55), in: Capsule())
-                .padding(ControlDesign.gap)
+                .padding(ControlDesign.stack - 2)
             }
+        } else if let thumbnail {
+            Color.black
+                .overlay { Image(uiImage: thumbnail).resizable().aspectRatio(contentMode: .fill) }
+                .clipped()
+                .saturation(status == .offline ? 0.35 : 1)
+                .overlay(alignment: .bottomLeading) {
+                    Text(verbatim: "LAST SESSION")
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced)).tracking(1.2)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, ControlDesign.stack - 2).padding(.vertical, 5)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .padding(ControlDesign.stack - 2)
+                }
+                .accessibilityHidden(true)
         } else {
             idleScreen
         }
@@ -771,7 +852,7 @@ private struct ControlScreenCard: View {
                     ControlCursor()
                 }
             }
-            .font(.subheadline)
+            .font(.system(.subheadline, design: .monospaced))
             .lineLimit(1).minimumScaleFactor(0.7)
             .padding(ControlDesign.inset)
         }
@@ -793,7 +874,7 @@ private struct ControlCursor: View {
     }
 }
 
-/// First run: a few shell comments and one obvious next step.
+/// First run: one sentence and one obvious next step.
 private struct ControlFirstMac: View {
     let isSearching: Bool
     let onAdd: () -> Void
@@ -801,19 +882,16 @@ private struct ControlFirstMac: View {
     var body: some View {
         VStack(alignment: .leading, spacing: ControlDesign.inset) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("# no macs yet")
-                Text("# open Vamp Sync on your Mac, then add it here.")
+                Text("No Macs yet").font(.title3.weight(.semibold)).foregroundStyle(ControlDesign.ink)
+                Text("Open Vamp Sync on your Mac, then add it here.")
+                    .font(.subheadline).foregroundStyle(ControlDesign.secondary)
             }
-            .font(.body).foregroundStyle(ControlDesign.secondary)
             .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: ControlDesign.gap) {
-                ControlPrimaryButton(title: "add your mac", symbol: "plus", fillsWidth: false, action: onAdd)
+                ControlPrimaryButton(title: "Add your Mac", symbol: "plus", fillsWidth: false, action: onAdd)
                     .accessibilityIdentifier("control.firstMac")
                 Button(action: onRefresh) {
-                    Text(isSearching ? "looking…" : "look nearby")
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(ControlDesign.ink)
-                        .padding(.horizontal, ControlDesign.inset).frame(minHeight: ControlDesign.buttonHeight)
-                        .controlGlass(radius: ControlDesign.buttonHeight / 2, interactive: true, emphasis: .control)
+                    ControlCapsule(title: isSearching ? "Looking…" : "Look nearby", height: ControlDesign.buttonHeight)
                 }
                 .buttonStyle(ControlPressStyle())
                 .disabled(isSearching)
@@ -831,9 +909,10 @@ private struct ControlAddRow: View {
     var body: some View {
         Button(action: action) {
             // Same slot as a Mac row's dot, so "add a mac" starts where the Mac names do.
-            HStack(spacing: ControlDesign.gap) {
-                Text(verbatim: "+").foregroundStyle(ControlDesign.prompt).frame(width: 8)
-                Text("add a mac").foregroundStyle(ControlDesign.ink)
+            HStack(spacing: ControlDesign.stack) {
+                Image(systemName: "plus").font(.subheadline.weight(.bold))
+                    .foregroundStyle(ControlDesign.endInk).frame(width: 8)
+                Text("Add a Mac").foregroundStyle(ControlDesign.ink)
             }
                 .font(.body.weight(.semibold))
                 .padding(.horizontal, ControlDesign.inset)
@@ -846,15 +925,19 @@ private struct ControlAddRow: View {
         }
         .buttonStyle(ControlPressStyle())
         .accessibilityLabel("Add a Mac")
-        .accessibilityHint("Add a Mac running Vamp Sync or Vamp Companion")
+        .accessibilityHint("Add a Mac running Vamp Sync")
         .accessibilityIdentifier("control.addMac")
     }
 }
 
 struct ControlPrivacyFootnote: View {
     var body: some View {
-        Text("# private · peer approved · no relay")
-            .font(.footnote).foregroundStyle(ControlDesign.secondary)
+        HStack(spacing: 6) {
+            Image(systemName: "lock.shield").font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(ControlDesign.secondary)
+            ControlMono(text: "Private · peer approved · no relay")
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -1006,4 +1089,33 @@ struct ControlConnectionProgress: View {
         }.padding(ControlDesign.gutter)
     }
     .background { ControlBackground() }.fontDesign(.monospaced).preferredColorScheme(.dark)
+}
+
+/// The last frame of each Mac's session in this run, for its card. Memory only: a Mac's
+/// screen is never written to disk, so after a relaunch the cards show the prompt again
+/// until the next session.
+@MainActor
+final class ControlHostThumbnails: ObservableObject {
+    static let shared = ControlHostThumbnails()
+    @Published private(set) var images: [UUID: UIImage] = [:]
+    private static let context = CIContext(options: [.useSoftwareRenderer: false])
+
+    func record(_ frame: CVPixelBuffer, for hostID: UUID) {
+        let image = CIImage(cvPixelBuffer: frame)
+        let scale = min(1, 640 / max(image.extent.width, 1))
+        let small = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        guard let cg = Self.context.createCGImage(small, from: small.extent) else { return }
+        images[hostID] = UIImage(cgImage: cg)
+    }
+
+    #if SCREENSHOTS
+    /// Screenshot builds only: each Mac shows a fictional desktop from `-VampSampleThumbnails`
+    /// (comma-separated paths), so store images never carry a real screen.
+    func seedSamples(for ids: [UUID]) {
+        let paths = (UserDefaults.standard.string(forKey: "VampSampleThumbnails") ?? "").split(separator: ",")
+        let samples = paths.compactMap { UIImage(contentsOfFile: String($0)) }
+        guard !samples.isEmpty else { return }
+        for (index, id) in ids.enumerated() where images[id] == nil { images[id] = samples[index % samples.count] }
+    }
+    #endif
 }

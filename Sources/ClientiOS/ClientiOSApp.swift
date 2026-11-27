@@ -88,8 +88,7 @@ struct ClientiOSApp: App {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: appLock.isLocked)
-            // Control reads like a terminal on glass: one monospaced voice for every screen.
-            .fontDesign(.monospaced)
+            // SF Pro for reading; monospace only where it carries meaning (labels, codes, the shell screen).
             .task {
                 CrashSafeStartupDiagnostics.mark("app.scene.task.started")
                 if appLock.isLocked { launchIsVisible = false }

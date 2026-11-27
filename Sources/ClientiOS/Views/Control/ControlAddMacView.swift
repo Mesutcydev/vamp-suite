@@ -31,6 +31,8 @@ struct ControlAddMacView: View {
     let onConnectSync: (DiscoveredHostRow) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var source = ControlMacSource.sync
+    /// Vamp Companion pairing is an experimental option for a future app, off by default.
+    @AppStorage(ControlExperiments.companionKey) private var companionEnabled = false
     @State private var syncAddress = ""
     /// The scanned code's address and host fingerprint. The fingerprint is used only while the
     /// address field still holds exactly what was scanned.
@@ -58,7 +60,7 @@ struct ControlAddMacView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: ControlDesign.section) {
                     header
-                    sourcePicker
+                    if companionEnabled { sourcePicker }
                     scanTile
                     if source == .sync && !nearby.isEmpty { nearbyList }
                     addressCard
@@ -113,6 +115,7 @@ struct ControlAddMacView: View {
         .interactiveDismissDisabled(companion.isPairing)
         .onDisappear { pairingTask?.cancel() }
         .onChange(of: source) { _, _ in error = nil; companion.cancelConnectionAttempt() }
+        .onAppear { if !companionEnabled { source = .sync } }
         .sheet(isPresented: $showsScanner) {
             ControlScannerView { payload in
                 showsScanner = false
@@ -120,6 +123,8 @@ struct ControlAddMacView: View {
                 case .sync(let address, let fingerprint):
                     source = .sync; syncAddress = address; error = nil
                     scannedSync = fingerprint.map { (address, $0) }
+                case .companion where !companionEnabled:
+                    error = String(localized: "That’s a Vamp Companion code. Turn on Vamp Companion pairing in Settings > Experimental to use it.")
                 case .companion(let endpoint):
                     source = .companion
                     companionAddress = endpoint.url.absoluteString
@@ -139,7 +144,7 @@ struct ControlAddMacView: View {
                 Text("Add a Mac").font(.title2.weight(.bold))
                     .foregroundStyle(ControlDesign.ink)
                     .accessibilityAddTraits(.isHeader)
-                ControlMono(text: "Choose what runs on your Mac", size: 9)
+                ControlMono(text: companionEnabled ? "Choose what runs on your Mac" : "Pair with Vamp Sync", size: 9)
             }
         }
     }
@@ -275,25 +280,8 @@ struct ControlAddMacView: View {
     }
 
     private var editionsCard: some View {
-        VStack(alignment: .leading, spacing: ControlDesign.stack) {
-            ControlMono(text: "Need Vamp Sync?", size: 9)
-            Text("The free website edition adds keyboard and pointer control. The Mac App Store edition is View Only.")
-                .font(.footnote).foregroundStyle(ControlDesign.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Link(destination: VampProductLinks.syncEditions) {
-                HStack(spacing: 4) {
-                    Text("Compare editions")
-                    Image(systemName: "arrow.up.right").font(.caption.weight(.bold))
-                }
-                .font(.subheadline.weight(.semibold)).foregroundStyle(ControlDesign.ink)
-                .padding(.horizontal, ControlDesign.stack).frame(minHeight: ControlDesign.smallButtonHeight)
-                .controlGlass(radius: ControlDesign.smallButtonHeight / 2, interactive: true, emphasis: .control)
-            }
-            .accessibilityHint("Opens the Vamp Sync website")
-        }
-        .padding(ControlDesign.inset)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .controlGlass()
+        ControlPromoCard(title: "Need Vamp Sync?",
+                         detail: "The free website edition adds keyboard and pointer control. The Mac App Store edition is View Only.")
     }
 
     /// Appears only once there is something to connect to; never a disabled slab.

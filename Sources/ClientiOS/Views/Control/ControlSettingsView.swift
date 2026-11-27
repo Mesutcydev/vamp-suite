@@ -8,17 +8,23 @@ struct ControlSettingsView: View {
     @ObservedObject var environment: ClientAppEnvironment
     @ObservedObject var appLock: AppLockService
     @ObservedObject var companion: BeetCodeRemoteSessionViewModel
+    @ObservedObject var unlock: StreamingUnlockStore
+    @ObservedObject var usage: DailyStreamingUsage
+    @State private var showsPaywall = false
     @StateObject private var trusted: ClientTrustedHostsViewModel
     @AppStorage(ControlAppearance.storageKey) private var appearance = ControlAppearance.system
     @AppStorage("client.liveActivity.enabled") private var liveActivityEnabled = true
     @AppStorage("client.clipboard.enabled") private var clipboardEnabled = true
     @AppStorage(ClientFileTransferPreference.storageKey) private var fileTransferEnabled = true
-    @Environment(\.dismiss) private var dismiss
+    @AppStorage(ControlExperiments.companionKey) private var companionEnabled = false
 
-    init(environment: ClientAppEnvironment, appLock: AppLockService, companion: BeetCodeRemoteSessionViewModel) {
+    init(environment: ClientAppEnvironment, appLock: AppLockService, companion: BeetCodeRemoteSessionViewModel,
+         unlock: StreamingUnlockStore, usage: DailyStreamingUsage) {
         self.environment = environment
         self.appLock = appLock
         self.companion = companion
+        self.unlock = unlock
+        self.usage = usage
         _trusted = StateObject(wrappedValue: ClientTrustedHostsViewModel(peerStore: environment.trustedPeerStore))
     }
 
@@ -35,84 +41,117 @@ struct ControlSettingsView: View {
                 header
 
                 ControlConfigSection(command: "config look", label: "Appearance") {
-                    ControlChoiceRow(key: "theme", selection: $appearance,
-                                     options: [(.system, "auto"), (.light, "light"), (.dark, "dark")])
+                    ControlChoiceRow(key: "Theme", selection: $appearance,
+                                     options: [(.system, "Auto"), (.light, "Light"), (.dark, "Dark")])
                         .accessibilityIdentifier("control.appearance")
                 }
 
                 ControlConfigSection(command: "config stream", label: "Sync streaming",
-                                     note: "# balanced is a good start · companion sets its own picture") {
-                    ControlChoiceRow(key: "quality", selection: $environment.preferredQualityPreset,
-                                     options: [(.performance, "eco"), (.balanced, "balanced"),
-                                               (.quality, "sharp"), (.ultra, "full")])
+                                     note: "Balanced is a good start on most networks.") {
+                    ControlChoiceRow(key: "Quality", selection: $environment.preferredQualityPreset,
+                                     options: [(.performance, "Eco"), (.balanced, "Balanced"),
+                                               (.quality, "Sharp"), (.ultra, "Full")])
                     ControlRule()
-                    Toggle("low power", isOn: $environment.lowPowerModeEnabled)
+                    Toggle("Low power", isOn: $environment.lowPowerModeEnabled)
                     ControlRule()
-                    Toggle("stats overlay", isOn: $environment.showsStatsOverlay)
+                    Toggle("Stats overlay", isOn: $environment.showsStatsOverlay)
                 }
 
                 ControlConfigSection(command: "config sharing", label: "Sync controls",
-                                     note: "# sharing happens when you ask · view only hosts never take input") {
-                    Toggle("view only", isOn: $environment.prefersViewOnly)
+                                     note: "Sharing happens only when you ask. View Only Macs never take input.") {
+                    Toggle("View only", isOn: $environment.prefersViewOnly)
                     ControlRule()
-                    Toggle("clipboard", isOn: $clipboardEnabled)
+                    Toggle("Clipboard", isOn: $clipboardEnabled)
                     ControlRule()
-                    Toggle("file transfer", isOn: $fileTransferEnabled)
+                    Toggle("File transfer", isOn: $fileTransferEnabled)
                     ControlRule()
-                    Toggle("live activity", isOn: $liveActivityEnabled)
+                    Toggle("Live Activity", isOn: $liveActivityEnabled)
                 }
 
                 ControlConfigSection(command: "config privacy", label: "Privacy and trust",
-                                     note: "# app lock asks for face id or your passcode · pairing belongs to you") {
-                    Toggle("app lock", isOn: $appLock.isEnabled)
+                                     note: "App Lock asks for Face ID or your passcode. Pairing stays on this device.") {
+                    Toggle("App Lock", isOn: $appLock.isEnabled)
                     ControlRule()
                     NavigationLink {
                         ControlTrustedMacsView(trusted: trusted, companion: companion)
                     } label: {
-                        ControlValueRow(key: "paired macs",
+                        ControlValueRow(key: "Paired Macs",
                                         value: "\(trusted.trustedHosts.count + companion.savedAssistants.count) →")
                     }
                     .buttonStyle(ControlRowPressStyle())
                 }
 
+                if StreamingUnlockStore.isEnforced {
+                    ControlConfigSection(command: "config pro", label: "Vamp Pro",
+                                         note: "15 minutes a day are free. Vamp Pro is one payment, with no subscription.") {
+                        Button { showsPaywall = true } label: {
+                            ControlValueRow(key: "Vamp Pro", value: proStatus)
+                        }
+                        .buttonStyle(ControlRowPressStyle())
+                        .accessibilityIdentifier("control.pro")
+                        ControlRule()
+                        Button { Task { await unlock.restore() } } label: {
+                            ControlValueRow(key: "Restore Purchase", value: unlock.isLoading ? "…" : "↻")
+                        }
+                        .buttonStyle(ControlRowPressStyle())
+                        .disabled(unlock.isLoading)
+                        if let message = unlock.purchaseError ?? unlock.purchaseNotice {
+                            ControlRule()
+                            Text(message).font(.footnote).foregroundStyle(ControlDesign.secondary)
+                                .frame(maxWidth: .infinity, minHeight: ControlDesign.lineHeight, alignment: .leading)
+                        }
+                    }
+                }
+
+                ControlConfigSection(command: "config experimental", label: "Experimental",
+                                     note: "Early features for a future app. Off by default; Macs you already paired stay listed.") {
+                    Toggle("Vamp Companion pairing", isOn: $companionEnabled)
+                        .accessibilityIdentifier("control.experimental.companion")
+                }
+
                 ControlConfigSection(command: "open", label: "On your Mac") {
-                    link("get vamp sync", VampProductLinks.syncDownload)
+                    link("Get Vamp Sync", VampProductLinks.syncDownload)
                     ControlRule()
-                    link("help & feedback", VampProductLinks.support)
+                    link("Help & Feedback", VampProductLinks.support)
                     ControlRule()
-                    link("privacy policy", VampProductLinks.privacy)
+                    link("Privacy Policy", VampProductLinks.privacy)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: "# vamp control \(version)")
-                    Text("# made for the way you mac")
+                    Text(verbatim: "Vamp Control \(version)")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced)).textCase(.uppercase).tracking(1.1)
+                    Text("Made for the way you Mac.").font(.footnote)
                 }
-                .font(.footnote).foregroundStyle(ControlDesign.secondary)
+                .foregroundStyle(ControlDesign.secondary)
                 .padding(.leading, ControlDesign.inset)
             }
-            .toggleStyle(ControlToggleStyle())
+            .toggleStyle(ControlSwitchStyle())
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(removing: .title)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task { await trusted.refresh() }
+            .sheet(isPresented: $showsPaywall) {
+                StreamingPaywallView(unlockStore: unlock, usage: usage, onDismiss: { showsPaywall = false })
+            }
         }
-        .preferredColorScheme(appearance.colorScheme)
         .tint(ControlDesign.accent)
-        .presentationDragIndicator(.visible)
     }
 
     private var header: some View {
-        HStack(spacing: ControlDesign.stack) {
-            ControlGlassLogo()
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(Text(verbatim: "vamp").fontWeight(.bold).foregroundStyle(ControlDesign.ink)) \(Text(verbatim: "~/settings").foregroundStyle(ControlDesign.secondary))")
-                    .font(.title3)
-                    .accessibilityLabel("Settings")
-                    .accessibilityAddTraits(.isHeader)
-                Text("# a little closer to your mac").font(.footnote).foregroundStyle(ControlDesign.secondary)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Settings")
+                .font(.system(size: 30, weight: .regular, design: .serif))
+                .foregroundStyle(ControlDesign.ink)
+                .accessibilityAddTraits(.isHeader)
+            Text("How Vamp Control looks and connects on this device.").font(.subheadline).foregroundStyle(ControlDesign.secondary)
         }
+        .padding(.leading, ControlDesign.inset)
+    }
+
+    private var proStatus: String {
+        if unlock.isEffectivelyUnlocked { return String(localized: "Unlocked") }
+        let left = max(0, Int((DailyStreamingUsage.dailyLimitSeconds - usage.secondsUsedToday) / 60))
+        return String(localized: "\(left) min left today")
     }
 
     private func link(_ title: LocalizedStringKey, _ url: URL) -> some View {
@@ -241,8 +280,8 @@ struct ControlChoiceRow<Value: Hashable>: View {
     }
 }
 
-/// `$ ls paired`: every Mac this device trusts, with its fingerprint and a way to undo it.
-private struct ControlTrustedMacsView: View {
+/// Every Mac this device trusts, with its fingerprint and a way to undo it.
+struct ControlTrustedMacsView: View {
     @ObservedObject var trusted: ClientTrustedHostsViewModel
     @ObservedObject var companion: BeetCodeRemoteSessionViewModel
     @State private var forgetAction: (() -> Void)?
@@ -254,8 +293,8 @@ private struct ControlTrustedMacsView: View {
                 VStack(alignment: .leading, spacing: ControlDesign.gap) {
                     ControlPrompt(command: "ls paired", label: "Paired Macs")
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("# no paired macs yet")
-                        Text("# your macs appear here after you pair")
+                        Text("No paired Macs yet")
+                        Text("Your Macs appear here after you pair.")
                     }
                     .font(.body).foregroundStyle(ControlDesign.secondary)
                     .padding(.horizontal, ControlDesign.inset)
@@ -263,12 +302,12 @@ private struct ControlTrustedMacsView: View {
             }
             if !trusted.trustedHosts.isEmpty {
                 ControlConfigSection(command: "ls paired --sync", label: "Vamp Sync",
-                                     note: "# revoke, and that mac asks for approval again") {
+                                     note: "Revoke a Mac and it asks for approval again.") {
                     ForEach(Array(trusted.trustedHosts.enumerated()), id: \.element.id) { index, host in
                         if index > 0 { ControlRule() }
                         pairedRow(name: host.displayName,
                                   detail: ControlConnectionProgress.grouped(host.fingerprint),
-                                  action: "revoke") {
+                                  action: "Revoke") {
                             forgetAction = { Task { await trusted.forget(host) } }
                             showsForget = true
                         }
@@ -279,7 +318,7 @@ private struct ControlTrustedMacsView: View {
                 ControlConfigSection(command: "ls paired --companion", label: "Vamp Companion") {
                     ForEach(Array(companion.savedAssistants.enumerated()), id: \.element.id) { index, saved in
                         if index > 0 { ControlRule() }
-                        pairedRow(name: saved.displayName, detail: saved.address, action: "forget") {
+                        pairedRow(name: saved.displayName, detail: saved.address, action: "Forget") {
                             forgetAction = { companion.forget(saved) }
                             showsForget = true
                         }
@@ -303,18 +342,48 @@ private struct ControlTrustedMacsView: View {
         HStack(alignment: .top, spacing: ControlDesign.stack) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: name).font(.body.weight(.semibold)).foregroundStyle(ControlDesign.ink)
-                Text(verbatim: detail).font(.caption).foregroundStyle(ControlDesign.secondary)
+                Text(verbatim: detail).font(.system(size: 12, design: .monospaced)).foregroundStyle(ControlDesign.secondary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: ControlDesign.gap)
             Button(action: perform) {
-                Text(action).font(.subheadline.weight(.semibold)).foregroundStyle(ControlDesign.caution)
-                    .padding(.horizontal, ControlDesign.stack).frame(height: ControlDesign.smallButtonHeight)
-                    .controlGlass(radius: ControlDesign.smallButtonHeight / 2, interactive: true, emphasis: .control)
+                ControlCapsule(title: action, style: .end)
             }
             .buttonStyle(ControlPressStyle())
         }
         .padding(.vertical, ControlDesign.stack)
+    }
+}
+
+/// A native switch on a full-height settings row, green when on.
+struct ControlSwitchStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Toggle(configuration)
+            .toggleStyle(.switch)
+            .tint(ControlDesign.available)
+            .foregroundStyle(ControlDesign.ink)
+            .frame(minHeight: ControlDesign.lineHeight)
+    }
+}
+
+/// Paired Macs on their own, for the Trusted tab.
+struct ControlTrustedTab: View {
+    let environment: ClientAppEnvironment
+    @ObservedObject var companion: BeetCodeRemoteSessionViewModel
+    @StateObject private var trusted: ClientTrustedHostsViewModel
+
+    init(environment: ClientAppEnvironment, companion: BeetCodeRemoteSessionViewModel) {
+        self.environment = environment
+        self.companion = companion
+        _trusted = StateObject(wrappedValue: ClientTrustedHostsViewModel(peerStore: environment.trustedPeerStore))
+    }
+
+    var body: some View {
+        NavigationStack {
+            ControlTrustedMacsView(trusted: trusted, companion: companion)
+                .navigationBarTitleDisplayMode(.inline)
+        }
+        .tint(ControlDesign.accent)
     }
 }

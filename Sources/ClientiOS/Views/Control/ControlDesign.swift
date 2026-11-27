@@ -1,11 +1,19 @@
 import SwiftUI
+import SharedModels
 
-/// Vamp Control's visual identity: black, white, and native clear glass.
+/// Vamp Control's visual identity: ink, native clear glass, and one crimson accent.
 enum ControlDesign {
-    static let canvas = Color.dynamic(light: 0xF5F5F5, dark: 0x141414)
+    static let canvas = Color.dynamic(light: 0xF5F5F5, dark: 0x0F1013)
     static let ink = Color.dynamic(light: 0x181818, dark: 0xF3F3F3)
     static let secondary = Color.dynamic(light: 0x686868, dark: 0xAAAAAA)
     static let accent = Color.dynamic(light: 0x181818, dark: 0xF3F3F3)
+    /// The suite's one brand accent, shared with Vamp Sync and Control for Mac: only the
+    /// single primary action on a screen (Connect, Open, Unlock). White text passes 4.5:1 on both.
+    static let primary = Color.dynamic(light: 0xC42A50, dark: 0xD12E57)
+    static let primaryInk = Color.white
+    /// Ending something: a soft crimson capsule, never the solid primary.
+    static let endInk = Color.dynamic(light: 0xA3223F, dark: 0xFFA3B8)
+    static let endFill = Color.dynamic(light: 0xC42A50, dark: 0xD12E57, lightAlpha: 0.10, darkAlpha: 0.18)
     /// Status is the one place color appears; everything else stays monochrome.
     static let available = Color.dynamic(light: 0x1F9D55, dark: 0x3DD07A)
     static let caution = Color.dynamic(light: 0xB86E00, dark: 0xF2A93B)
@@ -45,6 +53,12 @@ enum ControlDesign {
             .replacingOccurrences(of: "Vamp Stream", with: "Vamp Control")
             .replacingOccurrences(of: "port 9575", with: "the port shown on your Mac")
     }
+}
+
+/// Switches for features that are not ready to be on by default.
+enum ControlExperiments {
+    /// Vamp Companion pairing, kept for a future app. Saved Companion Macs keep working either way.
+    static let companionKey = "control.experimental.companion"
 }
 
 enum ControlAppearance: String, CaseIterable, Identifiable {
@@ -158,7 +172,12 @@ enum ControlGlassEmphasis {
     case surface
     /// Compact controls keep a visible optical rim.
     case control
-    var opacity: Double { self == .surface ? 0.55 : 0.8 }
+    var opacity: Double {
+        switch self {
+        case .surface: 0.55
+        case .control: 0.8
+        }
+    }
 }
 
 private struct ControlGlass: ViewModifier {
@@ -218,14 +237,191 @@ struct ControlPrimaryButton: View {
                 Image(systemName: symbol).font(.footnote.weight(.bold))
             }
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(ControlDesign.buttonInk)
+            .foregroundStyle(ControlDesign.primaryInk)
             .padding(.horizontal, ControlDesign.inset)
             .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: ControlDesign.buttonHeight)
-            .background(ControlDesign.accent.opacity(isDisabled ? 0.4 : 1), in: Capsule())
+            .background(ControlDesign.primary.opacity(isDisabled ? 0.4 : 1), in: Capsule())
+            .shadow(color: ControlDesign.primary.opacity(isDisabled ? 0 : 0.35), radius: 10, y: 5)
             .contentShape(Capsule())
         }
         .buttonStyle(ControlPressStyle())
         .disabled(isDisabled)
+    }
+}
+
+/// A compact capsule label: glass for secondary actions, soft crimson for ending one.
+/// Rows and cards draw it inside their own buttons, so it carries no action itself.
+struct ControlCapsule: View {
+    enum Style { case glass, end }
+    let title: LocalizedStringKey
+    var symbol: String?
+    var style: Style = .glass
+    var height: CGFloat = ControlDesign.smallButtonHeight
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(title)
+            if let symbol { Image(systemName: symbol).font(.caption.weight(.bold)) }
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(style == .end ? ControlDesign.endInk : ControlDesign.ink)
+        .padding(.horizontal, ControlDesign.stack + 2)
+        .frame(minHeight: height)
+        .background {
+            if style == .end {
+                Capsule().fill(ControlDesign.endFill)
+                    .overlay { Capsule().strokeBorder(ControlDesign.primary.opacity(0.45), lineWidth: 0.6) }
+            }
+        }
+        .modifier(GlassIfNeeded(isGlass: style == .glass, height: height))
+        .fixedSize()
+    }
+
+    private struct GlassIfNeeded: ViewModifier {
+        let isGlass: Bool
+        let height: CGFloat
+        func body(content: Content) -> some View {
+            if isGlass { content.controlGlass(radius: height / 2, interactive: true, emphasis: .control) } else { content }
+        }
+    }
+}
+
+/// "Vamp Control" set in the suite's serif, the way the Mac apps title their windows.
+struct ControlSerifWordmark: View {
+    var size: CGFloat = 23
+    var body: some View {
+        Text(verbatim: "Vamp Control")
+            .font(.system(size: size, weight: .regular, design: .serif))
+            .tracking(0.3)
+            .foregroundStyle(ControlDesign.ink)
+            .lineLimit(1)
+            .fixedSize()
+            .accessibilityLabel("Vamp Control")
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The suite's shared promo card: glass over a soft crimson bloom, a mark tile with a badge,
+/// a mono eyebrow, the benefit and its honest catch, and a light capsule that never competes
+/// with the screen's primary action. Opens the browser only.
+struct ControlPromoCard: View {
+    var title: LocalizedStringKey = "Reach another Mac"
+    var detail: LocalizedStringKey = "Put Vamp Sync on it, approve this device once, and it shows up here."
+    /// Set once the person confirms Vamp Sync is on their Mac. Every promo card then stays hidden;
+    /// Settings > On Your Mac keeps the Get Vamp Sync link.
+    @AppStorage("control.promo.syncInstalled") private var syncInstalled = false
+    @State private var confirming = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        if !syncInstalled {
+            Group { if confirming { approval } else { promo } }
+                .padding(ControlDesign.inset)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    RadialGradient(colors: [ControlDesign.primary.opacity(scheme == .dark ? 0.32 : 0.16), .clear],
+                                   center: .topLeading, startRadius: 0, endRadius: 300)
+                        .clipShape(RoundedRectangle(cornerRadius: ControlDesign.radius + 4, style: .continuous))
+                }
+                .controlGlass(radius: ControlDesign.radius + 4)
+                .animation(.snappy, value: confirming)
+        }
+    }
+
+    private var promo: some View {
+        VStack(alignment: .leading, spacing: ControlDesign.stack) {
+            HStack(alignment: .top, spacing: ControlDesign.stack + 2) {
+                ZStack(alignment: .bottomTrailing) {
+                    ControlSymbol().fill(Color.white)
+                        .frame(width: 22, height: 22)
+                        .frame(width: 48, height: 48)
+                        .background(LinearGradient(colors: [Color(white: 0.17), Color(white: 0.07)], startPoint: .top, endPoint: .bottom),
+                                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .overlay { RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(.white.opacity(0.16), lineWidth: 0.8) }
+                    Image(systemName: "arrow.down").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                        .frame(width: 21, height: 21)
+                        .background(ControlDesign.primary, in: Circle())
+                        .overlay { Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1.5) }
+                        .offset(x: 6, y: 6)
+                }
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    eyebrow("VAMP SYNC · FREE")
+                    Text(title).font(.headline)
+                    Text(detail)
+                        .font(.footnote).foregroundStyle(ControlDesign.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Button { confirming = true } label: {
+                    Image(systemName: "xmark").font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(ControlDesign.secondary)
+                        .frame(width: 28, height: 28)
+                        .controlGlass(radius: 14, emphasis: .control)
+                        .contentShape(Rectangle().inset(by: -8))
+                }
+                .buttonStyle(ControlPressStyle())
+                .accessibilityLabel("Dismiss")
+                .accessibilityHint("Asks whether Vamp Sync is already on your Mac")
+            }
+            HStack(spacing: ControlDesign.stack) {
+                Link(destination: VampProductLinks.syncDownload) { lightCapsule("Get Vamp Sync", symbol: "arrow.up.right") }
+                    .buttonStyle(ControlPressStyle())
+                Spacer(minLength: 0)
+                Link("Compare editions", destination: VampProductLinks.syncEditions)
+                    .font(.footnote).foregroundStyle(ControlDesign.secondary)
+            }
+        }
+    }
+
+    /// Hiding the card is only right once the host is on the Mac, so dismissing asks first.
+    private var approval: some View {
+        VStack(alignment: .leading, spacing: ControlDesign.stack) {
+            HStack(alignment: .top, spacing: ControlDesign.stack + 2) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 19, weight: .bold)).foregroundStyle(ControlDesign.available)
+                    .frame(width: 48, height: 48)
+                    .controlGlass(radius: 13, emphasis: .control)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    eyebrow("VAMP SYNC")
+                    Text("Is Vamp Sync installed on your Mac?").font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Confirm and this card stays hidden. Get Vamp Sync stays in Settings.")
+                        .font(.footnote).foregroundStyle(ControlDesign.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            HStack(spacing: ControlDesign.stack) {
+                Button { withAnimation(.snappy) { syncInstalled = true } } label: {
+                    lightCapsule("Yes, it’s installed", symbol: "checkmark")
+                }
+                .buttonStyle(ControlPressStyle())
+                .accessibilityIdentifier("control.promo.installed")
+                Button("Not yet") { confirming = false }
+                    .font(.footnote.weight(.semibold)).foregroundStyle(ControlDesign.secondary)
+                    .frame(minHeight: ControlDesign.smallButtonHeight)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func eyebrow(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(1.1)
+            .foregroundStyle(ControlDesign.endInk)
+    }
+
+    private func lightCapsule(_ title: LocalizedStringKey, symbol: String) -> some View {
+        HStack(spacing: 5) {
+            Text(title)
+            Image(systemName: symbol).font(.caption.weight(.bold)).accessibilityHidden(true)
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(Color(white: 0.07))
+        .padding(.horizontal, ControlDesign.stack + 2)
+        .frame(minHeight: ControlDesign.smallButtonHeight)
+        .background(Color(white: scheme == .dark ? 0.95 : 1), in: Capsule())
+        .overlay { Capsule().strokeBorder(ControlDesign.line, lineWidth: scheme == .dark ? 0 : 0.6) }
     }
 }
 
@@ -286,16 +482,15 @@ struct ControlHingeReader: UIViewRepresentable {
     }
 }
 
-/// A shell prompt heading: `$ ls macs`. VoiceOver reads the plain label.
+/// A section heading in the suite's meta style: small monospaced caps on the shared text column.
+/// `command` is kept for call sites written in the earlier terminal voice; only `label` shows.
 struct ControlPrompt: View {
     let command: String
     let label: LocalizedStringKey
     var body: some View {
-        Text("\(Text(verbatim: "$").foregroundStyle(ControlDesign.prompt)) \(Text(verbatim: command))")
-            .font(.body.weight(.semibold)).foregroundStyle(ControlDesign.ink)
+        ControlMono(text: label, size: 11)
             // Same text column as the lines inside the glass panels below it.
             .padding(.leading, ControlDesign.inset)
-            .accessibilityLabel(Text(label))
             .accessibilityAddTraits(.isHeader)
     }
 }
