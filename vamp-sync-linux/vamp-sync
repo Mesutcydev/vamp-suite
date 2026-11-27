@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec /usr/bin/python3 "$directory/desktop/vamp_sync.py" "$@"

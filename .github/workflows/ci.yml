@@ -188,3 +188,16 @@ jobs:
 
       - name: Linux browser Chat regression
         run: node Tests/LinuxBrowserChatTests.mjs
+
+      - name: Build and test native Vamp Sync for Linux
+        working-directory: vamp-sync-linux
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            libssl-dev libx11-dev libx11-xcb-dev libxcb-composite0-dev \
+            libxcb-xtest0-dev libxcb-screensaver0-dev xvfb xauth openbox xterm ffmpeg xclip \
+            python3-gi gir1.2-gtk-3.0 qrencode iproute2 librsvg2-common shared-mime-info
+          xvfb-run -a sh -ec 'openbox >/tmp/vamp-test-wm.log 2>&1 & VAMP_TEST_X11=1 go test -race ./...'
+          xvfb-run -a /usr/bin/python3 desktop/test_panel.py
+          go vet ./...
+          ./packaging/build-deb.sh /tmp/vamp-sync-installers

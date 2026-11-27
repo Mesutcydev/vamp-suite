@@ -1,0 +1,86 @@
+window.vamp-window { background-color: transparent; }
+#vamp-panel {
+  color: #252329;
+  background-color: #f3f1f6;
+  background-image: linear-gradient(to bottom, rgba(255,255,255,.86), rgba(255,255,255,.93)), url("@BACKDROP@");
+  background-size: cover;
+  background-position: center;
+  border: 1px solid rgba(25,20,34,.12);
+  border-radius: 18px;
+}
+#vamp-panel.dark {
+  color: #f5f1fa;
+  background-color: #15141a;
+  background-image: linear-gradient(to bottom, rgba(12,10,16,.55), rgba(12,10,16,.74)), url("@BACKDROP@");
+}
+#vamp-panel label { color: inherit; }
+#vamp-panel label.secondary { color: #625e6a; }
+#vamp-panel.dark label.secondary { color: #c0b9ca; }
+#vamp-panel label.title { font-size: 19px; font-weight: 600; }
+#vamp-panel label.heading { font-size: 13px; font-weight: 600; }
+#vamp-panel label.pair-title { font-size: 17px; font-weight: 600; }
+#vamp-panel label.small { font-size: 11px; }
+#vamp-panel label.tiny { font-size: 10px; }
+#vamp-panel label.mono { font-family: monospace; font-size: 11px; }
+#vamp-panel label.metric { font-size: 10px; letter-spacing: 1px; font-weight: 600; }
+#vamp-panel .card {
+  padding: 17px;
+  background-color: rgba(255,255,255,.34);
+  border: 1px solid rgba(24,17,33,.09);
+  border-radius: 18px;
+}
+#vamp-panel .card.raised { background-color: rgba(255,255,255,.50); }
+#vamp-panel.dark .card { background-color: rgba(255,255,255,.06); border-color: rgba(255,255,255,.12); }
+#vamp-panel.dark .card.raised { background-color: rgba(255,255,255,.09); }
+#vamp-panel .card.approval { background-color: rgba(255,243,231,.56); border-color: rgba(190,99,22,.32); }
+#vamp-panel.dark .card.approval { background-color: rgba(166,81,18,.12); border-color: rgba(250,162,83,.36); }
+#vamp-panel .attention, #vamp-panel .attention label { color: #955016; }
+#vamp-panel.dark .attention, #vamp-panel.dark .attention label { color: #ffba82; }
+#vamp-panel .good, #vamp-panel .good label { color: #227040; }
+#vamp-panel.dark .good, #vamp-panel.dark .good label { color: #75d896; }
+#vamp-panel .mark {
+  background-image: url("@LOGO@");
+  background-size: cover;
+  background-position: center;
+  border-radius: 11px;
+}
+#vamp-panel label.state-dot { font-size: 9px; color: #938b9d; }
+#vamp-panel label.state-dot.good { color: #2dbd65; }
+#vamp-panel label.state-dot.attention { color: #e78b35; }
+#vamp-panel .qr { background-color: #fff; border-radius: 12px; }
+#vamp-panel .address { padding: 9px 11px; background-color: rgba(255,255,255,.58); border-radius: 9px; }
+#vamp-panel.dark .address { background-color: rgba(255,255,255,.10); }
+#vamp-panel .tile { background-color: rgba(60,44,82,.08); border-radius: 10px; }
+#vamp-panel.dark .tile { background-color: rgba(255,255,255,.09); }
+#vamp-panel image.tile.good { background-color: rgba(45,189,101,.16); }
+#vamp-panel image.tile.attention { background-color: rgba(231,139,53,.16); }
+#vamp-panel .footer {
+  background-color: rgba(255,255,255,.62);
+  border-top: 1px solid rgba(24,17,33,.10);
+  border-radius: 0 0 17px 17px;
+}
+#vamp-panel.dark .footer { background-color: rgba(18,16,23,.78); border-top-color: rgba(255,255,255,.12); }
+#vamp-panel scrolledwindow, #vamp-panel viewport { background-color: transparent; border: none; }
+#vamp-panel button {
+  min-height: 19px; min-width: 15px; padding: 2px 10px;
+  color: inherit; background: rgba(39,29,52,.09); border: 1px solid transparent; border-radius: 7px; box-shadow: none;
+}
+#vamp-panel.dark button { background: rgba(255,255,255,.12); }
+#vamp-panel button.flat { background: transparent; padding: 2px 6px; }
+#vamp-panel button:hover, #vamp-panel button:checked { background: rgba(39,29,52,.17); }
+#vamp-panel.dark button:hover, #vamp-panel.dark button:checked { background: rgba(255,255,255,.21); }
+#vamp-panel button:active { background: rgba(107,77,183,.22); }
+#vamp-panel button.suggested-action { color: #fff; background: #6c4cbe; }
+#vamp-panel button.suggested-action:hover { background: #593ba6; }
+#vamp-panel button:focus, #vamp-panel entry:focus { border: 1px solid #815ddd; outline-width: 0; }
+#vamp-panel button:disabled { opacity: .48; }
+#vamp-panel .segments { padding: 2px; border-radius: 8px; background: rgba(40,32,54,.10); }
+#vamp-panel .segments button { background: transparent; }
+#vamp-panel .segments button:checked { background: rgba(255,255,255,.80); }
+#vamp-panel.dark .segments { background: rgba(255,255,255,.1); }
+#vamp-panel.dark .segments button:checked { background: rgba(255,255,255,.23); }
+#vamp-panel entry {
+  min-height: 25px; padding: 3px 8px; color: inherit;
+  background: rgba(255,255,255,.64); border-color: rgba(42,31,56,.14); border-radius: 7px;
+}
+#vamp-panel.dark entry { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.22); }

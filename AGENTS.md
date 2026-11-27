@@ -17,7 +17,7 @@ verification. Do not package, reinstall, or advertise discontinued products.
 | Full host | `Vamp Host` — discontinued; historical full host |
 | Light host | `Vamp Terminal Host` — discontinued |
 | Mini host | `Vamp Sync` — active Mac desktop/app host for Control; app-window host for Stream |
-| Linux host | `Vamp Linux Host` — discontinued |
+| Linux host | `Vamp Sync for Linux` — experimental native X11 implementation in `vamp-sync-linux/` |
 | Remote-desktop client | `Vamp Control` — macOS and iOS/iPadOS. Terminal Mode is an overlay |
 | Terminal client | `Vamp Terminal` — discontinued; Terminal Mode remains in Vamp Control |
 | App-stream client | `Vamp Stream` — focused iOS/iPadOS app-window streaming client |
@@ -45,7 +45,8 @@ verification. Do not package, reinstall, or advertise discontinued products.
 | Mini URL scheme | `vampminihost://` |
 | License | Apache-2.0 |
 
-Run only one macOS host at a time. Vamp Control cannot attach to Vamp Linux Host.
+Run only one macOS host at a time. The historical Vamp Linux Host browser endpoint
+and Vamp Sync for Linux are separate implementations.
 
 The website iOS builds are unsigned device IPAs for AltStore-style re-signing. No
 project-owned Apple team, certificate, provisioning profile, App Store Connect
@@ -185,7 +186,8 @@ action did not resolve, `7` for a fingerprint mismatch, and `8` on timeout.
 - `Sources/SharedModels`: capability metadata and shared session models
 - `Sources/TransportWebRTC`: signed signaling and data transport
 - `Sources/Permissions`: host permission and distribution policy
-- `linux-host`: dependency-free Safari/WebSocket host
+- `linux-host`: historical dependency-free Safari/WebSocket host
+- `vamp-sync-linux`: native Linux X11 host and [tester specification](vamp-sync-linux/TESTING.md)
 - `scripts/vamp`: agent CLI wrapper
 - `scripts/package-vamp-terminal-ios.sh`: historical unsigned iOS packaging; do not distribute
 - `docs/index.html`: GitHub Pages product site
@@ -196,7 +198,9 @@ action did not resolve, `7` for a fingerprint mismatch, and `8` on timeout.
 For protocol, trust, terminal routing, or PTY changes, run `swift test` and the
 Linux host tests. Build the four active app targets (Vamp Sync, Vamp Stream,
 Vamp Control iOS, and Vamp Control macOS) after shared-source changes. Verify
-the IPA checksum and manifest before sideloading.
+the IPA checksum and manifest before sideloading. For native Linux changes, run
+`go test -race ./...` and `go vet ./...` from `vamp-sync-linux`. Follow its
+tester specification for X11 and client compatibility checks.
 
 Never weaken pairing approval, replay protection, session-ID validation, or
 terminal-ID validation for convenience.

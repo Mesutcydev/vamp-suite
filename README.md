@@ -53,7 +53,7 @@ on your Mac, then add its mobile companion if needed. It does not require Sync. 
 <details>
 <summary>Other tools and compatibility</summary>
 
-**Vamp Sync and Vamp Assistant are the only current hosts.** Vamp Host, Vamp
+**Vamp Sync and Vamp Assistant are the current host products.** Vamp Host, Vamp
 Terminal Host, and Vamp Linux Host are discontinued. Their historical source
 and build targets remain for compatibility and shared-source verification;
 new packages are no longer produced. Vamp Terminal documentation describes
@@ -63,6 +63,12 @@ No Vamp account or hosted relay is required. Existing discovery, storage, and
 installation identifiers remain stable for compatibility.
 
 </details>
+
+### Vamp Sync for Linux
+
+A native X11 host for Vamp Control and Vamp Stream includes the Vamp Sync
+desktop panel. See the [Linux build and pairing instructions](vamp-sync-linux/README.md) and
+[tester diagnostics specification](vamp-sync-linux/TESTING.md).
 
 ## Download and install
 

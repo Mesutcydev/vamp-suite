@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+export VAMP_SYNC_HOST=/usr/lib/vamp-sync/vamp-sync-linux
+export VAMP_SYNC_ARTWORK=/usr/share/vamp-sync/artwork
+exec /usr/bin/python3 /usr/lib/vamp-sync/desktop/vamp_sync.py "$@"
