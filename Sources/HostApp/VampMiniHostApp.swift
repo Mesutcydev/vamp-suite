@@ -488,8 +488,8 @@ private enum VampSyncAppearance: String, CaseIterable, Identifiable {
     }
 }
 
-/// A compact window with two fang notches for the monochrome menu-bar template.
-/// The panel and application icon use the full-color VampSyncLogo artwork.
+/// Window with two fang notches. The same silhouette is the menu-bar template
+/// and the panel mark — never the full-color landscape app icon.
 private struct VampSyncMark: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
@@ -527,14 +527,28 @@ private struct VampSyncMark: Shape {
 
 private struct VampMiniHostMark: View {
     let size: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
 
+    /// The brand tile is dark in both appearances, like the app icon.
     var body: some View {
-        Image("VampSyncLogo")
-            .resizable()
-            .scaledToFit()
-            .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
-            .accessibilityLabel("\(VampProductIdentity.syncName)")
+        let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+        ZStack {
+            shape
+                .fill(LinearGradient(colors: [Color(red: 0.149, green: 0.153, blue: 0.18),
+                                              Color(red: 0.067, green: 0.071, blue: 0.086)],
+                                     startPoint: .top, endPoint: .bottom))
+                .overlay { shape.strokeBorder(Color.white.opacity(0.16), lineWidth: 0.6) }
+                .overlay(alignment: .top) {
+                    shape.strokeBorder(Color.white.opacity(0.22), lineWidth: 0.6)
+                        .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .center))
+                }
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.45 : 0.22), radius: size * 0.2, y: size * 0.08)
+            VampSyncMark()
+                .fill(Color(red: 0.953, green: 0.953, blue: 0.96), style: FillStyle(eoFill: true))
+                .padding(size * 0.2)
+        }
+        .frame(width: size, height: size)
+        .accessibilityLabel("\(VampProductIdentity.syncName)")
     }
 }
 
@@ -612,8 +626,179 @@ private struct VampSyncCompanionPalette {
     var raised: Color { dark ? Color.white.opacity(0.06) : Color.white.opacity(0.92) }
     var border: Color { dark ? Color.white.opacity(0.09) : Color.black.opacity(0.075) }
     var primary: Color { dark ? Color.white.opacity(0.96) : Color.black.opacity(0.88) }
-    var secondary: Color { dark ? Color.white.opacity(0.65) : Color.black.opacity(0.60) }
-    var accent: Color { dark ? Color(red: 0.74, green: 0.67, blue: 1) : Color(red: 0.43, green: 0.30, blue: 0.76) }
+    var secondary: Color { dark ? Color.white.opacity(0.70) : Color.black.opacity(0.62) }
+    /// Meta labels. Still 4.5:1 on the panel in both appearances.
+    var tertiary: Color { dark ? Color.white.opacity(0.58) : Color.black.opacity(0.56) }
+    /// The one Vamp accent: the single primary action on a screen, nothing else.
+    var crimson: Color { Color(red: 0.82, green: 0.18, blue: 0.34) }
+    /// Crimson as text or icon ink, readable on the panel in both appearances.
+    var crimsonInk: Color { dark ? Color(red: 1.0, green: 0.64, blue: 0.72) : Color(red: 0.70, green: 0.13, blue: 0.29) }
+    var live: Color { Color(red: 0.20, green: 0.83, blue: 0.60) }
+    var attention: Color { Color(red: 0.98, green: 0.75, blue: 0.14) }
+    var idle: Color { dark ? Color.white.opacity(0.38) : Color.black.opacity(0.32) }
+    var accent: Color { crimsonInk }
+}
+
+/// Luminari is the Vamp wordmark face. It ships with macOS, but resolve it
+/// explicitly so a missing face falls back on purpose, not silently.
+private func vampSyncWordmarkFont(size: CGFloat) -> Font {
+    for name in ["Luminari", "Trattatello"] where NSFont(name: name, size: size) != nil {
+        return .custom(name, fixedSize: size)
+    }
+    return .system(size: size, weight: .semibold, design: .serif)
+}
+
+/// Monospaced small-caps meta label: card headings, eyebrows, metric names.
+private struct VampSyncMetaLabel: View {
+    let text: String
+    var color: Color?
+    @Environment(\.colorScheme) private var colorScheme
+
+    init(_ text: String, color: Color? = nil) {
+        self.text = text
+        self.color = color
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .tracking(0.9)
+            .textCase(.uppercase)
+            .foregroundStyle(color ?? VampSyncCompanionPalette(colorScheme: colorScheme).tertiary)
+    }
+}
+
+/// Compact capsules. Crimson is only for the one primary action; the light
+/// capsule is for promotions; `end` is for stopping, rejecting and revoking.
+private struct VampSyncCapsuleButtonStyle: ButtonStyle {
+    enum Kind { case primary, light, secondary, quiet, end }
+    let kind: Kind
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let palette = VampSyncCompanionPalette(colorScheme: colorScheme)
+        let dark = colorScheme == .dark
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .lineLimit(1)
+            .padding(.horizontal, kind == .quiet ? 6 : 12)
+            .frame(minHeight: 26)
+            .foregroundStyle(foreground(palette))
+            .background {
+                switch kind {
+                case .primary: Capsule().fill(palette.crimson)
+                case .light: Capsule().fill(Color(red: 0.953, green: 0.953, blue: 0.96))
+                case .secondary: Capsule().fill(palette.primary.opacity(dark ? 0.09 : 0.06))
+                case .quiet: Color.clear
+                case .end: Capsule().fill(palette.crimson.opacity(dark ? 0.18 : 0.10))
+                }
+            }
+            .overlay {
+                switch kind {
+                case .secondary: Capsule().strokeBorder(palette.border, lineWidth: 0.6)
+                case .light: Capsule().strokeBorder(Color.black.opacity(dark ? 0 : 0.10), lineWidth: 0.6)
+                case .end: Capsule().strokeBorder(palette.crimson.opacity(0.5), lineWidth: 0.6)
+                default: EmptyView()
+                }
+            }
+            .shadow(color: kind == .primary ? palette.crimson.opacity(0.35) : .clear, radius: 8, y: 3)
+            .contentShape(Capsule())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.45)
+    }
+
+    private func foreground(_ palette: VampSyncCompanionPalette) -> Color {
+        switch kind {
+        case .primary: .white
+        case .light: Color(red: 0.07, green: 0.07, blue: 0.086)
+        case .secondary: palette.primary
+        case .quiet: palette.secondary
+        case .end: palette.crimsonInk
+        }
+    }
+}
+
+/// Status reads in mono text; colour lives only in the dot.
+private struct VampSyncStatusPill: View {
+    let text: String
+    let color: Color
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let palette = VampSyncCompanionPalette(colorScheme: colorScheme)
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 6, height: 6)
+                .background(Circle().fill(color.opacity(0.22)).frame(width: 12, height: 12))
+            Text(text)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .tracking(0.8)
+                .textCase(.uppercase)
+                .foregroundStyle(palette.secondary)
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 22)
+        .background(Capsule().fill(palette.primary.opacity(colorScheme == .dark ? 0.06 : 0.05)))
+        .overlay(Capsule().strokeBorder(palette.border, lineWidth: 0.6))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Splits a fingerprint into four-character groups. Display only: copying and
+/// verification always use the complete original string.
+private func vampSyncFingerprintChunks(_ fingerprint: String) -> [String] {
+    let characters = Array(fingerprint)
+    return stride(from: 0, to: characters.count, by: 4).map {
+        String(characters[$0..<min($0 + 4, characters.count)])
+    }
+}
+
+/// The whole fingerprint as a grid of mono chunks. Large on approval, small for this Mac's own code.
+private struct VampSyncFingerprintGrid: View {
+    let fingerprint: String
+    let columns: Int
+    let large: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let palette = VampSyncCompanionPalette(colorScheme: colorScheme)
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: large ? 6 : 5), count: columns),
+                  spacing: large ? 6 : 5) {
+            ForEach(Array(vampSyncFingerprintChunks(fingerprint).enumerated()), id: \.offset) { _, chunk in
+                Text(chunk)
+                    .font(.system(size: large ? 15 : 11.5, weight: .semibold, design: .monospaced))
+                    .tracking(large ? 0.9 : 0.3)
+                    .foregroundStyle(large ? palette.primary : palette.secondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: large ? 34 : 22)
+                    .background(RoundedRectangle(cornerRadius: large ? 9 : 6, style: .continuous)
+                        .fill(palette.primary.opacity(colorScheme == .dark ? 0.07 : 0.05)))
+                    .overlay(RoundedRectangle(cornerRadius: large ? 9 : 6, style: .continuous)
+                        .strokeBorder(palette.border, lineWidth: 0.6))
+            }
+        }
+        .textSelection(.enabled)
+    }
+}
+
+/// A small rounded tile holding an SF Symbol, for rows and status.
+private struct VampSyncIconTile: View {
+    let systemImage: String
+    var tint: Color?
+    var size: CGFloat = 28
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let palette = VampSyncCompanionPalette(colorScheme: colorScheme)
+        Image(systemName: systemImage)
+            .font(.system(size: size * 0.46, weight: .semibold))
+            .foregroundStyle(tint ?? palette.secondary)
+            .frame(width: size, height: size)
+            .background(RoundedRectangle(cornerRadius: size * 0.29, style: .continuous)
+                .fill((tint ?? palette.primary).opacity(tint == nil ? (colorScheme == .dark ? 0.08 : 0.06) : 0.14)))
+            .overlay(RoundedRectangle(cornerRadius: size * 0.29, style: .continuous)
+                .strokeBorder((tint ?? palette.primary).opacity(tint == nil ? 0.10 : 0.30), lineWidth: 0.6))
+            .accessibilityHidden(true)
+    }
 }
 
 private enum VampSyncCompanionState: Equatable {
@@ -676,13 +861,20 @@ private struct VampSyncCompanionPopover: View {
                 // Not lazy: this is a small set of cards, and a LazyVStack only
                 // reports the height of what it has already realised — which is
                 // exactly the measurement this panel sizes itself from.
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
                     if let prompt = environment.pendingTrustPrompt {
                         VampSyncCompanionApprovalCard(
                             prompt: prompt,
-                            onReject: { environment.resolveTrustPrompt(approved: false) },
-                            onApprove: { environment.resolveTrustPrompt(approved: true) }
+                            onReject: {
+                                guard environment.pendingTrustPrompt?.id == prompt.id else { return }
+                                environment.resolveTrustPrompt(approved: false)
+                            },
+                            onApprove: {
+                                guard environment.pendingTrustPrompt?.id == prompt.id else { return }
+                                _ = environment.resolveTrustPrompt(approved: true, matchingFingerprint: prompt.fingerprint)
+                            }
                         )
+                        .id(prompt.id)
                     }
 
                     // Ready is already stated in the header. Reserve a separate
@@ -711,8 +903,8 @@ private struct VampSyncCompanionPopover: View {
                         )
                     }
 
-                    #if !VAMP_APP_STORE
-                    VampSyncDistributionCard(isViewOnly: !environment.runtimePolicy.supportsRemoteInput)
+                    #if VAMP_APP_STORE
+                    VampSyncWebsiteEditionCard()
                     #endif
 
                     VampSyncCompanionAccessCard(
@@ -733,10 +925,6 @@ private struct VampSyncCompanionPopover: View {
                         onRevoke: { peerToRevoke = $0 },
                         onPairAgain: pairAgain
                     )
-
-                    #if VAMP_APP_STORE
-                    VampSyncWebsiteEditionCard()
-                    #endif
                 }
                 .padding(.horizontal, VampSyncCompanionDesign.inset)
                 .padding(.bottom, 18)
@@ -875,7 +1063,7 @@ private struct VampSyncCompanionPopover: View {
 
     /// Stopping or restarting while a client is connected ends its session; ask first.
     private func stop() {
-        if case .connected = state {
+        if sessionCoordinator.connectedClientName != nil {
             pendingHostAction = .stop
         } else {
             Task { await environment.stopRuntime() }
@@ -883,7 +1071,7 @@ private struct VampSyncCompanionPopover: View {
     }
 
     private func restart() {
-        if case .connected = state {
+        if sessionCoordinator.connectedClientName != nil {
             pendingHostAction = .restart
         } else {
             performRestart()
@@ -1022,35 +1210,37 @@ private struct VampSyncCompanionHeader: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(spacing: 12) {
-            VampMiniHostMark(size: 40)
+        HStack(spacing: 10) {
+            VampMiniHostMark(size: 34)
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(VampProductIdentity.syncName)")
-                    .font(.system(size: 19, weight: .semibold))
-                    .tracking(-0.5)
+                    .font(vampSyncWordmarkFont(size: 18))
+                    .kerning(0.4)
+                    .foregroundStyle(palette.primary)
+                    .accessibilityAddTraits(.isHeader)
                 Text(Self.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(palette.secondary)
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(palette.tertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             Spacer(minLength: 8)
-            HStack(spacing: 6) {
-                Circle().fill(statusColor).frame(width: 7, height: 7)
-                Text(statusLabel)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(palette.secondary)
-            }
+            VampSyncStatusPill(text: statusLabel, color: statusColor)
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(.caption.weight(.bold))
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: 26, height: 26)
+                    .background(Circle().fill(palette.primary.opacity(colorScheme == .dark ? 0.08 : 0.06)))
+                    .overlay(Circle().strokeBorder(palette.border, lineWidth: 0.6))
+                    .contentShape(Circle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
+            .foregroundStyle(palette.secondary)
             .accessibilityLabel("Close \(VampProductIdentity.syncName)")
         }
         .padding(.horizontal, VampSyncCompanionDesign.inset)
-        .padding(.top, 22)
-        .padding(.bottom, 20)
+        .padding(.top, 18)
+        .padding(.bottom, 14)
     }
 
     private var palette: VampSyncCompanionPalette { .init(colorScheme: colorScheme) }
@@ -1074,9 +1264,9 @@ private struct VampSyncCompanionHeader: View {
 
     private var statusColor: Color {
         switch state {
-        case .ready, .connected, .streaming: .green
-        case .permissionMissing, .error: .orange
-        case .stopped, .starting: .secondary
+        case .ready, .connected, .streaming: palette.live
+        case .permissionMissing, .error: palette.attention
+        case .stopped, .starting: palette.idle
         }
     }
 }
@@ -1094,17 +1284,16 @@ private struct VampSyncCompanionStatusCard: View {
 
     var body: some View {
         VampSyncCompanionSurface(raised: true) {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: icon)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(tint)
-                        .frame(width: 42, height: 42)
-                        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(title).font(.headline)
+                    VampSyncIconTile(systemImage: icon, tint: tint, size: 42)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title)
+                            .font(.system(size: 14, weight: .semibold))
+                            .tracking(-0.15)
+                            .foregroundStyle(palette.primary)
                         Text(detail)
-                            .font(.caption)
+                            .font(.system(size: 12))
                             .foregroundStyle(palette.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1115,14 +1304,19 @@ private struct VampSyncCompanionStatusCard: View {
                 if usesLegacyToken, isClientAttached {
                     Label("This device runs an older app that sends its session key unencrypted. Update Vamp Control or App Stream on it.",
                           systemImage: "exclamationmark.shield")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(palette.primary)
+                        .symbolRenderingMode(.multicolor)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(palette.attention.opacity(0.12)))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(palette.attention.opacity(0.4), lineWidth: 0.6))
                         .accessibilityIdentifier("sync.legacyClientNotice")
                 }
 
                 if case .streaming = state {
-                    Divider().overlay(palette.border)
+                    Rectangle().fill(palette.border).frame(height: 0.6)
                     HStack {
                         VampSyncCompanionMetric(label: "FRAME", value: framesPerSecond.map { "\($0) fps" } ?? "—")
                         VampSyncCompanionMetric(label: "STREAM", value: "App window")
@@ -1180,8 +1374,8 @@ private struct VampSyncCompanionStatusCard: View {
 
     private var tint: Color {
         switch state {
-        case .ready, .connected, .streaming: .green
-        case .permissionMissing, .error: .orange
+        case .ready, .connected, .streaming: palette.live
+        case .permissionMissing, .error: palette.attention
         case .stopped, .starting: palette.secondary
         }
     }
@@ -1189,13 +1383,13 @@ private struct VampSyncCompanionStatusCard: View {
     @ViewBuilder private var action: some View {
         switch state {
         case .stopped:
-            Button("Start", action: onStart).buttonStyle(.borderedProminent)
+            Button("Start", action: onStart).buttonStyle(VampSyncCapsuleButtonStyle(kind: .primary))
         case .error:
-            Button("Retry", action: onRetry).buttonStyle(.borderedProminent)
+            Button("Retry", action: onRetry).buttonStyle(VampSyncCapsuleButtonStyle(kind: .primary))
         case .starting:
             ProgressView().controlSize(.small)
         default:
-            Button("Stop", action: onStop).buttonStyle(.bordered)
+            Button("Stop", action: onStop).buttonStyle(VampSyncCapsuleButtonStyle(kind: .end))
         }
     }
 }
@@ -1206,12 +1400,16 @@ private struct VampSyncCompanionMetric: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.system(size: 9, weight: .medium)).tracking(1.2)
-                .foregroundStyle(palette.secondary)
-            Text(value).font(.caption.weight(.semibold).monospacedDigit()).lineLimit(1)
+        VStack(alignment: .leading, spacing: 4) {
+            VampSyncMetaLabel(label)
+            Text(value)
+                .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(palette.primary)
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     private var palette: VampSyncCompanionPalette { .init(colorScheme: colorScheme) }
@@ -1224,30 +1422,63 @@ private struct VampSyncCompanionApprovalCard: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VampSyncCompanionSurface(raised: true, tint: .orange) {
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Verify \(prompt.displayName)", systemImage: "person.badge.key.fill")
-                    .font(.headline)
-                    .foregroundStyle(.orange)
-                Text("Compare this complete fingerprint with the one shown on the device through a separate trusted channel.")
-                    .font(.caption)
-                    .foregroundStyle(palette.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(vampSyncFormattedFingerprint(prompt.fingerprint))
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .lineSpacing(4)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Device fingerprint")
-                    .accessibilityValue(prompt.fingerprint)
-                HStack {
-                    Button("Reject", role: .destructive, action: onReject).buttonStyle(.bordered)
+        VampSyncCompanionSurface(raised: true, tint: palette.attention) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    VampSyncIconTile(systemImage: "person.badge.key.fill", tint: palette.attention, size: 42)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Verify \(prompt.displayName)")
+                            .font(.system(size: 14, weight: .semibold))
+                            .tracking(-0.15)
+                            .foregroundStyle(palette.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Wants to connect to this Mac. Nothing is shared until you approve.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    VampSyncMetaLabel("Its fingerprint")
+                    VampSyncFingerprintGrid(fingerprint: prompt.fingerprint, columns: 4, large: true)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Device fingerprint")
+                        .accessibilityValue(prompt.fingerprint)
+                }
+
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: "checkmark.shield")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(palette.attention)
+                        .accessibilityHidden(true)
+                    Text("Compare this complete fingerprint with the one shown on the device through a separate trusted channel.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(palette.primary.opacity(colorScheme == .dark ? 0.04 : 0.035)))
+                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(palette.border, lineWidth: 0.6))
+
+                HStack(spacing: 8) {
                     Spacer()
-                    Button("Codes match — approve", action: onApprove)
-                        .buttonStyle(.borderedProminent)
-                        .keyboardShortcut(.defaultAction)
+                    Button("Reject", role: .destructive, action: onReject)
+                        .buttonStyle(VampSyncCapsuleButtonStyle(kind: .end))
+                    Button(action: onApprove) {
+                        Label("Codes match — approve", systemImage: "checkmark")
+                    }
+                    .buttonStyle(VampSyncCapsuleButtonStyle(kind: .primary))
                 }
             }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: VampSyncCompanionDesign.radius, style: .continuous)
+                .strokeBorder(palette.attention.opacity(0.45), lineWidth: 1)
+                .allowsHitTesting(false)
         }
     }
 
@@ -1263,216 +1494,327 @@ private struct VampSyncCompanionPairingCard: View {
     let copiedValue: String?
     let onCopy: (String) -> Void
     @Environment(\.colorScheme) private var colorScheme
-    /// Set when Tailscale is missing, so the button says so instead of doing nothing.
-    @State private var tailscaleNotFound = false
 
     var body: some View {
         VampSyncCompanionSurface(raised: true) {
-            VStack(alignment: .leading, spacing: 18) {
-                Picker("Pair over", selection: $network) {
-                    Text("Local Wi-Fi").tag(HostPairingAddress.Network.localWiFi)
-                    Text("Tailscale").tag(HostPairingAddress.Network.tailscale)
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("sync-pairing-network")
-                Text(network == .tailscale
-                     ? "Connect both devices to the same private Tailscale network, then scan this code."
-                     : "Keep both devices on the same trusted Wi-Fi network, then scan this code.")
-                    .font(.system(size: 11)).foregroundStyle(palette.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if network == .tailscale, !tailscaleAvailable {
-                    Label("Connect Tailscale on this Mac to show its pairing code.", systemImage: "network")
-                        .font(.system(size: 12)).foregroundStyle(palette.secondary)
-                    Button("Open Tailscale") { tailscaleNotFound = !openTailscaleApplication() }
-                        .buttonStyle(.bordered)
-                    if tailscaleNotFound {
-                        Text("Tailscale isn’t installed on this Mac, so there is no address to pair over.")
-                            .font(.system(size: 11)).foregroundStyle(palette.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                HStack(alignment: .center, spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 14) {
                     if let pairingLink {
                         HostBrowserPairingQRCode(
                             pairingURL: pairingLink,
                             accessibilityLabel: "QR code for \(VampProductIdentity.streamName) pairing",
                             size: 116
                         )
+                        .shadow(color: .black.opacity(colorScheme == .dark ? 0.45 : 0.14), radius: 10, y: 4)
                     } else {
                         Image(systemName: "qrcode").font(.system(size: 38, weight: .light))
                             .foregroundStyle(palette.secondary).frame(width: 116, height: 116)
+                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(palette.primary.opacity(colorScheme == .dark ? 0.06 : 0.04)))
                             .accessibilityLabel("No pairing code yet")
                     }
-                    VStack(alignment: .leading, spacing: 8) {
-                        if pairingLink == nil {
-                            // The code is blank until this Mac has an address on the chosen network.
-                            Text(network == .tailscale
-                                 ? "No Tailscale address yet. Connect Tailscale on this Mac, then this code appears."
-                                 : "No Wi-Fi or Ethernet address on this Mac. Join a network, then this code appears.")
+                    VStack(alignment: .leading, spacing: 9) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Make the connection")
+                                .font(.system(size: 14, weight: .semibold))
+                                .tracking(-0.15)
+                                .foregroundStyle(palette.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text("Scan with Stream, or discover this Mac in Control.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(palette.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        Text("Make the connection")
-                            .font(.system(size: 17, weight: .semibold))
-                            .tracking(-0.35)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("Scan with Stream, or discover this Mac in Control.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(palette.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if let pairingLink {
-                            Button {
-                                onCopy(pairingLink)
-                            } label: {
-                                Label(copiedValue == pairingLink ? "Copied" : "Copy pairing link",
-                                      systemImage: copiedValue == pairingLink ? "checkmark" : "link")
-                                    .font(.system(size: 11, weight: .medium))
+                        networkControl
+                        HStack(spacing: 6) {
+                            privatePill
+                            if let pairingLink {
+                                Button {
+                                    onCopy(pairingLink)
+                                } label: {
+                                    Label(copiedValue == pairingLink ? "Copied" : "Copy link",
+                                          systemImage: copiedValue == pairingLink ? "checkmark" : "link")
+                                }
+                                .buttonStyle(VampSyncCapsuleButtonStyle(kind: .quiet))
                             }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                if let pairingAddress {
-                    HStack(spacing: 8) {
-                        Image(systemName: "network")
-                            .foregroundStyle(palette.secondary)
-                        Text(pairingAddress)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .textSelection(.enabled)
-                        Spacer(minLength: 0)
-                        Text("Private")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(palette.secondary)
+                HStack(spacing: 8) {
+                    Image(systemName: "network")
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.tertiary)
+                        .accessibilityHidden(true)
+                    Text(pairingAddress ?? (network == .tailscale ? "Tailscale not connected" : "No network address"))
+                        .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(pairingAddress == nil ? palette.secondary : palette.primary)
+                        .textSelection(.enabled)
+                    Spacer(minLength: 0)
+                    if network == .tailscale, !tailscaleAvailable {
+                        Button("Open Tailscale") { _ = openTailscaleApplication() }
+                            .buttonStyle(VampSyncCapsuleButtonStyle(kind: .secondary))
                     }
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 9)
-                    .background(palette.surface, in: RoundedRectangle(cornerRadius: 9))
                 }
+                .padding(.horizontal, 11)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(palette.primary.opacity(colorScheme == .dark ? 0.04 : 0.035)))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(palette.border, lineWidth: 0.6))
+
+                Rectangle().fill(palette.border).frame(height: 0.6)
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Host fingerprint")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(palette.secondary)
+                        VampSyncMetaLabel("This Mac’s fingerprint")
                         Spacer()
                         Button {
                             onCopy(fingerprint)
                         } label: {
-                            Image(systemName: copiedValue == fingerprint ? "checkmark" : "doc.on.doc")
-                                .font(.system(size: 11))
+                            Label(copiedValue == fingerprint ? "Copied" : "Copy",
+                                  systemImage: copiedValue == fingerprint ? "checkmark" : "doc.on.doc")
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(VampSyncCapsuleButtonStyle(kind: .quiet))
                         .accessibilityLabel("Copy host fingerprint")
                     }
-                    Text(vampSyncFormattedFingerprint(fingerprint))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .lineSpacing(4)
-                        .foregroundStyle(palette.secondary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VampSyncFingerprintGrid(fingerprint: fingerprint, columns: 8, large: false)
+                        .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Host fingerprint")
                         .accessibilityValue(fingerprint)
                     Text("Every new device needs your approval.")
-                        .font(.system(size: 11))
+                        .font(.system(size: 11.5))
                         .foregroundStyle(palette.secondary)
                 }
             }
         }
+    }
+
+    /// Wi-Fi or Tailscale, offered only when Tailscale is up (or already chosen).
+    @ViewBuilder private var networkControl: some View {
+        if tailscaleAvailable || network == .tailscale {
+            HStack(spacing: 2) {
+                segment("Wi-Fi", .localWiFi)
+                segment("Tailscale", .tailscale)
+            }
+            .padding(3)
+            .background(Capsule().fill(Color.black.opacity(colorScheme == .dark ? 0.28 : 0.05)))
+            .overlay(Capsule().strokeBorder(palette.border, lineWidth: 0.6))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Pair over")
+            .accessibilityIdentifier("sync-pairing-network")
+            .help("Pair over Local Wi-Fi or Tailscale")
+        }
+    }
+
+    private func segment(_ title: String, _ value: HostPairingAddress.Network) -> some View {
+        let selected = network == value
+        return Button { network = value } label: {
+            Text(title)
+                .font(.system(size: 11.5, weight: selected ? .semibold : .medium))
+                .foregroundStyle(selected ? palette.primary : palette.secondary)
+                .frame(maxWidth: .infinity, minHeight: 22)
+                .background {
+                    if selected {
+                        Capsule().fill(palette.primary.opacity(colorScheme == .dark ? 0.14 : 0.10))
+                            .shadow(color: .black.opacity(0.18), radius: 1.5, y: 1)
+                    }
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var privatePill: some View {
+        HStack(spacing: 5) {
+            Image(systemName: network == .tailscale ? "point.3.connected.trianglepath.dotted" : "lock.fill")
+                .font(.system(size: 9, weight: .semibold))
+                .accessibilityHidden(true)
+            Text(network == .tailscale ? "Tailscale" : "Private")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .tracking(0.8)
+                .textCase(.uppercase)
+        }
+        .foregroundStyle(palette.secondary)
+        .padding(.horizontal, 9)
+        .frame(height: 22)
+        .background(Capsule().fill(palette.primary.opacity(colorScheme == .dark ? 0.06 : 0.05)))
+        .overlay(Capsule().strokeBorder(palette.border, lineWidth: 0.6))
     }
 
     private var palette: VampSyncCompanionPalette { .init(colorScheme: colorScheme) }
 }
 
-private struct VampSyncDistributionCard: View {
-    let isViewOnly: Bool
-
-    var body: some View {
-        VampSyncCompanionSurface {
-            VStack(alignment: .leading, spacing: 8) {
-                Label(isViewOnly ? "View Only" : "Remote control", systemImage: isViewOnly ? "eye" : "cursorarrow")
-                    .font(.headline)
-                Text(isViewOnly
-                     ? "This edition shares open app windows. Open and resize windows on your Mac. Screen Recording is required; Accessibility is not requested."
-                     : "The website edition supports pointer, keyboard, window resizing, and optional Remote Unlock after Accessibility approval.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Link("Compare \(VampProductIdentity.syncName) editions", destination: VampProductLinks.syncEditions)
-                    .font(.caption)
-                Link("Privacy policy", destination: VampProductLinks.privacy)
-                    .font(.caption)
-                Link("Support", destination: VampProductLinks.support)
-                    .font(.caption)
-            }
-        }
-    }
-}
-
-/// Store edition only: compares this View Only app with the website edition
-/// and links to its page. It opens the browser; it never downloads or installs.
+/// Store edition only: promotes the free website edition, which adds remote
+/// control. It opens the browser; it never downloads or installs.
 private struct VampSyncWebsiteEditionCard: View {
-    private static let rows: [(feature: String, store: Bool)] = [
-        ("Share open app windows", true),
-        ("Private pairing with Control and Stream", true),
-        ("Keyboard and pointer control", false),
-        ("Resize, launch, and close apps", false),
-        ("Optional Remote Unlock", false),
+    private static let extras: [(title: LocalizedStringKey, icon: String)] = [
+        ("Keyboard & mouse", "keyboard"),
+        ("Window control", "macwindow"),
+        ("Remote Unlock", "lock.open"),
     ]
+    @Environment(\.colorScheme) private var colorScheme
+    private var palette: VampSyncCompanionPalette { .init(colorScheme: colorScheme) }
+    /// Set once the person hides the card; Compare Editions… in the options menu still opens the page.
+    @AppStorage("sync.promo.websiteEditionHidden") private var hidden = false
+    @State private var confirming = false
 
+    /// The shared Vamp promo card (Control and Sync use the same one): clear
+    /// glass over a crimson bloom, a light capsule CTA, never a crimson button.
     var body: some View {
-        VampSyncCompanionSurface {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Two editions of Vamp Sync", systemImage: "square.split.2x1")
-                    .font(.headline)
-                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
-                    GridRow {
-                        Color.clear.frame(height: 1)
-                        Text("This app")
-                        Text("Website")
-                    }
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    ForEach(Self.rows, id: \.feature) { row in
-                        GridRow {
-                            Text(row.feature)
-                                .font(.caption)
-                                .fixedSize(horizontal: false, vertical: true)
-                            mark(row.store).gridColumnAlignment(.center)
-                            mark(true).gridColumnAlignment(.center)
+        if !hidden { card }
+    }
+
+    private var card: some View {
+        VampSyncCompanionSurface(raised: true) {
+            if confirming { approval } else { promo }
+        }
+        .animation(.snappy, value: confirming)
+        .background {
+            // Behind the glass, so the card reads as crimson without putting text on colour.
+            RoundedRectangle(cornerRadius: VampSyncCompanionDesign.radius, style: .continuous)
+                .fill(RadialGradient(
+                    colors: [palette.crimson.opacity(colorScheme == .dark ? 0.40 : 0.20), palette.crimson.opacity(0)],
+                    center: .topLeading,
+                    startRadius: 0,
+                    endRadius: 300
+                ))
+                .allowsHitTesting(false)
+        }
+    }
+
+    private var promo: some View {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 14) {
+                    VampMiniHostMark(size: 48)
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "cursorarrow")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 21, height: 21)
+                                .background(palette.crimson, in: Circle())
+                                .overlay(Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1.5))
+                                .offset(x: 6, y: 6)
+                                .accessibilityHidden(true)
                         }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(row.feature)
-                        .accessibilityValue(row.store ? "Included in both editions" : "Website edition only")
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("WEBSITE EDITION · FREE")
+                            .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                            .tracking(1.1)
+                            .foregroundStyle(palette.crimsonInk)
+                        Text("Control your Mac, not just view it")
+                            .font(.system(size: 15, weight: .semibold))
+                            .tracking(-0.15)
+                            .foregroundStyle(palette.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("This App Store edition is View Only. The free website edition adds full remote control after you approve Accessibility.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+                    Spacer(minLength: 0)
+                    dismissButton
                 }
-                Text("This Mac App Store edition is View Only and needs Screen Recording only. The website edition is a separate free app with full remote control after you approve Screen Recording and Accessibility.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Link(destination: VampProductLinks.syncEditions) {
-                    Label("Get the website edition", systemImage: "arrow.up.right")
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 5) { chips }
+                    // Two rows before three: the popover is narrow, the chips are not.
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 5) { ForEach(Self.extras.prefix(2), id: \.icon) { chip($0) } }
+                        HStack(spacing: 5) { ForEach(Self.extras.dropFirst(2), id: \.icon) { chip($0) } }
+                    }
+                    VStack(alignment: .leading, spacing: 5) { chips }
                 }
-                .font(.caption.weight(.semibold))
-                .buttonStyle(.bordered)
-                .help("https://thevamp.app/sync/#editions")
-                .accessibilityHint("Opens the Vamp Sync website in your browser")
+
                 HStack(spacing: 14) {
-                    Link("Privacy policy", destination: VampProductLinks.privacy)
+                    Link(destination: VampProductLinks.syncEditions) {
+                        Label("Get it on thevamp.app", systemImage: "arrow.up.right")
+                    }
+                    .buttonStyle(VampSyncCapsuleButtonStyle(kind: .light))
+                    .help("https://thevamp.app/sync/#editions")
+                    .accessibilityHint("Opens the Vamp Sync website in your browser")
+                    Spacer(minLength: 0)
+                    Link("Privacy", destination: VampProductLinks.privacy)
+                        .foregroundStyle(palette.secondary)
                     Link("Support", destination: VampProductLinks.support)
+                        .foregroundStyle(palette.secondary)
                 }
-                .font(.caption)
+                .font(.system(size: 12))
+            }
+    }
+
+    private var dismissButton: some View {
+        Button { confirming = true } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 9.5, weight: .bold))
+                .foregroundStyle(palette.secondary)
+                .frame(width: 22, height: 22)
+                .background(palette.primary.opacity(0.08), in: Circle())
+                .overlay(Circle().strokeBorder(palette.border, lineWidth: 0.5))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Dismiss")
+        .accessibilityLabel("Dismiss")
+        .accessibilityHint("Asks before hiding the website edition card")
+    }
+
+    /// Hiding asks first, and says where the page still is.
+    private var approval: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: "eye")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(palette.primary)
+                    .frame(width: 48, height: 48)
+                    .background(palette.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(palette.border, lineWidth: 0.5))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("WEBSITE EDITION")
+                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                        .tracking(1.1)
+                        .foregroundStyle(palette.crimsonInk)
+                    Text("Hide this card?")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(palette.primary)
+                    Text("This edition stays View Only. Compare Editions… in the options menu still opens the website edition page.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            HStack(spacing: 10) {
+                Button("Hide Card") { withAnimation(.snappy) { hidden = true } }
+                    .buttonStyle(VampSyncCapsuleButtonStyle(kind: .light))
+                Button("Keep It") { confirming = false }
+                    .buttonStyle(VampSyncCapsuleButtonStyle(kind: .secondary))
+                Spacer(minLength: 0)
             }
         }
     }
 
-    private func mark(_ included: Bool) -> some View {
-        Image(systemName: included ? "checkmark.circle.fill" : "minus.circle")
-            .font(.caption)
-            .foregroundStyle(included ? Color.green : Color.secondary)
+    private var chips: some View {
+        ForEach(Self.extras, id: \.icon) { chip($0) }
+    }
+
+    private func chip(_ extra: (title: LocalizedStringKey, icon: String)) -> some View {
+            HStack(spacing: 5) {
+                Image(systemName: extra.icon)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(palette.crimsonInk)
+                    .accessibilityHidden(true)
+                Text(extra.title)
+                    .foregroundStyle(palette.primary)
+            }
+            .font(.system(size: 10.5, weight: .medium))
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+            .background(palette.crimson.opacity(colorScheme == .dark ? 0.14 : 0.08), in: Capsule())
+            .overlay(Capsule().strokeBorder(palette.crimson.opacity(0.5), lineWidth: 0.6))
     }
 }
 
@@ -1487,41 +1829,67 @@ private struct VampSyncCompanionAccessCard: View {
 
     var body: some View {
         VampSyncCompanionSurface {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Mac access").font(.system(size: 13, weight: .semibold))
+                    Text("Mac access")
+                        .font(.system(size: 14, weight: .semibold))
+                        .tracking(-0.15)
+                        .foregroundStyle(palette.primary)
                     Spacer()
                     Button(action: onRefresh) {
                         Image(systemName: isRefreshing ? "arrow.triangle.2.circlepath" : "arrow.clockwise")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 26, height: 26)
+                            .background(Circle().fill(palette.primary.opacity(colorScheme == .dark ? 0.08 : 0.06)))
+                            .overlay(Circle().strokeBorder(palette.border, lineWidth: 0.6))
+                            .contentShape(Circle())
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(palette.secondary)
                     .accessibilityLabel("Refresh permission status")
                 }
-                ForEach(statuses, id: \.kind) { status in
-                    VampSyncCompanionPermissionRow(
-                        title: status.title,
-                        state: status.authorizationState,
-                        onSettings: { onOpenSettings(status.kind) }
-                    )
-                    .help(status.kind == .screenRecording
-                          ? "Shares the selected app window."
-                          : "Allows touch and keyboard control from your paired device.")
-                }
 
-                if supportsRemoteUnlock {
-                    Divider()
+                VStack(spacing: 0) {
+                    ForEach(Array(statuses.enumerated()), id: \.element.kind) { index, status in
+                        if index > 0 { VampSyncRowDivider() }
+                        VampSyncCompanionPermissionRow(
+                            kind: status.kind,
+                            title: status.title,
+                            state: status.authorizationState,
+                            onSettings: { onOpenSettings(status.kind) }
+                        )
+                        .help(status.kind == .screenRecording
+                              ? "Shares the selected app window."
+                              : "Allows touch and keyboard control from your paired device.")
+                    }
 
-                    VStack(alignment: .leading, spacing: 5) {
-                        Toggle("Remote Unlock", isOn: $remoteUnlockEnabled)
-                            .toggleStyle(.switch)
-                            .controlSize(.mini)
-                            .font(.system(size: 12, weight: .medium))
-                        Text("Let a paired device unlock this Mac with your login password. Passwords are never stored.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(palette.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    if supportsRemoteUnlock {
+                        if !statuses.isEmpty { VampSyncRowDivider() }
+                        HStack(alignment: .center, spacing: 11) {
+                            VampSyncIconTile(systemImage: "lock.open")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Remote Unlock")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(palette.primary)
+                                Text("Let a paired device unlock this Mac with your login password. Passwords are never stored.")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(palette.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 6)
+                            Toggle("Remote Unlock", isOn: $remoteUnlockEnabled)
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                                .controlSize(.mini)
+                        }
+                        .padding(.vertical, 9)
+                        .padding(.horizontal, 12)
                     }
                 }
+                .background(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(palette.primary.opacity(colorScheme == .dark ? 0.035 : 0.03)))
+                .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(palette.border, lineWidth: 0.6))
             }
         }
     }
@@ -1529,27 +1897,38 @@ private struct VampSyncCompanionAccessCard: View {
     private var palette: VampSyncCompanionPalette { .init(colorScheme: colorScheme) }
 }
 
+/// Hairline between rows inside a grouped list.
+private struct VampSyncRowDivider: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        Rectangle().fill(VampSyncCompanionPalette(colorScheme: colorScheme).border).frame(height: 0.6)
+    }
+}
+
 private struct VampSyncCompanionPermissionRow: View {
+    let kind: PermissionKind
     let title: String
     let state: PermissionAuthorizationState
     let onSettings: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: state == .granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .foregroundStyle(state == .granted ? .green : .orange)
-            Text(title).font(.system(size: 12))
+        HStack(spacing: 11) {
+            VampSyncIconTile(systemImage: kind == .screenRecording ? "rectangle.dashed.badge.record" : "cursorarrow.rays")
+            Text(title)
+                .font(.system(size: 13))
+                .foregroundStyle(palette.primary)
             Spacer()
             if state == .granted {
-                Text("Allowed").font(.system(size: 11)).foregroundStyle(palette.secondary)
+                VampSyncStatusPill(text: "Allowed", color: palette.live)
             } else {
                 Button("Open Settings", action: onSettings)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(VampSyncCapsuleButtonStyle(kind: .secondary))
             }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 44)
     }
 
     private var palette: VampSyncCompanionPalette { .init(colorScheme: colorScheme) }
@@ -1565,40 +1944,62 @@ private struct VampSyncCompanionDevicesCard: View {
 
     var body: some View {
         VampSyncCompanionSurface {
-            VStack(alignment: .leading, spacing: 11) {
-                HStack {
-                    Text("Trusted devices").font(.system(size: 13, weight: .semibold))
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Text("Trusted devices")
+                        .font(.system(size: 14, weight: .semibold))
+                        .tracking(-0.15)
+                        .foregroundStyle(palette.primary)
                     Spacer()
                     if isRefreshing { ProgressView().controlSize(.small) }
-                    Text("\(trustedPeers.count)")
-                        .font(.caption.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(palette.secondary)
+                    VampSyncMetaLabel("\(trustedPeers.count)")
+                        .monospacedDigit()
                 }
-                if trustedPeers.isEmpty {
+                if trustedPeers.isEmpty && revokedPeers.isEmpty {
                     Text("Your devices will appear here after pairing.")
-                        .font(.caption)
+                        .font(.system(size: 12))
                         .foregroundStyle(palette.secondary)
                 } else {
-                    ForEach(trustedPeers) { peer in
-                        VampSyncCompanionDeviceRow(
-                            peer: peer,
-                            actionTitle: "Revoke",
-                            isDestructive: true,
-                            action: { onRevoke(peer) }
-                        )
+                    VStack(spacing: 0) {
+                        if trustedPeers.isEmpty {
+                            Text("Your devices will appear here after pairing.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(palette.secondary)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .padding(.horizontal, 12)
+                        }
+                        ForEach(Array(trustedPeers.enumerated()), id: \.element.id) { index, peer in
+                            if index > 0 { VampSyncRowDivider() }
+                            VampSyncCompanionDeviceRow(
+                                peer: peer,
+                                actionTitle: "Revoke",
+                                isDestructive: true,
+                                action: { onRevoke(peer) }
+                            )
+                        }
+                        if !revokedPeers.isEmpty {
+                            VampSyncRowDivider()
+                            HStack {
+                                VampSyncMetaLabel("Revoked")
+                                Spacer()
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.top, 9)
+                            .padding(.bottom, 2)
+                            ForEach(revokedPeers) { peer in
+                                VampSyncCompanionDeviceRow(
+                                    peer: peer,
+                                    actionTitle: "Pair again",
+                                    isDestructive: false,
+                                    action: { onPairAgain(peer) }
+                                )
+                            }
+                        }
                     }
-                }
-                if !revokedPeers.isEmpty {
-                    Divider().overlay(palette.border)
-                    Text("REVOKED").font(.caption2.weight(.semibold)).foregroundStyle(palette.secondary)
-                    ForEach(revokedPeers) { peer in
-                        VampSyncCompanionDeviceRow(
-                            peer: peer,
-                            actionTitle: "Pair again",
-                            isDestructive: false,
-                            action: { onPairAgain(peer) }
-                        )
-                    }
+                    .background(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(palette.primary.opacity(colorScheme == .dark ? 0.035 : 0.03)))
+                    .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .strokeBorder(palette.border, lineWidth: 0.6))
                 }
             }
         }
@@ -1615,23 +2016,36 @@ private struct VampSyncCompanionDeviceRow: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: isDestructive ? "iphone" : "iphone.slash")
-                .frame(width: 28, height: 28)
-                .background(palette.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(peer.displayName).font(.callout.weight(.semibold)).lineLimit(1)
+        HStack(alignment: .center, spacing: 11) {
+            VampSyncIconTile(systemImage: icon)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(peer.displayName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.primary)
+                    .lineLimit(1)
                 Text(peer.fingerprint)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(palette.secondary)
-                    .lineLimit(2)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(palette.tertiary)
+                    .lineLimit(1)
                     .truncationMode(.middle)
             }
             Spacer(minLength: 8)
             Button(actionTitle, role: isDestructive ? .destructive : nil, action: action)
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .buttonStyle(VampSyncCapsuleButtonStyle(kind: isDestructive ? .quiet : .secondary))
         }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 46)
+        .opacity(isDestructive ? 1 : 0.75)
+    }
+
+    /// The peer record has no device type; the name the device chose is the best hint.
+    private var icon: String {
+        let name = peer.displayName.lowercased()
+        if !isDestructive { return "iphone.slash" }
+        if name.contains("ipad") { return "ipad" }
+        if name.contains("mac") { return "laptopcomputer" }
+        return "iphone"
     }
 
     private var palette: VampSyncCompanionPalette { .init(colorScheme: colorScheme) }
@@ -1650,14 +2064,20 @@ private struct VampSyncCompanionFooter: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Label("Private connection", systemImage: "lock.shield")
-                .font(.system(size: 10))
-                .foregroundStyle(palette.secondary)
-                .help(buildLabel)
+            HStack(spacing: 6) {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .accessibilityHidden(true)
+                Text("Private connection · no relay")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .tracking(0.8)
+                    .textCase(.uppercase)
+            }
+            .foregroundStyle(palette.tertiary)
+            .help(buildLabel)
             Spacer()
             Button(isRuntimeActive ? "Stop host" : "Start host", action: onToggleRuntime)
-                .font(.system(size: 11))
-                .buttonStyle(.borderless)
+                .buttonStyle(VampSyncCapsuleButtonStyle(kind: .quiet))
             Menu {
                 Button("Refresh status", action: onRefresh)
                 Button("Restart host", action: onRestart)
@@ -1677,16 +2097,21 @@ private struct VampSyncCompanionFooter: View {
                     }
                 }
                 Divider()
+                Link("Compare Editions…", destination: VampProductLinks.syncEditions)
+                Link("Privacy Policy…", destination: VampProductLinks.privacy)
+                Link("Support…", destination: VampProductLinks.support)
+                Divider()
                 Button("Quit \(VampProductIdentity.syncName)", action: onQuit)
             } label: {
-                Image(systemName: "gearshape").frame(width: 24, height: 24)
+                Image(systemName: "ellipsis").frame(width: 24, height: 24)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
+            .fixedSize()
             .accessibilityLabel("\(VampProductIdentity.syncName) settings")
         }
         .padding(.horizontal, VampSyncCompanionDesign.inset)
-        .padding(.vertical, 9)
+        .padding(.vertical, 8)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) { Rectangle().fill(palette.border).frame(height: 0.5) }
     }
@@ -1723,16 +2148,23 @@ private struct VampSyncCompanionSurface<Content: View>: View {
 
     var body: some View {
         content
-            .padding(18)
+            .padding(16)
             .background {
                 GeometryReader { proxy in
                     surface
                         .frame(width: proxy.size.width, height: proxy.size.height)
+                        .shadow(color: .black.opacity(colorScheme == .dark ? 0.28 : 0.06), radius: 14, y: 6)
                         .allowsHitTesting(false)
                 }
             }
             .overlay {
+                // Hairline rim, brighter along the top edge like the rest of the Vamp glass.
                 shape.strokeBorder(tint?.opacity(0.32) ?? palette.border, lineWidth: 0.65)
+                    .allowsHitTesting(false)
+            }
+            .overlay {
+                shape.strokeBorder(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.5), lineWidth: 0.65)
+                    .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .center))
                     .allowsHitTesting(false)
             }
     }
@@ -1754,17 +2186,6 @@ private struct VampSyncCompanionSurface<Content: View>: View {
     }
 
     private var palette: VampSyncCompanionPalette { .init(colorScheme: colorScheme) }
-}
-
-/// Visual grouping only: copying and verification retain the complete original.
-private func vampSyncFormattedFingerprint(_ fingerprint: String) -> String {
-    let characters = Array(fingerprint)
-    let groups = stride(from: 0, to: characters.count, by: 8).map { offset in
-        String(characters[offset..<min(offset + 8, characters.count)])
-    }
-    return stride(from: 0, to: groups.count, by: 4).map { offset in
-        groups[offset..<min(offset + 4, groups.count)].joined(separator: " ")
-    }.joined(separator: "\n")
 }
 
 /// First usable IPv4 address on an up interface, preferring Wi-Fi and Ethernet.
