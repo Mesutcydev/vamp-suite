@@ -51,6 +51,13 @@ service disruption, and access to systems without permission is welcome.
   update through Sparkle with an EdDSA signature on every download. Older Vamp Host and Terminal
   Host website builds were ad-hoc signed and cannot provide notarization assurance. Verify the
   published SHA-256 checksum, or build from source.
+- The data channel between updated apps uses TLS 1.2 ECDHE-PSK (ChaCha20-Poly1305), so a recorded
+  session stays unreadable even if its session token leaks later. An older app, an older Mac or the
+  Linux host negotiates the previous suite instead and still connects, without forward secrecy.
+- A new Vamp Sync install refuses apps that predate the signed key exchange (their session token
+  crosses the network unsealed). A Mac that already had paired devices keeps accepting them. Either
+  way, a session on the older handshake never gets shells, agent runs or Remote Unlock, and the choice
+  is in the menu under Allow Older Vamp Apps.
 - The Vamp Assistant compatibility endpoint (port 9575) speaks plain HTTP. On a shared network
   anyone can read its pairing code, token and traffic. Use it over Tailscale, which encrypts the
   link. Vamp Control sends the Mac login password (Remote Unlock) only over a Tailscale or HTTPS

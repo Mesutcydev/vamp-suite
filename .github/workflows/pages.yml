@@ -38,6 +38,12 @@ jobs:
         run: |
           python3 -m unittest discover -s Tests -p test_generate_pages_release.py
           python3 scripts/verify-pages-links.py
+      - name: Verify update feed signatures
+        # Vamp Sync refuses an unsigned or hand-edited feed. A stale signature stops the deploy here
+        # instead of silently ending updates; Vamp Control's feed only warns until it requires one.
+        run: |
+          python3 -m unittest discover -s Tests -p test_verify_appcast_signatures.py
+          python3 scripts/verify-appcast-signatures.py
       - name: Upload static site
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:

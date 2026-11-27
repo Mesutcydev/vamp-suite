@@ -174,6 +174,36 @@ final class AppStreamingMessageTests: XCTestCase {
         XCTAssertEqual(move.location.y, 70, "y = windowOriginY(50) + localY(20)")
     }
 
+    func testPointerInputIsPulledBackInsideTheStreamedWindow() {
+        let frame = DesktopRect(origin: DesktopPoint(x: 100, y: 50), size: DesktopSize(width: 1440, height: 900))
+        func moved(_ x: Double, _ y: Double) -> DesktopPoint? {
+            let command = InputCommand.pointerMove(
+                PointerMoveCommand(location: DesktopPoint(x: x, y: y), displayID: "4242", isAbsolute: true)
+            )
+            guard case .pointerMove(let move) = InputCoordinateTranslator.clamp(command, to: frame) else { return nil }
+            return move.location
+        }
+        XCTAssertEqual(moved(600, 400)?.x, 600, "inside the window is untouched")
+        XCTAssertEqual(moved(5000, 5000)?.x, 1540, "x = window right edge")
+        XCTAssertEqual(moved(5000, 5000)?.y, 950, "y = window bottom edge")
+        XCTAssertEqual(moved(-20, -20)?.x, 100)
+        XCTAssertEqual(moved(-20, -20)?.y, 50)
+
+        let click = InputCommand.pointerButton(PointerButtonCommand(
+            button: .left, action: .click, location: DesktopPoint(x: 9000, y: 10), displayID: "4242"
+        ))
+        guard case .pointerButton(let clamped) = InputCoordinateTranslator.clamp(click, to: frame) else {
+            return XCTFail("a click must stay a click")
+        }
+        XCTAssertEqual(clamped.location?.x, 1540)
+        XCTAssertEqual(clamped.location?.y, 50)
+
+        let relative = InputCommand.pointerMove(
+            PointerMoveCommand(location: DesktopPoint(x: 9000, y: 9000), displayID: "4242", isAbsolute: false)
+        )
+        XCTAssertEqual(InputCoordinateTranslator.clamp(relative, to: frame), relative, "deltas are not positions")
+    }
+
     func testWindowLocalClickMapsToWindowOriginPlusLocal() {
         let windowID = "4242"
         let descriptor = DisplayDescriptor(

@@ -277,13 +277,20 @@ public final class LANPeerConnection: LANTransportSecurityConfigurable, @uncheck
     /// (AP roam, NAT table timeout, peer power loss) surface as `.failed`
     /// within ~15 s instead of sitting in `.ready` indefinitely.
     private static let tlsPSKIdentity = Data("vamp-data-channel-v1".utf8)
-    // 0x00AD is TLS_RSA_PSK_WITH_AES_256_GCM_SHA384. Appending it only adds a candidate: a
-    // loopback test negotiated TLS_PSK_WITH_AES_128_GCM_SHA256 (0x00A8) with these parameters, which
-    // has no forward secrecy. The key is the per-session token, so an eavesdropper who later learns
-    // the token (see SessionTokenSealing) can read a recorded session.
+    // 0x00AD is TLS_RSA_PSK_WITH_AES_256_GCM_SHA384. Appending it only adds a candidate: with it
+    // alone a loopback test negotiated TLS_PSK_WITH_AES_128_GCM_SHA256 (0x00A8), which has no forward
+    // secrecy.
     private static let tlsPSKCiphersuite = tls_ciphersuite_t(rawValue: UInt16(0x00AD))
+    /// TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256. The key is the per-session token, so with a plain
+    /// PSK suite anyone who later learns the token (see SessionTokenSealing) can read a recorded
+    /// session. This suite mixes a fresh ECDHE secret into the keys, so the recording stays closed.
+    /// It is chosen only when both ends offer it: against a peer that does not (an older app, or the
+    /// Linux host) the handshake falls back to 0x00A8 exactly as before, which a loopback matrix of
+    /// every pairing of these settings confirmed. Network.framework implements no DHE-PSK GCM suite
+    /// (0x00AA, 0x00AB), so this is the forward-secret option available.
+    static let tlsPSKForwardSecretSuite = tls_ciphersuite_t(rawValue: UInt16(0xCCAC))
 
-    private static func makeTCPParameters(sessionTokenHex: String?) throws -> NWParameters {
+    static func makeTCPParameters(sessionTokenHex: String?) throws -> NWParameters {
         guard let sessionTokenHex,
               let token = tokenFromHex(sessionTokenHex),
               token.count == 32 else {
@@ -300,6 +307,9 @@ public final class LANPeerConnection: LANTransportSecurityConfigurable, @uncheck
         sec_protocol_options_add_pre_shared_key(tls.securityProtocolOptions, psk as __DispatchData, identity as __DispatchData)
         if let tlsPSKCiphersuite {
             sec_protocol_options_append_tls_ciphersuite(tls.securityProtocolOptions, tlsPSKCiphersuite)
+        }
+        if let tlsPSKForwardSecretSuite {
+            sec_protocol_options_append_tls_ciphersuite(tls.securityProtocolOptions, tlsPSKForwardSecretSuite)
         }
         sec_protocol_options_set_peer_authentication_required(tls.securityProtocolOptions, true)
         let params = NWParameters(tls: tls, tcp: tcp)

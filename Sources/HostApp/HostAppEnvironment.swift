@@ -736,7 +736,9 @@ final class HostAppEnvironment: ObservableObject {
                     // otherwise the real display layout, unchanged.
                     if let windowLayout = streamWindowGeometry.windowLayout { return windowLayout }
                     return try await dlp.currentDisplayLayout()
-                }
+                },
+                // While a window is the stream target, pointer input stays inside that window.
+                confinesPointerToLayout: { [streamWindowGeometry] in streamWindowGeometry.windowLayout != nil }
             )
         } else {
             inputService = DisabledInputInjectionService()
@@ -773,6 +775,12 @@ final class HostAppEnvironment: ObservableObject {
         environment.encoderCaptureFrameBridge = encoderBridge
         #endif
         HostAppEnvironment.shared = environment
+        // Settle whether this Mac accepts apps that send an unsealed token (see HostSessionTokenPolicy).
+        Task {
+            if let peers = try? await trustedPeerStore.trustedPeers() {
+                HostSessionTokenPolicy.settleLegacyDefault(hasPairedDevices: !peers.isEmpty)
+            }
+        }
         return environment
     }
 

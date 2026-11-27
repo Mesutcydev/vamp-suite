@@ -78,6 +78,29 @@ public enum InputCoordinateTranslator {
             && localPoint.y <= display.frame.size.height
     }
 
+    /// Pulls a pointer position that lies outside `rect` back onto its edge. Used while one window is
+    /// streamed: the client sends window-local points, and a modified client could send any number,
+    /// which would otherwise land on whatever else is on the Mac's screen.
+    public static func clamp(_ command: InputCommand, to rect: DesktopRect) -> InputCommand {
+        func clamped(_ point: DesktopPoint) -> DesktopPoint {
+            DesktopPoint(
+                x: min(max(point.x, rect.origin.x), rect.origin.x + rect.size.width),
+                y: min(max(point.y, rect.origin.y), rect.origin.y + rect.size.height)
+            )
+        }
+        switch command {
+        case .pointerMove(let move) where move.isAbsolute:
+            return .pointerMove(PointerMoveCommand(location: clamped(move.location), displayID: move.displayID, isAbsolute: true))
+        case .pointerButton(let button):
+            guard let location = button.location else { return command }
+            return .pointerButton(PointerButtonCommand(
+                button: button.button, action: button.action, location: clamped(location), displayID: button.displayID
+            ))
+        default:
+            return command
+        }
+    }
+
     /// Translate an `InputCommand`'s embedded coordinates from display-local to global.
     /// Only pointer move (absolute) commands have display-local coordinates that need translation.
     /// All other command types pass through unchanged.

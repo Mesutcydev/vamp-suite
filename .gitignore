@@ -137,6 +137,7 @@ scripts/*
 !scripts/archive-vamp-app-store.sh
 !scripts/export-vamp-sync-app-store.py
 !scripts/verify-vamp-store-bundle.py
+!scripts/verify-appcast-signatures.py
 !scripts/render-vamp-control-store-screenshots.py
 !scripts/vamp-control-screenshot-canvas.swift
 !scripts/vamp-host-watchdog

@@ -113,6 +113,15 @@ enum HostSessionTokenPolicy {
         UserDefaults.standard.object(forKey: legacyClientsDefaultsKey) as? Bool ?? true
     }
 
+    /// Decides the default once. A Mac that already has paired devices keeps accepting older apps,
+    /// because one of those devices may be running one and must not stop working. A Mac with no
+    /// paired device starts out refusing them, so a new install is sealed-only unless its owner
+    /// allows older apps from the Vamp Sync menu. An explicit choice is never overwritten.
+    static func settleLegacyDefault(hasPairedDevices: Bool, defaults: UserDefaults = .standard) {
+        guard defaults.object(forKey: legacyClientsDefaultsKey) == nil else { return }
+        defaults.set(hasPairedDevices, forKey: legacyClientsDefaultsKey)
+    }
+
     enum Form: Equatable {
         case sealed(Data)
         /// Plaintext from an app that predates the signed key exchange.
@@ -135,7 +144,7 @@ enum HostSessionTokenPolicy {
         }
         if let sealed = offer.sealedSessionToken { return .sealed(sealed) }
         guard acceptsLegacyPlaintextToken else {
-            return .rejected("the app on that device is too old; update it")
+            return .rejected("the app on that device is too old; update it, or choose Allow Older Vamp Apps in the Vamp Sync menu")
         }
         guard let plain = offer.sessionToken,
               let data = ConnectionSecurity.tokenFromHex(plain),

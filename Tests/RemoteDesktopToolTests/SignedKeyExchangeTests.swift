@@ -434,6 +434,30 @@ final class HostSessionTokenPolicyTests: XCTestCase {
         }
     }
 
+    func testNewInstallRefusesOlderAppsWhileAnExistingMacKeepsAcceptingThem() throws {
+        let key = HostSessionTokenPolicy.legacyClientsDefaultsKey
+        func defaults() throws -> UserDefaults {
+            try XCTUnwrap(UserDefaults(suiteName: "legacy-default-\(UUID().uuidString)"))
+        }
+
+        let fresh = try defaults()
+        HostSessionTokenPolicy.settleLegacyDefault(hasPairedDevices: false, defaults: fresh)
+        XCTAssertEqual(fresh.object(forKey: key) as? Bool, false, "a new install starts sealed-only")
+
+        let existing = try defaults()
+        HostSessionTokenPolicy.settleLegacyDefault(hasPairedDevices: true, defaults: existing)
+        XCTAssertEqual(existing.object(forKey: key) as? Bool, true, "a Mac with paired devices must not lose an older one")
+
+        // The decision is made once: pairing a first device later does not flip a new install,
+        // and an owner's explicit choice is never overwritten.
+        HostSessionTokenPolicy.settleLegacyDefault(hasPairedDevices: true, defaults: fresh)
+        XCTAssertEqual(fresh.object(forKey: key) as? Bool, false)
+        let chosen = try defaults()
+        chosen.set(false, forKey: key)
+        HostSessionTokenPolicy.settleLegacyDefault(hasPairedDevices: true, defaults: chosen)
+        XCTAssertEqual(chosen.object(forKey: key) as? Bool, false)
+    }
+
     func testOlderClientKeepsItsPlaintextTokenDuringTheTransition() {
         XCTAssertTrue(HostSessionTokenPolicy.acceptsLegacyPlaintextToken, "Transition is still open")
         XCTAssertEqual(
