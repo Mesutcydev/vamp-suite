@@ -8,15 +8,15 @@ Sparkle signs the feed text that comes before a trailing comment:
     length: <bytes signed>
     -->
 
-An app built with SURequireSignedFeed (Vamp Sync) refuses a feed whose trailer is missing or no
-longer matches, and editing a feed by hand after it was signed leaves exactly that state. Run this
+An app built with SURequireSignedFeed (Vamp Sync and Vamp Control) refuses a feed whose trailer is
+missing or no longer matches, and editing a feed by hand after it was signed leaves exactly that state. Run this
 before publishing so a stale signature stops the deploy instead of silently ending updates.
 
     scripts/verify-appcast-signatures.py                      # the repository defaults
     scripts/verify-appcast-signatures.py --require FEED:INFO.plist --warn FEED:INFO.plist
 
 A `--require` feed that fails makes the exit status 1. A `--warn` feed only prints, for a feed whose
-app does not demand a signed feed yet. The public key is the app's SUPublicEDKey. Verification is
+app does not demand a signed feed (none today). With no arguments both Mac feeds are required. The public key is the app's SUPublicEDKey. Verification is
 done in plain Python (RFC 8032) so the deploy needs no extra packages.
 """
 import argparse
@@ -131,10 +131,11 @@ def main(argv=None):
     parser.add_argument("--warn", action="append", default=None, metavar="FEED:INFO_PLIST")
     parser.add_argument("--root", default=str(pathlib.Path(__file__).resolve().parent.parent))
     args = parser.parse_args(argv)
-    required = args.require if args.require is not None else ["docs/sync/appcast.xml:Configuration/VampMiniHost-Info.plist"]
-    # Vamp Control does not require a signed feed yet. Turn it on (SURequireSignedFeed in its
-    # Info.plist) once this reports a verifying signature, then move the feed to --require.
-    advisory = args.warn if args.warn is not None else ["docs/control/appcast.xml:MacClient/Resources/MacClient-Info.plist"]
+    required = args.require if args.require is not None else [
+        "docs/sync/appcast.xml:Configuration/VampMiniHost-Info.plist",
+        "docs/control/appcast.xml:MacClient/Resources/MacClient-Info.plist",
+    ]
+    advisory = args.warn or []
     root = pathlib.Path(args.root)
     failed = False
     for entries, is_required in ((required, True), (advisory, False)):
@@ -145,7 +146,13 @@ def main(argv=None):
                 print(f"{'ERROR' if is_required else 'warning'}: {feed} does not exist")
                 failed = failed or is_required
                 continue
-            ok, reason = check_feed(feed_path.read_bytes(), public_key_from(root / plist))
+            try:
+                key = public_key_from(root / plist)
+            except (OSError, KeyError, ValueError) as error:
+                print(f"{'ERROR' if is_required else 'warning'}: {feed}: cannot read SUPublicEDKey from {plist} ({error})")
+                failed = failed or is_required
+                continue
+            ok, reason = check_feed(feed_path.read_bytes(), key)
             if ok:
                 print(f"ok: {feed}: {reason}")
             else:

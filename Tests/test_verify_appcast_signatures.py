@@ -65,5 +65,40 @@ class FeedTests(unittest.TestCase):
         self.assertFalse(verify.check_feed(data, other)[0])
 
 
+class MainTests(unittest.TestCase):
+    """The command line, over a temporary tree shaped like the repository."""
+
+    def tree(self, *, control_valid=True, with_plist=True):
+        import plistlib
+        import tempfile
+        root = pathlib.Path(tempfile.mkdtemp())
+        key = base64.b64decode(base64.b64encode(bytes.fromhex(VECTORS[1][0])))
+        plist = plistlib.dumps({"SUPublicEDKey": base64.b64encode(key).decode()})
+        for feed_dir, plist_path, valid in (("sync", "Configuration/VampMiniHost-Info.plist", True),
+                                            ("control", "MacClient/Resources/MacClient-Info.plist", control_valid)):
+            (root / "docs" / feed_dir).mkdir(parents=True)
+            signature = bytes.fromhex(VECTORS[1][2])
+            if not valid:
+                signature = bytes([signature[0] ^ 1]) + signature[1:]
+            (root / "docs" / feed_dir / "appcast.xml").write_bytes(feed(bytes.fromhex(VECTORS[1][1]), signature))
+            if with_plist:
+                (root / plist_path).parent.mkdir(parents=True, exist_ok=True)
+                (root / plist_path).write_bytes(plist)
+        return str(root)
+
+    def test_both_feeds_are_required_by_default(self):
+        self.assertEqual(verify.main(["--root", self.tree()]), 0)
+        self.assertEqual(verify.main(["--root", self.tree(control_valid=False)]), 1)
+
+    def test_a_warn_only_feed_never_fails_the_run(self):
+        root = self.tree(control_valid=False)
+        argv = ["--root", root, "--require", "docs/sync/appcast.xml:Configuration/VampMiniHost-Info.plist",
+                "--warn", "docs/control/appcast.xml:MacClient/Resources/MacClient-Info.plist"]
+        self.assertEqual(verify.main(argv), 0)
+
+    def test_a_missing_plist_is_an_error_not_a_traceback(self):
+        self.assertEqual(verify.main(["--root", self.tree(with_plist=False)]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
