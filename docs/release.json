@@ -16,6 +16,14 @@
       "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-control-macos-2.0.0-build-74",
       "tag": "vamp-control-macos-2.0.0-build-74",
       "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-macos-2.0.0-build-74/VampControl-macOS-2.0.0-build-74-notarized.dmg.sha256"
+    },
+    "vamp-control-ios": {
+      "name": "VampControl-iOS-4.0.0-build-61-altstore-unsigned.ipa",
+      "url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-ios-4.0.0-build-61/VampControl-iOS-4.0.0-build-61-altstore-unsigned.ipa",
+      "label": "4.0.0 \u00b7 build 61",
+      "releaseUrl": "https://github.com/Mesutcydev/vamp-suite/releases/tag/vamp-control-ios-4.0.0-build-61",
+      "tag": "vamp-control-ios-4.0.0-build-61",
+      "sha256Url": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-ios-4.0.0-build-61/VampControl-iOS-4.0.0-build-61-altstore-unsigned.ipa.sha256"
     }
   }
 }

@@ -1,13 +1,14 @@
 {
   "name": "Vamp",
   "subtitle": "Independent apps for iPhone and iPad",
-  "description": "Official AltStore source for Boo Player, Vamp Assistant, and Vamp Stream.",
+  "description": "Official AltStore source for Boo Player, Vamp Assistant, Vamp Control, and Vamp Stream.",
   "iconURL": "https://raw.githubusercontent.com/Mesutcydev/vamp-suite/main/docs/assets/og-image.png",
   "website": "https://thevamp.app/",
   "tintColor": "#6E6E73",
   "featuredApps": [
     "mesut.buu.player",
     "com.beetcode.remote.ios",
+    "com.mesutcy.remotedesktop.ios",
     "com.mesutcy.remotedesktop.stream"
   ],
   "apps": [
@@ -181,6 +182,41 @@
           "NSLocalNetworkUsageDescription": "Vamp Assistant connects to Vamp Assistant running on your trusted Mac.",
           "NSMicrophoneUsageDescription": "Vamp Assistant can dictate text onto your Mac from the Control keyboard.",
           "NSSpeechRecognitionUsageDescription": "Vamp Assistant turns on-device speech into keystrokes on your Mac."
+        }
+      }
+    },
+    {
+      "name": "Vamp Control",
+      "bundleIdentifier": "com.mesutcy.remotedesktop.ios",
+      "developerName": "Mesutcydev",
+      "subtitle": "Your Mac, within reach.",
+      "localizedDescription": "Remote desktop for your own Mac running Vamp Sync, over a trusted LAN or a private Tailscale network. See the whole desktop and control it with touch, trackpad gestures and the keyboard, or keep a session View Only. On iPhone Duo, unfold it for two pages or fold it halfway into a small laptop.",
+      "iconURL": "https://raw.githubusercontent.com/Mesutcydev/vamp-suite/main/Sources/ClientiOS/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+      "tintColor": "#6E6E73",
+      "category": "utilities",
+      "versions": [
+        {
+          "version": "4.0.0",
+          "buildVersion": "61",
+          "marketingVersion": "4.0.0 (61)",
+          "date": "2026-11-27",
+          "localizedDescription": "iPhone Duo layouts: two pages when unfolded, and a laptop-style deck with a trackpad when half-folded during a session. A native tab bar, a picture of each Mac's last session on its card, and session controls that stay readable over any screen.",
+          "downloadURL": "https://github.com/Mesutcydev/vamp-suite/releases/download/vamp-control-ios-4.0.0-build-61/VampControl-iOS-4.0.0-build-61-altstore-unsigned.ipa",
+          "size": 10127644,
+          "minOSVersion": "18.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [
+          "com.apple.developer.networking.multicast",
+          "com.apple.security.network.client"
+        ],
+        "privacy": {
+          "NSCameraUsageDescription": "Vamp Control uses the camera to scan the pairing code shown by Sync or Companion on your Mac.",
+          "NSFaceIDUsageDescription": "Use Face ID to unlock Vamp Control and protect access to your paired Macs.",
+          "NSLocalNetworkUsageDescription": "Vamp Control discovers and connects privately to your Macs running Vamp Sync or Vamp Companion.",
+          "NSMicrophoneUsageDescription": "Captures your voice for on-device dictation into the remote Mac.",
+          "NSSpeechRecognitionUsageDescription": "Transcribes your voice on-device so you can dictate text into the remote Mac."
         }
       }
     },
